@@ -14,7 +14,7 @@ import {
 import { Place, initCutscenes, playBattle, playCapture } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
 import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
-import { fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, versus, victory } from './ui'
+import { cover, fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, uncover, versus, victory } from './ui'
 import { Anim, DIR, animDuration, dirFrom, drawSprite, facePath, loadUnits } from './units'
 
 const T = 32 // píxeles por casilla: 2x2 metatiles de Esmeralda
@@ -1333,43 +1333,149 @@ function finish() {
 }
 
 /** Pantalla para elegir comandante; el rival se elige al azar si lo lleva la IA. */
+/**
+ * Elección de comandante: el plantel a la izquierda y, a la derecha, el escaparate del que está señalado, con su
+ * retrato en grande, su estilo, su poder y su equipo animado. Todo se tiñe de su color y suena su tema.
+ * Si el rival lo lleva la IA, se sortea a la vista con una ruleta.
+ */
 function chooseCommanders(): Promise<[string, string]> {
   const ids = Object.keys(COMMANDERS)
   if (AUTO) return Promise.resolve([pick(ids), pick(ids)])
   mode = 'select'
   return new Promise((resolve) => {
     const picks: string[] = []
-    const ask = (team: number) => {
-      const title = document.createElement('h2')
-      title.innerHTML = `Elige comandante <span class="t${team}">del equipo ${TEAM_NAME[team]}</span>`
-      const cards = ids.map((id, i) => {
-        const c = COMMANDERS[id]
-        const btn = document.createElement('button')
-        btn.className = 'cocard'
-        btn.style.setProperty('--c', c.color)
-        btn.style.animationDelay = i * 70 + 'ms'
-        const squad = rosterOf(id).map((k) => `<img class="mini" src="${facePath(KINDS[k].species)}" title="${ROLES[KINDS[k].role].name}: ${KINDS[k].name}">`).join('')
-        btn.innerHTML = `<img src="${facePath(id)}"><b>${c.name}</b><i>${c.title}</i>
-          <div class="team">${squad}</div>
-          <p>${passiveText(id)}</p><p><strong>★ ${c.power}</strong><br>${c.powerHelp}</p>`
-        btn.onmouseenter = () => { sfx.cursor(); btn.querySelector('img')!.src = facePath(id, 'Happy'); sfx.cry(id, 1, 0.3) }
-        btn.onmouseleave = () => (btn.querySelector('img')!.src = facePath(id))
-        btn.onclick = () => {
-          sfx.confirm()
-          picks.push(id)
-          if (team === 0 && !isAI[1]) return ask(1)
-          if (picks.length < 2) picks.push(pick(ids.filter((other) => other !== id)))
-          resolve(picks as [string, string])
-        }
-        return btn
+    selectEl.innerHTML = `<div class="bg"><div class="rays"></div><div class="stripes"></div></div>
+      <header><small></small><h2>ELIGE COMANDANTE</h2><span class="who"></span></header>
+      <div class="plantel"></div>
+      <section class="show">
+        <div class="pic"><img class="e2" alt=""><img class="e1" alt=""><img class="main" alt=""></div>
+        <div class="txt"><h3></h3><p class="lema"></p><p class="estilo"></p>
+          <div class="poder"><b></b><span></span></div></div>
+        <div class="equipo"></div>
+      </section>
+      <footer>Flechas o ratón para mirar · Clic o Enter para elegir</footer>`
+    const q = <E extends HTMLElement>(sel: string) => selectEl.querySelector(sel) as E
+    const show = q('.show'), plantel = q('.plantel'), equipo = q('.equipo')
+    let current = '', locked = false, team = 0, themeTimer = 0
+    let cells: { kind: string; cx: CanvasRenderingContext2D }[] = []
+
+    const tiles = ids.map((id, i) => {
+      const btn = document.createElement('button')
+      btn.className = 'cotile'
+      btn.style.setProperty('--c', COMMANDERS[id].color)
+      btn.style.setProperty('--i', String(i))
+      btn.innerHTML = `<img src="${facePath(id)}" alt=""><b>${COMMANDERS[id].name}</b>`
+      btn.onmouseenter = btn.onfocus = () => { if (!locked) display(id) }
+      btn.onclick = () => { if (!locked) choose(id) }
+      plantel.append(btn)
+      return btn
+    })
+
+    /** Enseña un comandante en el escaparate. */
+    function display(id: string, expression = 'Normal') {
+      if (id === current && expression === 'Normal') return
+      const changed = id !== current
+      current = id
+      const c = COMMANDERS[id]
+      selectEl.style.setProperty('--c', c.color)
+      tiles.forEach((t, i) => t.classList.toggle('on', ids[i] === id))
+      for (const img of show.querySelectorAll<HTMLImageElement>('.pic img')) img.src = facePath(id, expression)
+      if (!changed) return
+      q('h3').innerHTML = [...c.name].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')
+      q('.lema').textContent = c.title
+      q('.estilo').textContent = passiveText(id)
+      q('.poder b').textContent = `★ ${c.power}`
+      q('.poder span').textContent = c.powerHelp
+      equipo.innerHTML = ''
+      cells = rosterOf(id).map((kind, i) => {
+        const k = KINDS[kind]
+        const cell = document.createElement('div')
+        cell.className = 'mon'
+        cell.style.setProperty('--i', String(i))
+        cell.title = `${k.name} · ${ROLES[k.role].help}`
+        cell.innerHTML = `<canvas width="44" height="40"></canvas><span>${ROLES[k.role].name}</span>
+          <em>${k.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px"></i>`).join('')}</em>`
+        equipo.append(cell)
+        return { kind, cx: cell.querySelector('canvas')!.getContext('2d')! }
       })
-      const row = document.createElement('div')
-      row.className = 'cards'
-      row.append(...cards)
-      selectEl.replaceChildren(title, row)
-      selectEl.hidden = false
-      restart(selectEl, 'open')
+      restart(show, 'swap')
+      sfx.cursor()
+      sfx.cry(id, 1, 0.3)
+      clearTimeout(themeTimer) // si te quedas mirándolo, suena su tema
+      themeTimer = window.setTimeout(() => { if (current === id && !selectEl.hidden) music.play('co_' + id) }, 550)
     }
+
+    function ask(t: number) {
+      team = t
+      locked = false
+      selectEl.dataset.team = String(t)
+      q('header small').textContent = isAI[1] ? 'Un jugador' : `Jugador ${t + 1}`
+      q('.who').textContent = `Equipo ${TEAM_NAME[t]}`
+      q('.who').className = `who t${t}`
+      for (const tile of tiles) tile.classList.remove('taken')
+      if (t === 1) tiles[ids.indexOf(picks[0])].classList.add('rojo')
+      restart(selectEl, 'open')
+      current = ''
+      const first = t === 1 ? ids.find((id) => id !== picks[0])! : ids[0]
+      display(first)
+      tiles[ids.indexOf(first)].focus()
+    }
+
+    /** Elegido: destello, cara de contento, sello y grito. */
+    async function confirm(id: string, text: string) {
+      display(id, 'Happy')
+      tiles[ids.indexOf(id)].classList.add('taken')
+      restart(show, 'chosen')
+      const stampEl = document.createElement('div')
+      stampEl.className = `listo t${team}`
+      stampEl.textContent = text
+      show.append(stampEl)
+      sfx.confirm()
+      sfx.cry(id, 1, 0.8)
+      await sleep(950)
+      stampEl.remove()
+    }
+
+    async function choose(id: string) {
+      locked = true
+      clearTimeout(themeTimer)
+      picks.push(id)
+      await confirm(id, '¡LISTO!')
+      if (team === 0 && !isAI[1]) return ask(1)
+      if (picks.length < 2) { // ruleta para el comandante de la IA
+        team = 1
+        selectEl.dataset.team = '1'
+        q('header small').textContent = 'IA'
+        q('h2').textContent = 'SORTEO DEL RIVAL'
+        q('footer').textContent = ''
+        q('.who').textContent = 'Equipo Azul'
+        q('.who').className = 'who t1'
+        tiles[ids.indexOf(id)].classList.add('rojo')
+        const rivals = ids.filter((other) => other !== id)
+        const rival = pick(rivals)
+        for (let i = 0; i < 12; i++) {
+          current = ''
+          display(i === 11 ? rival : rivals[(i * 3) % rivals.length])
+          await sleep(70 + i * 14)
+        }
+        picks.push(rival)
+        await confirm(rival, '¡RIVAL!')
+      }
+      resolve(picks as [string, string])
+    }
+
+    // El equipo del escaparate anda en su sitio
+    const loop = (time: number) => {
+      if (selectEl.hidden) return
+      cells.forEach(({ kind, cx }, i) => {
+        cx.imageSmoothingEnabled = false
+        cx.clearRect(0, 0, 44, 40)
+        drawSprite(cx, KINDS[kind].species, 'Walk', DIR.down, time + i * 160, 22, 18)
+      })
+      requestAnimationFrame(loop)
+    }
+    selectEl.hidden = false
+    requestAnimationFrame(loop)
     ask(0)
   })
 }
@@ -1439,8 +1545,18 @@ for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
     if (btn.dataset.opt === 'sound') { toggleMute(); music.sync(); sfx.confirm(); return refreshTitle() }
     isAI[1] = btn.dataset.go === 'solo' // contra la IA o dos personas por turnos
     sfx.confirm()
-    titleEl.hidden = true
-    newGame()
+    void (async () => { // el botón destella, el logo sale volando y la cortinilla da paso a la selección
+      btn.classList.add('chosen')
+      titleEl.classList.add('leaving')
+      await sleep(420)
+      await cover()
+      titleEl.hidden = true
+      titleEl.classList.remove('leaving')
+      btn.classList.remove('chosen')
+      void newGame()
+      await sleep(80)
+      await uncover()
+    })()
   }
 }
 
@@ -1966,7 +2082,12 @@ fogBtn.onclick = () => {
   fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`
 }
 muteBtn.onclick = () => { toggleMute(); music.sync(); muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`; sfx.confirm() }
-$('#new').onclick = () => { if (mode !== 'busy') showTitle() }
+$('#new').onclick = async () => {
+  if (mode === 'busy') return
+  await cover()
+  showTitle()
+  await uncover()
+}
 
 async function boot() {
   const [atlasImg, waterImg, atlasMeta, names] = await Promise.all([

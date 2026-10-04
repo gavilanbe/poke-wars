@@ -40,7 +40,7 @@ const SCENES = {
   lucario: [`lab.power('lucario')`, 4800],
   turno: [`document.querySelector('#end').click()`, 2200],
   victoria: [`lab.win(0)`, 2800],
-  inicio: [`document.querySelector('#title [data-go=solo]').click(); setTimeout(() => [...document.querySelectorAll('.cocard')][1].click(), 600)`, 4800, 'early'],
+  inicio: [`document.querySelector('#title [data-go=solo]').click(); setTimeout(() => [...document.querySelectorAll('.cotile')][1].click(), 2200)`, 7000, 'early'],
   titulo: [`0`, 2600, 'early'],
 }
 
@@ -58,9 +58,9 @@ for (const name of names) {
   await sleep(name === 'titulo' ? 60 : 900)
   if (SCENES[name][2] !== 'early') {
     await page.evaluate(() => document.querySelector('#title [data-go=solo]').click())
-    await sleep(500)
-    await page.evaluate(() => [...document.querySelectorAll('.cocard')][0].click())
-    await sleep(6500) // deja pasar la presentación y los saludos
+    await sleep(1500)
+    await page.evaluate(() => [...document.querySelectorAll('.cotile')][0].click())
+    await sleep(10500) // deja pasar la presentación y los saludos
   }
   const dir = `tools/preview/film/${name}`
   fs.rmSync(dir, { recursive: true, force: true })
