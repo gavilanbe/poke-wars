@@ -10,6 +10,7 @@
     "check": "tsx tools/check.ts",
     "duel": "tsx tools/duel.ts",
     "matchups": "tsx tools/matchups.ts",
+    "versus": "node tools/versus.mjs",
     "assets": ".venv/bin/python tools/extract.py"
   },
   "devDependencies": {

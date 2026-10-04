@@ -6,6 +6,9 @@ Prototipo privado: táctica por turnos tipo Advance Wars con gráficos de Pokém
 pnpm install
 pnpm dev          # el juego
 pnpm sim          # 20 partidas IA contra IA en consola, para comprobar las reglas
+pnpm versus 100   # liga en paralelo: porcentaje de victorias de cada cruce de comandantes
+pnpm duel a b     # un cruce concreto a fondo, mapa por mapa
+pnpm check        # comprobaciones de sentido común sobre mapas y equipos
 ```
 
 `?auto` en la URL pone a las dos IA a jugar solas.
