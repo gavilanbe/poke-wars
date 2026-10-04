@@ -94,7 +94,15 @@ function backdrop(ctx: CanvasRenderingContext2D, place: Place, x0: number, w: nu
   shade.addColorStop(1, 'rgba(8, 24, 40, 0)')
   ctx.fillStyle = shade
   ctx.fillRect(x0, HORIZON, w, 44)
+  if (light) { // la hora del día y la lluvia tiñen la escena
+    ctx.fillStyle = light
+    ctx.fillRect(x0, -20, w, H + 40)
+  }
 }
+
+let light = ''
+/** Tinte de la escena según la hora y el tiempo del mapa ('' para ninguno). */
+export const setSceneLight = (rgba: string) => { light = rgba }
 
 // ---------- Interfaz sobre la escena ----------
 

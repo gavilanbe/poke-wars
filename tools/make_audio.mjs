@@ -70,8 +70,15 @@ const SFX = {
   mv_ghost: [`ghostly dark energy ball: eerie whoosh and hollow impact, game sound effect, no music`, 1.3, 0.5],
   mv_ice: [`ice beam: freezing crystalline shimmer and sharp ice crack, game sound effect, no music`, 1.3, 0.5],
   mv_fairy: [`magical sparkle burst: bright twinkling chimes and soft shimmer, game sound effect, no music`, 1.2, 0.5],
+  st_burn: [`short fire ignition whoosh with crackle, ${RETRO}`, 0.8, 0.5],
+  st_poison: [`short toxic bubbling gurgle, descending, ${RETRO}`, 0.8, 0.5],
+  st_para: [`short electric zap stutter, buzzing shock, ${RETRO}`, 0.7, 0.5],
+  st_sleep: [`short sleepy descending lullaby notes, soft, ${RETRO}`, 1, 0.5],
+  st_freeze: [`short ice freezing crackle with glassy shimmer, ${RETRO}`, 0.9, 0.5],
+  ball: [`capsule thrown and landing, then three small wobble rattles, ${RETRO}`, 1.2, 0.5],
   // Ambiente (en bucle)
   amb_rain: [`steady rain falling on grass and leaves, calm ambient loop, no thunder, no music`, 10, 0.5, true],
+  amb_day: [`calm daytime meadow ambience, gentle breeze and a few distant birds, ambient loop, no music`, 10, 0.5, true],
   amb_night: [`quiet night ambience with soft crickets, calm ambient loop, no music`, 10, 0.5, true],
 }
 
@@ -178,10 +185,17 @@ const MUSIC = {
   defeat: { loop: 0, plan: plan(['84 BPM', 'D minor', 'gentle bittersweet defeat theme', 'sad but encouraging'], [
     ['[Theme] {slow oboe melody over soft strings and harp}', 20, ['melancholy, simple']],
   ]) },
+  select: { loop: 4, plan: plan(['118 BPM', 'B-flat major', 'confident commander-select menu theme', 'anticipation before battle'], [
+    ['[Intro] {snare roll and brass pickup}', 4, ['short pickup']],
+    ['[Theme] {swaggering slap bass groove, muted trumpet melody, finger snaps}', 22, ['cool, confident, mid-tempo']],
+    ['[Theme B] {french horn answer over pizzicato strings}', 18, ['building anticipation']],
+  ]) },
   // Fanfarrias cortas
   jingle_capture: { plan: plan(['150 BPM', 'C major', 'short success fanfare'], [['[Fanfare] {bright brass and strings rising arpeggio ending on a held major chord with cymbal}', 5, ['got-it jingle, celebratory, ends cleanly']]]) },
   jingle_heal: { plan: plan(['120 BPM', 'G major', 'short healing jingle'], [['[Jingle] {five gentle ascending chime and square-wave notes, soft final chord}', 4, ['warm, reassuring, ends cleanly']]]) },
   jingle_evolve: { plan: plan(['140 BPM', 'A major', 'short evolution-complete fanfare'], [['[Fanfare] {shimmering rising arpeggios burst into a triumphant brass phrase}', 6, ['magical then triumphant, ends cleanly']]]) },
+  jingle_levelup: { plan: plan(['150 BPM', 'D major', 'very short level-up jingle'], [['[Jingle] {quick ascending trumpet and chime arpeggio ending on a bright chord}', 3, ['rewarding, ends cleanly']]]) },
+  jingle_catch: { plan: plan(['140 BPM', 'G major', 'short new-team-member fanfare'], [['[Fanfare] {happy brass and glockenspiel phrase with a final cymbal}', 4, ['cheerful, ends cleanly']]]) },
   jingle_turn: { plan: plan(['140 BPM', 'D major', 'very short turn-start sting'], [['[Sting] {two-bar trumpet call with snare}', 3, ['ready-set-go, ends cleanly']]]) },
 }
 

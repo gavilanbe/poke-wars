@@ -389,3 +389,30 @@ main { display: block; }
 #select .bg { overflow: hidden; }
 .show .poder b { font-size: 30px; }
 @media (max-height: 860px) { .bocadillo { font-size: 24px; padding: 4px 12px; } }
+
+/* ---------- Ayuda, pasar el ordenador, Poké Ball y botón de poder ---------- */
+#help { position: absolute; inset: 0; z-index: 12; padding: 5vh 7vw; background: #0c1018ee; color: #fff; font-family: var(--ui); line-height: 1.15; overflow: auto; cursor: pointer; animation: fade-in 0.2s; }
+#help[hidden] { display: none; }
+#help h2 { margin: 0 0 2vh; font-family: var(--display); font-size: 44px; letter-spacing: 2px; color: #ffd84a; text-shadow: 3px 3px 0 #0c1018; }
+#help .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.4vh 3vw; }
+#help section { background: #1c2230; border: 3px solid #48546c; border-left: 8px solid #ffd84a; padding: 10px 16px; }
+#help h3 { margin: 0 0 4px; font-family: var(--display); font-size: 26px; color: #ffd84a; }
+#help p { margin: 0; font-size: 20px; }
+#help b { color: #ffd84a; }
+#help small { display: block; margin-top: 2vh; text-align: center; font-size: 18px; color: #a8b4cc; }
+#pass { position: absolute; inset: 0; z-index: 14; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; color: #fff; cursor: pointer; font-family: var(--display); animation: fade-in 0.2s; }
+#pass.t0 { background: repeating-linear-gradient(-60deg, #c0392b 0 40px, #a82c24 40px 80px); }
+#pass.t1 { background: repeating-linear-gradient(-60deg, #2c63c8 0 40px, #2452b0 40px 80px); }
+#pass img { width: 160px; height: 160px; image-rendering: pixelated; border: 6px solid #fff; box-shadow: 0 0 0 6px #0c1018; }
+#pass b { font-size: 64px; letter-spacing: 2px; text-shadow: 4px 4px 0 #0c1018; }
+#pass span { font-family: var(--ui); font-size: 26px; background: #0c1018; padding: 4px 16px; animation: nod 1s steps(2) infinite; }
+.ballfx { position: absolute; z-index: 6; width: 30px; height: 30px; margin: -15px; background: url(/assets/ui/ball.png) center / 30px; image-rendering: pixelated; pointer-events: none; animation: ballfx 1s forwards; }
+@keyframes ballfx {
+  0% { transform: translateY(-160px) rotate(-200deg) scale(1.4); }
+  22% { transform: none; } 30% { transform: translateY(-16px); } 38% { transform: none; }
+  50% { transform: rotate(-24deg); } 60% { transform: rotate(22deg); } 70% { transform: rotate(-18deg); } 80% { transform: rotate(0); }
+  90% { transform: scale(1.5); filter: brightness(3); opacity: 1; } 100% { transform: scale(2.4); filter: brightness(4); opacity: 0; }
+}
+#power::after { content: ''; position: absolute; left: 10px; bottom: 5px; height: 4px; width: calc((100% - 20px) * var(--p, 0) / 100); background: linear-gradient(90deg, #f0a020, #ffe870); box-shadow: 0 0 0 1px #10141c; transition: width 0.3s; }
+#power.ready::after { display: none; }
+#title .menu > button[hidden] { display: none; }

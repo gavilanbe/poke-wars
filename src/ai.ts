@@ -56,7 +56,7 @@ export function planUnit(g: Game, u: Unit): Plan {
         const back = damage(g, { ...target, hp: target.hp - dmg }, here)
         score -= back * ((KINDS[u.kind].cost || 6000) / 1000) * 1.5
       }
-      if (canCapture(g, target) && buildingAt(g, target.x, target.y)!.cap < 20) score += 20
+      if (canCapture(g, target)) score += buildingAt(g, target.x, target.y)!.cap < 20 ? 30 : 8 // primero, los que están capturando
       consider(score, { to: spot, action: 'attack', target })
     }
   }
@@ -77,7 +77,13 @@ function goalsFor(g: Game, u: Unit): Pos[] {
       if (b.owner !== u.team && (!o || o === u || o.team !== u.team)) goals.push(b)
     }
   }
-  if (!goals.length) goals.push(...g.units.filter((e) => e.team !== u.team))
+  if (!goals.length) {
+    // Defensa: si un rival que captura ronda el gimnasio propio, va a por él antes que a por nadie
+    const foes = g.units.filter((e) => e.team !== u.team)
+    const gym = g.buildings.find((b) => b.type === 'gym' && b.owner === u.team)
+    const threats = gym ? foes.filter((e) => KINDS[e.kind].capture && dist(e, gym) <= 6) : []
+    goals.push(...(threats.length && gym && dist(u, gym) <= 12 ? threats : foes))
+  }
   return goals
 }
 

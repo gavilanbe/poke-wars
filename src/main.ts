@@ -11,7 +11,7 @@ import {
   PHASES, STATUS_NAME, Status, WEATHER_NAME, canSee, flankers, footprint, freezable, freeze, isRecovery, phaseOf, recruitCost, resolvePath,
   weatherBonus, wildAt, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
 } from './game'
-import { Place, initCutscenes, playBattle, playCapture } from './cutscenes'
+import { Place, initCutscenes, playBattle, playCapture, setSceneLight } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
 import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
 import { cover, fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, uncover, versus, victory } from './ui'
@@ -282,7 +282,7 @@ const unitShownAt = (x: number, y: number) => { const u = unitAt(g, x, y); retur
 function themeNow() {
   if (AUTO || !g || g.winner !== null) return
   music.play('co_' + g.co[g.turn]) // cada comandante tiene su tema, como en Advance Wars
-  music.ambience(g.weather === 'rain' ? 'rain' : phaseOf(g) === 3 ? 'night' : '')
+  music.ambience(g.weather === 'rain' ? 'rain' : phaseOf(g) === 3 ? 'night' : 'day')
 }
 
 const center = (p: Pos) => [p.x * T + T / 2, p.y * T + T / 2] as const
@@ -315,10 +315,23 @@ function resize() {
   if (g) panTo(cam.tx + canvas.width / 2, cam.ty + canvas.height / 2, true)
 }
 
-function startGame(cos: [string, string], intro = 0) {
+const SAVE_KEY = 'pokewars-save'
+/** Guarda la partida (siempre en un momento en que le toca mover a una persona). */
+function saveGame() {
+  if (AUTO || titleOn) return
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ g, isAI, fogOn })) } catch { /* sin sitio: se juega sin guardar */ }
+}
+function loadSave(): { g: Game; isAI: [boolean, boolean]; fogOn: boolean } | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY) ?? 'null')
+    return saved && saved.g.units.every((u: Unit) => KINDS[u.kind]) ? saved : null // por si cambian los equipos entre versiones
+  } catch { return null }
+}
+
+function startGame(cos: [string, string], intro = 0, saved?: Game) {
   titleOn = false
   stage.classList.remove('titling')
-  g = createGame(cos, fogOn)
+  g = saved ?? createGame(cos, fogOn)
   terrainLayer = makeTerrainLayer(g)
   fx.clear()
   for (const m of [unitFx, unitDir, unitAnim, animPos]) m.clear()
@@ -328,7 +341,7 @@ function startGame(cos: [string, string], intro = 0) {
   refreshPanel()
   const home = g.buildings.find((b) => b.type === 'gym' && b.owner === (viewer() ?? 0))!
   panTo(home.x * T, home.y * T, true)
-  if (!AUTO) {
+  if (!AUTO && !saved) {
     g.units.forEach((u, i) => dropIn(u, intro + 200 + i * 130))
     say(0, pick(co(0).quotes.start), 'Happy', intro + 900)
     say(1, pick(co(1).quotes.start), 'Determined', intro + 3400)
@@ -843,9 +856,21 @@ function moveCatch(game: Game, u: Unit, x: number, y: number) {
   const caught = moveUnit(game, u, x, y)
   if (!caught || titleOn) return
   if (!shown(caught)) return
-  dropIn(caught)
-  label(caught, `¡${KINDS[caught.kind].name} salvaje atrapado!`, 'gold', 200)
-  sfx.captured()
+  // La Poké Ball cae sobre la hierba, se menea y se abre
+  const ball = document.createElement('i')
+  ball.className = 'ballfx'
+  ball.style.left = (caught.x * T + T / 2 - cam.x) * scale + 'px'
+  ball.style.top = (caught.y * T + T / 2 - cam.y) * scale + 'px'
+  stage.append(ball)
+  setTimeout(() => ball.remove(), 1000)
+  sfx.ball()
+  dropIn(caught, 900)
+  setTimeout(() => {
+    const [x, y] = center(caught)
+    for (let i = 0; i < 10; i++) mapFx.add({ img: 'gold_stars', x, y, vx: Math.cos(i) * 2.2, vy: Math.sin(i) * 2.2 - 1, drag: 0.94, max: 700, scale: 1 })
+    sfx.caught()
+  }, 900)
+  label(caught, `¡${KINDS[caught.kind].name} salvaje atrapado!`, 'gold', 950)
 }
 
 const STATUS_COLOR: Record<Status, string> = { burn: '#f0803c', poison: '#a040a0', para: '#f8d030', sleep: '#a8b4cc', freeze: '#7ccfd8' }
@@ -982,7 +1007,7 @@ function setFace(team: Team, expression: string, ms = 2200) {
   if (g) refreshStatus()
 }
 
-let talkTimer = 0
+let talkTimer = 0, talkTyping = 0
 /** El comandante suelta una frase en un bocadillo sobre el mapa. */
 function say(team: Team, text: string, expression = 'Normal', delay = 0) {
   if (AUTO) return
@@ -991,12 +1016,20 @@ function say(team: Team, text: string, expression = 'Normal', delay = 0) {
     if (g !== game || !sceneEl.hidden) return
     setFace(team, expression, 2600)
     talkEl.className = `t${team}`
-    talkEl.innerHTML = `<img src="${facePath(g.co[team], expression)}"><div class="box"><b class="t${team}">${co(team).name}</b>${text}</div>`
+    talkEl.innerHTML = `<img src="${facePath(g.co[team], expression)}"><div class="box"><b class="t${team}">${co(team).name}</b><span></span></div>`
+    const line = talkEl.querySelector('span')!
+    let n = 0
+    clearInterval(talkTyping)
+    talkTyping = window.setInterval(() => {
+      line.textContent = text.slice(0, ++n)
+      if (n % 4 === 1) sfx.cursor()
+      if (n >= text.length) clearInterval(talkTyping)
+    }, 26)
     talkEl.hidden = false
     restart(talkEl, 'show')
     sfx.talk()
     clearTimeout(talkTimer)
-    talkTimer = window.setTimeout(() => (talkEl.hidden = true), 2400)
+    talkTimer = window.setTimeout(() => (talkEl.hidden = true), 1500 + text.length * 40)
   }, delay)
 }
 
@@ -1251,6 +1284,7 @@ function refreshPanel() {
   const charge = Math.floor((g.meter[g.turn] / POWER_COST) * 100)
   powerBtn.innerHTML = `★ ${powerBtn.disabled && !g.power[g.turn] ? `${charge}%` : co(g.turn).power} <kbd>P</kbd>`
   powerBtn.title = `${co(g.turn).power}: ${co(g.turn).powerHelp}`
+  powerBtn.style.setProperty('--p', String(g.power[g.turn] ? 100 : charge))
   endBtn.innerHTML = `Fin del turno <kbd>Enter</kbd>`
   aiBtn.textContent = `Azul: ${isAI[1] ? 'IA' : 'humano'}`
   muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`
@@ -1315,7 +1349,8 @@ async function turnBanner() {
 function finish() {
   reset()
   refreshPanel()
-  if (g.winner === null) return
+  if (g.winner === null) return saveGame()
+  localStorage.removeItem(SAVE_KEY)
   const winner = g.winner
   setFace(winner, 'Happy', 1e7)
   setFace((1 - winner) as Team, 'Pain', 1e7)
@@ -1498,6 +1533,7 @@ function chooseCommanders(): Promise<[string, string]> {
       requestAnimationFrame(loop)
     }
     selectEl.hidden = false
+    music.play('select')
     requestAnimationFrame(loop)
     ask(0)
   })
@@ -1506,6 +1542,9 @@ function chooseCommanders(): Promise<[string, string]> {
 // ---------- Pantalla de título ----------
 
 const titleEl = $('#title')
+const helpEl = $('#help')
+helpEl.onclick = () => (helpEl.hidden = true)
+$('#helpbtn').onclick = () => (helpEl.hidden = !helpEl.hidden)
 let titleOn = false
 
 /** Título: el mapa vivo de fondo (la cámara pasea, los Pokémon se mueven, pasa el día) y el menú encima. */
@@ -1534,6 +1573,7 @@ function showTitle() {
   stage.classList.add('titling')
   titleEl.hidden = false
   restart(titleEl, 'open')
+  titleEl.querySelector<HTMLElement>('[data-go=continue]')!.hidden = !loadSave()
   refreshTitle()
   music.play('title')
   music.ambience('')
@@ -1566,7 +1606,9 @@ for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
   btn.onclick = () => {
     if (btn.dataset.opt === 'fog') { fogOn = !fogOn; fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`; sfx.confirm(); return refreshTitle() }
     if (btn.dataset.opt === 'sound') { toggleMute(); music.sync(); sfx.confirm(); return refreshTitle() }
-    isAI[1] = btn.dataset.go === 'solo' // contra la IA o dos personas por turnos
+    const saved = btn.dataset.go === 'continue' ? loadSave() : null
+    if (saved) { isAI[0] = saved.isAI[0]; isAI[1] = saved.isAI[1]; fogOn = saved.fogOn }
+    else isAI[1] = btn.dataset.go === 'solo' // contra la IA o dos personas por turnos
     sfx.confirm()
     void (async () => { // el botón destella, el logo sale volando y la cortinilla da paso a la selección
       btn.classList.add('chosen')
@@ -1576,7 +1618,7 @@ for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
       titleEl.hidden = true
       titleEl.classList.remove('leaving')
       btn.classList.remove('chosen')
-      void newGame()
+      if (saved) { startGame(saved.g.co, 0, saved.g); themeNow() } else void newGame()
       await sleep(80)
       await uncover()
     })()
@@ -1656,6 +1698,7 @@ async function battle(att: Unit, def: Unit) {
   const a = { kind: att.kind, hp: att.hp, team: att.team, x: att.x, y: att.y, place: placeOf(att) }
   const d = { kind: def.kind, hp: def.hp, team: def.team, x: def.x, y: def.y, place: placeOf(def) }
   await engage(att, def)
+  const levels = [att.level, def.level]
   const res = attack(g, att, def)
   if (AUTO) return
   if (KINDS[a.kind].heals) { // el de apoyo no pelea: duerme al rival, sin escena de combate
@@ -1669,6 +1712,7 @@ async function battle(att: Unit, def: Unit) {
     return
   }
   talkEl.hidden = true
+  setSceneLight(g.weather === 'rain' ? 'rgba(20, 40, 90, 0.22)' : ['rgba(255, 214, 150, 0.08)', '', 'rgba(255, 120, 50, 0.16)', 'rgba(16, 26, 96, 0.36)'][phaseOf(g)])
   music.play('battle')
   await playBattle({
     a, d, dmg: res.dmg, counter: res.counter, crit: res.crit,
@@ -1678,7 +1722,19 @@ async function battle(att: Unit, def: Unit) {
 
   label(d, `-${res.dmg}`, 'dmg')
   if (res.crit) label(d, '¡Crítico!', 'gold', 200)
-  if (res.status && g.units.includes(def)) label(d, `¡${STATUS_NAME[res.status]}!`, 'gold', 420)
+  if (res.status && g.units.includes(def)) {
+    label(d, `¡${STATUS_NAME[res.status]}!`, 'gold', 420)
+    const [sx, sy] = center(d)
+    setTimeout(() => {
+      fx.burst(sx, sy, { n: 16, colors: [STATUS_COLOR[res.status!], '#fff'], speed: 1.8, life: 700, size: 4, up: 1 })
+      sfx.status(res.status!)
+    }, 420)
+  }
+  for (const [unit, before] of [[att, levels[0]], [def, levels[1]]] as const) {
+    if (!g.units.includes(unit) || unit.level <= before) continue
+    label(unit, `¡Nivel ${unit.level}!`, 'gold', 700)
+    setTimeout(sfx.levelup, 700)
+  }
   if (res.burned) { // el fuego se ha llevado el bosque o la hierba
     for (let i = 0; i < 4; i++) mapFx.fx('fire', d.x * T + 8 + (i % 2) * 16, d.y * T + 8 + (i >> 1) * 14, { scale: 1, fps: 12, delay: i * 70 })
     label(d, '¡Arde!', 'dmg', 600)
@@ -1766,7 +1822,7 @@ function openMenu() {
         fx.burst(p.x * T + 16, p.y * T + 16, { n: 12, colors: ['#fff', '#b8f0f8'], speed: 1.6, life: 600, size: 3 })
       }
       label(at, '¡Río congelado!', 'heal')
-      sfx.cast()
+      sfx.status('freeze')
       finish()
     }])
   }
@@ -1957,11 +2013,38 @@ function showForecast() {
   placeNear(forecastEl, t)
 }
 
+/** Dos jugadores con niebla: se tapa el mapa hasta que el siguiente diga que está listo. */
+function passScreen(): Promise<void> {
+  return new Promise((resolve) => {
+    const el = document.createElement('div')
+    el.id = 'pass'
+    el.className = `t${g.turn}`
+    el.innerHTML = `<img src="${facePath(g.co[g.turn])}"><b>Turno del equipo ${TEAM_NAME[g.turn]}</b><span>Pasa el ordenador y pulsa para continuar</span>`
+    stage.append(el)
+    const go = () => { el.remove(); removeEventListener('keydown', go); sfx.confirm(); resolve() }
+    el.onclick = go
+    setTimeout(() => addEventListener('keydown', go), 300)
+  })
+}
+
+/** Salta al siguiente Pokémon propio que aún no ha actuado. */
+function nextUnit() {
+  if (!g || isAI[g.turn] || (mode !== 'idle' && mode !== 'inspect' && mode !== 'move') || pending) return
+  const mine = g.units.filter((u) => u.team === g.turn && !u.moved)
+  if (!mine.length) return
+  const next = mine[(mine.indexOf(sel as Unit) + 1) % mine.length]
+  reset()
+  select(next)
+  hover = { x: next.x, y: next.y }
+  refreshInfo()
+}
+
 async function nextTurn() {
   reset()
   mode = 'busy'
   const hpBefore = new Map(g.units.map((u) => [u.id, u.hp]))
   endTurn(g)
+  if (!AUTO && g.fog && !isAI[0] && !isAI[1]) await passScreen()
   for (const u of g.units) unitDir.delete(u.id)
   refreshPanel()
   themeNow()
@@ -2085,6 +2168,8 @@ addEventListener('keydown', (e) => {
     return
   }
   keysDown.add(e.key.toLowerCase())
+  if (e.key === 'Tab') { e.preventDefault(); return nextUnit() }
+  if (e.key === 'h' && !titleOn) helpEl.hidden = !helpEl.hidden
   if (e.key === 'Escape') cancel()
   if (e.key === 'Enter' && !(document.activeElement instanceof HTMLButtonElement)) finishTurn()
   if (e.key === 'p') firePower()

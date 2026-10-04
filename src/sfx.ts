@@ -217,6 +217,11 @@ export const sfx = {
   evolved: () => void (sample('jingle_evolve', { vol: 0.8 }) || sample('captured')),
   /** Grito original del Pokémon; `rate` más bajo lo hace más grave (para cuando cae). */
   cry: (species: string, rate = 1, vol = 0.55) => void sample('cry_' + species, { rate, vol }),
+  /** Un estado recién puesto: quemado, envenenado, paralizado, dormido o congelado. */
+  status: (name: string) => void (sample('st_' + name) || tone(name === 'freeze' ? 1600 : 300, 0.2, { to: name === 'freeze' ? 2400 : 120, type: 'triangle', vol: 0.08 })),
+  levelup: () => void (sample('jingle_levelup', { vol: 0.7 }) || notes([659, 784, 988, 1319], 0.07, 0.14, { type: 'triangle', vol: 0.1 })),
+  ball: () => void (sample('ball') || notes([400, 300, 400, 300], 0.16, 0.06, { vol: 0.05 })),
+  caught: () => void (sample('jingle_catch', { vol: 0.8 }) || sample('jingle_capture', { vol: 0.7 }) || notes([523, 659, 784, 1047], 0.08, 0.14)),
   /** Sonido del ataque según el tipo del Pokémon (si no hay muestra, el disparo genérico). */
   move: (type: string) => void (sample('mv_' + type) || sample('shoot')),
   win: () => void (sample('win') || notes([523, 523, 523, 659, 784, 659, 784, 1047], 0.13, 0.22, { vol: 0.08 })),
