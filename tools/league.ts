@@ -27,7 +27,7 @@ export function league(ROUNDS: number): LeagueResult {
     while (g.winner === null && turns < 400) {
       if (canUsePower(g)) usePower(g)
       for (const u of g.units.filter((u) => u.team === g.turn)) {
-        if (g.winner !== null || !g.units.includes(u)) continue
+        if (g.winner !== null || !g.units.includes(u) || u.moved) continue // dormidos y congelados pierden el turno
         const plan = planUnit(g, u)
         const { path, ambushed } = resolvePath(g, u, pathTo(reachable(g, u), plan.to.x, plan.to.y))
         const end = path[path.length - 1]

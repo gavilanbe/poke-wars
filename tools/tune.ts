@@ -14,7 +14,7 @@ for (let i = 0; i < ITERATIONS; i++) {
   const spread = Math.max(...ids.map(rate)) - Math.min(...ids.map(rate))
   console.log(`iteración ${i + 1}: abanico ${Math.round(spread * 100)} puntos · rojo ${Math.round((first / total) * 100)}% · ` + ids.map((id) => `${id.slice(0, 4)} ${Math.round(rate(id) * 100)}`).join(' '))
   // Paso amortiguado y cada vez más corto, para que no oscile
-  const step = 0.22 / (1 + i * 0.35)
+  const step = 0.45 / (1 + i * 0.3)
   for (const id of ids) TUNE[id] = Math.round(TUNE[id] * (1 - step * (rate(id) - 0.5)) * 1000) / 1000
 }
 console.log('TUNE = ' + JSON.stringify(TUNE))

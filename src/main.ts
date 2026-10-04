@@ -1,14 +1,15 @@
 // Pintado, entrada y flujo de la partida.
 import { planRecruit, planUnit } from './ai'
 import {
-  BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, MAX_UNITS, POWER_COST, PType, ROLES, TYPE_COLOR, TYPE_NAME, passiveText, rosterOf,
+  ATTACK_NAME, BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, MAX_UNITS, POWER_COST, PType, ROLES, TYPE_COLOR, TYPE_NAME, bestMove, moveMult, passiveText, rosterOf,
   effectiveness,
 } from './data'
 import * as fx from './fx'
 import {
   Building, Game, Pos, Reach, Team, Unit, attack, buildingAt, canCapture, canCounter, canRecruit, canUsePower,
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
-  PHASES, WEATHER_NAME, canSee, flankers, footprint, phaseOf, resolvePath, weatherBonus, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
+  PHASES, STATUS_NAME, Status, WEATHER_NAME, canSee, flankers, footprint, freezable, freeze, isRecovery, phaseOf, recruitCost, resolvePath,
+  weatherBonus, wildAt, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
 } from './game'
 import { Place, initCutscenes, playBattle, playCapture } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
@@ -151,7 +152,7 @@ function makeTerrainLayer(g: Game) {
   const cell = (sx: number, sy: number) => g.tiles[sy >> 1]?.[sx >> 1]
   const put = (name: string, tx: number, ty: number, sx: number, sy: number) =>
     cx.drawImage(atlas, at[name].x + tx * 16, ty * 16, 16, 16, sx * 16, sy * 16, 16, 16)
-  const isWater = (x: number, y: number) => '~s'.includes(cell(x, y) ?? '~')
+  const isWater = (x: number, y: number) => '~si'.includes(cell(x, y) ?? '~')
   const isPath = (x: number, y: number) => '=B'.includes(cell(x, y) ?? '=')
   const open = (sx: number, sy: number) => {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (cell(sx + dx, sy + dy) !== '.') return false
@@ -210,6 +211,14 @@ function makeTerrainLayer(g: Game) {
       if (ch === 'T') { forestCells.push({ x, y }); piece(hash(x * 3 + 1, y * 5 + 2) < 0.5 ? 'oak' : 'tree', x, y) }
       if (ch === 'M') piece('rock', x, y)
       if (ch === 's') piece('stone', x, y)
+      if (ch === 'i') { // placa de hielo sobre el agua
+        ox.fillStyle = 'rgba(214, 240, 255, 0.86)'
+        ox.fillRect(x * T + 1, y * T + 1, T - 2, T - 2)
+        ox.fillStyle = '#ffffff'
+        for (const [a, b, w] of [[5, 7, 9], [16, 13, 11], [8, 22, 7], [20, 25, 6]]) ox.fillRect(x * T + a, y * T + b, w, 2)
+        ox.fillStyle = 'rgba(88, 152, 216, 0.5)'
+        ox.fillRect(x * T + 1, y * T + T - 4, T - 2, 3)
+      }
     }
   }
   overlayLayer = over
@@ -242,6 +251,7 @@ const buildingFlash = new Map<Building, number>()
 const faces: { face: string; timer: number }[] = [{ face: 'Normal', timer: 0 }, { face: 'Normal', timer: 0 }]
 const isAI: [boolean, boolean] = AUTO ? [true, true] : [false, true]
 let weatherShown = 'clear'
+let paintedVersion = 0, paintedGame: Game | null = null
 let fogOn = true
 const dayLight = [255, 255, 255, 0] // tinte actual del día (se acerca poco a poco al de la fase)
 
@@ -400,6 +410,19 @@ function drawUnit(u: Unit, time: number) {
     mapFx.add({ img: 'ripple', fps: 7, x: x + 16, y: y + 24, max: 700, scale: 1, behind: true })
   }
 
+  if (u.status && !moving) { // chapa del estado
+    ctx.fillStyle = '#10141c'
+    ctx.fillRect(x + 1, y + 1, 9, 9)
+    ctx.fillStyle = STATUS_COLOR[u.status]
+    ctx.fillRect(x + 2, y + 2, 7, 7)
+    if (u.status === 'sleep' && Math.random() < 0.03) label(u, 'z', 'heal')
+  }
+  for (let i = 1; i < u.level && !moving; i++) { // galones de nivel
+    ctx.fillStyle = '#10141c'
+    ctx.fillRect(x + T - 2 - i * 6, y + 1, 6, 5)
+    ctx.fillStyle = '#ffd84a'
+    ctx.fillRect(x + T - 1 - i * 6, y + 2, 4, 3)
+  }
   if (u.hp < 10 && !moving) {
     ctx.fillStyle = '#10141c'
     ctx.fillRect(x + 3, y + T - 3, T - 6, 4)
@@ -667,6 +690,11 @@ function draw(time: number) {
   mapFx.camera.y = cy0
   const who = viewer()
   if (who !== null) sight = visibleCells(g, who)
+  if (g.terrainVersion !== paintedVersion || paintedGame !== g) { // bosque quemado o río congelado: se repinta
+    paintedVersion = g.terrainVersion
+    paintedGame = g
+    terrainLayer = makeTerrainLayer(g)
+  }
 
   ctx.imageSmoothingEnabled = false
   ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -685,6 +713,14 @@ function draw(time: number) {
   const sway = Math.floor(time / 220) % 4
   for (const f of flowerSpots) ctx.drawImage(atlas, at.flowers.x + sway * 16, f.color * 16, 16, 16, f.x, f.y, 16, 16)
   ctx.drawImage(overlayLayer, 0, 0)
+  // Hierba que se agita: ahí se esconde un Pokémon salvaje
+  for (const w of g.wild) {
+    if (who !== null && !sight.has(key(w.x, w.y))) continue
+    const jig = Math.floor(time / 130 + w.x) % 6
+    const dx = jig === 0 ? -1 : jig === 2 ? 1 : 0
+    for (const [ox, oy] of [[0, 0], [16, 0], [0, 16], [16, 16]]) ctx.drawImage(atlas, at.tall.x, 0, 16, 16, w.x * T + ox + dx, w.y * T + oy - (jig < 3 ? 1 : 0), 16, 16)
+    if (Math.random() < 0.03) mapFx.fx('tall_grass', w.x * T + 16 + rnd(-6, 6), w.y * T + 16, { scale: 1, fps: 12 })
+  }
 
   // Casillas alcanzables: se abren como una onda desde la unidad y las recorre un brillo en diagonal
   if ((mode === 'move' || mode === 'inspect') && sel) {
@@ -802,6 +838,18 @@ function draw(time: number) {
   if (counting) refreshStatus()
 }
 
+/** Mueve y, si atrapa a un salvaje por el camino, lo celebra. */
+function moveCatch(game: Game, u: Unit, x: number, y: number) {
+  const caught = moveUnit(game, u, x, y)
+  if (!caught || titleOn) return
+  if (!shown(caught)) return
+  dropIn(caught)
+  label(caught, `¡${KINDS[caught.kind].name} salvaje atrapado!`, 'gold', 200)
+  sfx.captured()
+}
+
+const STATUS_COLOR: Record<Status, string> = { burn: '#f0803c', poison: '#a040a0', para: '#f8d030', sleep: '#a8b4cc', freeze: '#7ccfd8' }
+
 // ---------- Minimapa ----------
 
 const miniEl = $<HTMLCanvasElement>('#minimap')
@@ -910,6 +958,11 @@ function turnStartFx(hpBefore: Map<number, number>) {
   }
   for (const u of g.units) {
     const gained = u.hp - (hpBefore.get(u.id) ?? u.hp)
+    if (gained < 0 && shown(u)) { // quemadura o veneno
+      label(u, `${gained} PS`, 'dmg', 300)
+      hurt(u, 300)
+    }
+    if (u.team === g.turn && u.moved && u.status && shown(u)) label(u, STATUS_NAME[u.status], 'heal', 500)
     if (gained <= 0) continue
     label(u, `+${gained} PS`, 'heal', 300)
     fx.burst(...center(u), { n: 10, colors: ['#70f088', '#d0ffd8'], speed: 1, life: 700, size: 3, up: 1.2 })
@@ -1226,10 +1279,10 @@ function refreshInfo() {
     const k = KINDS[u.kind]
     infoEl.className = `t${u.team}`
     infoEl.innerHTML = `<img class="mug" src="${facePath(k.species)}">
-      <div class="who" title="${ROLES[k.role].name}: ${ROLES[k.role].help}"><b>${k.name}</b><i class="ty" style="background-position:0 -${TYPE_ICON[k.type] * 19}px" title="${TYPE_NAME[k.type]}"></i></div>
+      <div class="who" title="${ROLES[k.role].name}: ${ROLES[k.role].help}"><b>${k.name}</b>${k.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px" title="${TYPE_NAME[t]}"></i>`).join('')}<small>Nv.${u.level}${u.status ? ` · <em style="color:${STATUS_COLOR[u.status]}">${STATUS_NAME[u.status]}</em>` : ''}</small></div>
       <div class="hpline"><div class="hpbar"><i style="width:${u.hp * 9.6}px;background-position:0 -${u.hp > 5 ? 0 : u.hp > 2 ? 8 : 16}px"></i></div>${u.hp}/10</div>
       <div class="line"><span>ATQ ${miniBar(k.atk, 2)}</span><span>DEF ${miniBar(k.def, 2)}</span><span>MOV ${moveRange(g, u)}</span><span>${ROLES[k.role].name}</span></div>`
-    infoEl.title = [MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.evolves ? `evoluciona a ${KINDS[k.evolves].name}` : '',
+    infoEl.title = [`Ataques: ${k.moves.map((m) => ATTACK_NAME[m]).join(' y ')}`, MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.evolves ? `evoluciona a ${KINDS[k.evolves].name}` : '',
       isRanged(u) ? 'no puede moverse y atacar en el mismo turno' : ''].filter(Boolean).join(' · ')
   } else if (b) {
     const info = BUILDING_INFO[b.type]
@@ -1339,7 +1392,7 @@ function showTitle() {
     for (let tries = 0; tries < 60; tries++) {
       const x = Math.floor(Math.random() * demo.w), y = Math.floor(Math.random() * demo.h)
       if (!'.="'.includes(demo.tiles[y][x]) || unitAt(demo, x, y)) continue
-      demo.units.push({ id: demo.nextId++, kind, team: (i % 2) as Team, x, y, hp: 10, moved: false })
+      demo.units.push({ id: demo.nextId++, kind, team: (i % 2) as Team, x, y, hp: 10, moved: false, xp: 0, level: 1, status: null, statusTurns: 0 })
       break
     }
   })
@@ -1363,7 +1416,7 @@ function showTitle() {
         const to = pick(spots)
         await animateMove(u, pathTo(reachable(demo, u, 3), to.x, to.y))
         if (g !== demo) break
-        moveUnit(demo, u, to.x, to.y)
+        moveCatch(demo, u, to.x, to.y)
         animPos.delete(u.id)
       }
       await sleep(500)
@@ -1466,6 +1519,16 @@ async function battle(att: Unit, def: Unit) {
   await engage(att, def)
   const res = attack(g, att, def)
   if (AUTO) return
+  if (KINDS[a.kind].heals) { // el de apoyo no pelea: duerme al rival, sin escena de combate
+    if (res.status) {
+      label(d, '¡Dormido!', 'heal')
+      for (let i = 0; i < 3; i++) label(d, 'z', 'heal', 250 + i * 220)
+      mapFx.add({ ring: 22, size: 4, color: '#c8d0f0', x: d.x * T + 16, y: d.y * T + 16, max: 500 })
+      sfx.heal()
+    } else label(d, 'No le afecta', 'dmg')
+    await sleep(600)
+    return
+  }
   talkEl.hidden = true
   music.play('battle')
   await playBattle({
@@ -1476,6 +1539,11 @@ async function battle(att: Unit, def: Unit) {
 
   label(d, `-${res.dmg}`, 'dmg')
   if (res.crit) label(d, '¡Crítico!', 'gold', 200)
+  if (res.status && g.units.includes(def)) label(d, `¡${STATUS_NAME[res.status]}!`, 'gold', 420)
+  if (res.burned) { // el fuego se ha llevado el bosque o la hierba
+    for (let i = 0; i < 4; i++) mapFx.fx('fire', d.x * T + 8 + (i % 2) * 16, d.y * T + 8 + (i >> 1) * 14, { scale: 1, fps: 12, delay: i * 70 })
+    label(d, '¡Arde!', 'dmg', 600)
+  }
   if (g.units.includes(def)) hurt(def)
   else koFx(d, d.team)
   if (res.counter !== null) {
@@ -1532,7 +1600,7 @@ function placeNear(el: HTMLElement, p: Pos) {
   el.style.top = Math.max(4, Math.min(sy * scale, canvas.height * scale - el.offsetHeight - 8)) + 'px'
 }
 
-const ICON: Record<string, [string, string]> = { Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
+const ICON: Record<string, [string, string]> = { Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Congelar: ['❄', 'ice'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
 
 function openMenu() {
   mode = 'menu'
@@ -1546,12 +1614,24 @@ function openMenu() {
       mode = 'busy'
       menuEl.hidden = true
       pending = null
-      moveUnit(g, u, at.x, at.y)
+      moveCatch(g, u, at.x, at.y)
       await doCapture(u, buildingAt(g, at.x, at.y)!)
       finish()
     }])
   }
-  items.push(['Esperar', () => { moveUnit(g, u, at.x, at.y); u.moved = true; sfx.confirm(); finish() }])
+  if (freezable(g, u, at).length) {
+    items.push(['Congelar', () => {
+      moveCatch(g, u, at.x, at.y)
+      for (const p of freeze(g, u)) {
+        mapFx.add({ ring: 20, size: 4, color: '#d6f0ff', x: p.x * T + 16, y: p.y * T + 16, max: 500 })
+        fx.burst(p.x * T + 16, p.y * T + 16, { n: 12, colors: ['#fff', '#b8f0f8'], speed: 1.6, life: 600, size: 3 })
+      }
+      label(at, '¡Río congelado!', 'heal')
+      sfx.cast()
+      finish()
+    }])
+  }
+  items.push(['Esperar', () => { moveCatch(g, u, at.x, at.y); u.moved = true; sfx.confirm(); finish() }])
   items.push(['Cancelar', cancel])
   menuEl.replaceChildren(...items.map(([text, fn], i) => {
     const btn = document.createElement('button')
@@ -1593,9 +1673,10 @@ function openRecruit(b: Building) {
   const funds = g.funds[g.turn]
   const RECRUITABLE = rosterOf(g.co[g.turn]) // el Pokémon de cada rol de tu comandante
   const full = g.units.filter((u) => u.team === g.turn).length >= MAX_UNITS
+  const cost = (kind: string) => recruitCost(g, kind) // la mitad si es recuperar a un debilitado
   const cells = RECRUITABLE.map((kind: string) => {
     const cell = document.createElement('button')
-    cell.className = 'cell' + (KINDS[kind].cost > funds ? ' locked' : '')
+    cell.className = 'cell' + (cost(kind) > funds ? ' locked' : '')
     cell.innerHTML = '<canvas width="50" height="44"></canvas>'
     grid.append(cell)
     return { kind, cell, cx: cell.querySelector('canvas')!.getContext('2d')! }
@@ -1603,7 +1684,7 @@ function openRecruit(b: Building) {
   let current = -1
   const pickUp = (i: number) => {
     const kind = RECRUITABLE[i], k2 = KINDS[kind]
-    if (k2.cost > funds || full || unitAt(g, b.x, b.y)) { // no llega el dinero o el equipo está completo: la caja dice que no
+    if (cost(kind) > funds || full || unitAt(g, b.x, b.y)) { // no llega el dinero o el equipo está completo: la caja dice que no
       sfx.error()
       restart(recruitEl.firstElementChild!, 'nope')
       return
@@ -1622,14 +1703,14 @@ function openRecruit(b: Building) {
     hand.style.left = cell.offsetLeft + grid.offsetLeft + 14 + 'px'
     hand.style.top = cell.offsetTop + grid.offsetTop - 26 + 'px'
     sfx.cursor()
-    const can = k2.cost <= funds
+    const can = cost(kind) <= funds
     q('.ttl').textContent = `${k2.name} · ${ROLES[k2.role].name}`
-    q('.r1').innerHTML = `<span>Coste</span><b class="${can ? '' : 'bad'}">${k2.cost}₽</b>`
-    q('.r2').innerHTML = `<i class="ty" style="background-position:0 -${TYPE_ICON[k2.type] * 19}px"></i><span>${TYPE_NAME[k2.type]}</span><b>${MOVE_LABEL[k2.move]}</b>`
+    q('.r1').innerHTML = `<span>${isRecovery(g, kind) ? 'Recuperar' : 'Coste'}</span><b class="${can ? '' : 'bad'}">${cost(kind)}₽</b>`
+    q('.r2').innerHTML = `<span class="tys">${k2.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px" title="${TYPE_NAME[t]}"></i>`).join('')}</span><span>${k2.moves.map((m) => TYPE_NAME[m]).join(' + ')}</span>`
     q('.r3').innerHTML = `<span>ATQ ${miniBar(k2.atk, 2)}</span><span>DEF ${miniBar(k2.def, 2)}</span>`
     q('.r4').innerHTML = `<span>MOV ${k2.mv}</span><span>${k2.capture ? 'Captura' : k2.heals ? 'Cura' : k2.range[1] > 1 ? `Alcance ${k2.range.join('-')}` : k2.evolves ? `→ ${KINDS[k2.evolves].name}` : ''}</span>`
     q('.hdr').textContent = ROLES[k2.role].help
-    go.innerHTML = full ? 'EQUIPO COMPLETO' : can ? `RECLUTAR <b>${k2.cost}₽</b>` : `FALTAN ${k2.cost - funds}₽`
+    go.innerHTML = full ? 'EQUIPO COMPLETO' : can ? `${isRecovery(g, kind) ? 'RECUPERAR' : 'RECLUTAR'} <b>${cost(kind)}₽</b>` : `FALTAN ${cost(kind) - funds}₽`
     go.classList.toggle('bad', !can || full)
     restart(q('.spr'), 'swap')
   }
@@ -1699,7 +1780,7 @@ async function click(p: Pos) {
     animPos.delete(unit.id)
     if (ambushed) { // había un rival escondido en la niebla: se queda ahí y pierde el turno
       const end = path[path.length - 1]
-      moveUnit(g, unit, end.x, end.y)
+      moveCatch(g, unit, end.x, end.y)
       unit.moved = true
       label(end, '¡Emboscada!', 'dmg')
       sfx.ambush()
@@ -1714,7 +1795,7 @@ async function click(p: Pos) {
     mode = 'busy'
     forecastEl.hidden = true
     refreshPanel()
-    moveUnit(g, unit, pending!.x, pending!.y)
+    moveCatch(g, unit, pending!.x, pending!.y)
     pending = null
     await battle(unit, u)
     finish()
@@ -1726,13 +1807,14 @@ function showForecast() {
   if (!t) return void (forecastEl.hidden = true)
   const here = { ...sel!, ...pending! }
   const dmg = damage(g, here, t)
-  const eff = effectiveness(KINDS[here.kind].type, KINDS[t.kind].type)
+  const move = bestMove(here.kind, t.kind)
+  const eff = moveMult(here.kind, move, t.kind)
   const back = dmg < t.hp && canCounter(here, t) ? damage(g, { ...t, hp: t.hp - dmg }, here) : null
   forecastEl.innerHTML = `<div class="row"><b class="out">−${dmg}</b><span>${KINDS[t.kind].name}${dmg >= t.hp ? ' · <em>¡K.O.!</em>' : ''}</span></div>
     ${back !== null ? `<div class="row"><b class="in">−${back}</b><span>contraataque</span></div>` : ''}
-    ${eff !== 1 ? `<div class="eff ${eff > 1 ? 'good' : 'bad'}">${eff > 1 ? '▲ Súper eficaz' : '▼ Poco eficaz'}</div>` : ''}
+    <div class="eff ${eff > 1.05 ? 'good' : eff < 0.9 ? 'bad' : ''}">${ATTACK_NAME[move]} · ${eff > 1.05 ? '▲ súper eficaz' : eff < 0.4 ? '▼ casi no le afecta' : eff < 0.9 ? '▼ poco eficaz' : 'normal'}</div>
     ${flankers(g, here, t) ? `<div class="eff good">▲ Flanqueo +${flankers(g, here, t) * 10}%</div>` : ''}
-    ${weatherBonus(g, KINDS[here.kind].type) !== 1 ? `<div class="eff ${weatherBonus(g, KINDS[here.kind].type) > 1 ? 'good' : 'bad'}">${WEATHER_NAME[g.weather]}</div>` : ''}`
+    ${weatherBonus(g, move) !== 1 ? `<div class="eff ${weatherBonus(g, move) > 1 ? 'good' : 'bad'}">${WEATHER_NAME[g.weather]}</div>` : ''}`
   placeNear(forecastEl, t)
 }
 
@@ -1780,7 +1862,7 @@ async function runAI() {
   }
   for (const u of g.units.filter((u) => u.team === g.turn)) {
     if (g.winner !== null) break
-    if (!g.units.includes(u)) continue
+    if (!g.units.includes(u) || u.moved) continue // dormidos y congelados pierden el turno
     const plan = planUnit(g, u)
     const { path, ambushed } = resolvePath(g, u, pathTo(reachable(g, u), plan.to.x, plan.to.y))
     const end = path[path.length - 1]
@@ -1793,7 +1875,7 @@ async function runAI() {
       follow(end)
       await animateMove(u, path)
     }
-    moveUnit(g, u, end.x, end.y)
+    moveCatch(g, u, end.x, end.y)
     animPos.delete(u.id)
     if (ambushed) {
       u.moved = true

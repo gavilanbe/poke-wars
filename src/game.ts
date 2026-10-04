@@ -1,12 +1,19 @@
 // Estado y reglas, sin nada de DOM (se puede simular desde node: tools/sim.ts).
 import {
   BUILDINGS, BUILDING_INFO, BuildingType, CAPTURE_POINTS, COMMANDERS, KINDS, MAP, MAX_UNITS, POWER_COST, ROLE_ORDER, START_UNITS, TUNE,
-  TERRAIN, Terrain, rosterOf,
-  effectiveness,
+  PType, ROLES, TERRAIN, Terrain, bestMove, moveMult, rosterOf,
 } from './data'
 
 export type Team = 0 | 1
-export interface Unit { id: number; kind: string; team: Team; x: number; y: number; hp: number; moved: boolean }
+export type Status = 'burn' | 'poison' | 'para' | 'sleep' | 'freeze'
+export const STATUS_NAME: Record<Status, string> = { burn: 'Quemado', poison: 'Envenenado', para: 'Paralizado', sleep: 'Dormido', freeze: 'Congelado' }
+export interface Unit {
+  id: number; kind: string; team: Team; x: number; y: number; hp: number; moved: boolean
+  xp: number; level: number // nivel 1 a 3: al 2 evoluciona, al 3 es veterano
+  status: Status | null; statusTurns: number
+}
+/** Un Pokémon debilitado no desaparece: vuelve al Centro y se puede recuperar a mitad de precio, con su nivel. */
+export interface Fainted { kind: string; xp: number; level: number }
 export interface Building { x: number; y: number; type: BuildingType; owner: -1 | Team; cap: number }
 export interface Game {
   w: number
@@ -24,6 +31,9 @@ export interface Game {
   power: [boolean, boolean] // poder activo hasta el siguiente turno propio
   fog: boolean // niebla de guerra: solo se ve lo que queda cerca de tus Pokémon y edificios
   weather: Weather
+  fainted: [Fainted[], Fainted[]]
+  wild: { x: number; y: number; kind: string }[] // Pokémon salvajes escondidos en la hierba alta
+  terrainVersion: number // sube cuando cambia el terreno (bosque quemado, río congelado) para repintar el mapa
 }
 
 export type Weather = 'clear' | 'rain' | 'sun'
@@ -38,7 +48,7 @@ export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog 
   const g: Game = {
     w: MAP[0].length, h: MAP.length, tiles: [], units: [], buildings: [],
     turn: 0, day: 1, funds: [0, 0], winner: null, nextId: 1,
-    co, meter: [0, 0], power: [false, false], fog, weather: 'clear',
+    co, meter: [0, 0], power: [false, false], fog, weather: 'clear', fainted: [[], []], wild: [], terrainVersion: 0,
   }
   g.tiles = MAP.map((row) => [...row])
   for (const def of BUILDINGS) {
@@ -48,10 +58,22 @@ export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog 
     g.buildings.push(building)
   }
   for (const u of START_UNITS) addUnit(g, rosterOf(co[u.team])[ROLE_ORDER.indexOf(u.role)], u.team, u.x, u.y).moved = false
+  // Salvajes: tres en la mitad izquierda y sus espejos en la derecha
+  const grass: Pos[] = []
+  for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w / 2; x++) if (g.tiles[y][x] === '"') grass.push({ x, y })
+  for (let i = 0; i < 3 && grass.length; i++) {
+    const [p] = grass.splice(Math.floor(Math.random() * grass.length), 1)
+    g.wild.push({ ...p, kind: randomWild() }, { x: g.w - 1 - p.x, y: p.y, kind: randomWild() })
+  }
   g.funds[0] += income(g, 0)
   g.funds[1] += SECOND_PLAYER_BONUS // quien mueve segundo empieza con algo más de dinero para compensar
   return g
 }
+
+// Los salvajes son formas base baratas de cualquier equipo que anden por tierra
+const WILD_KINDS = Object.keys(KINDS).filter((k) => KINDS[k].cost > 0 && KINDS[k].cost <= 4500 && KINDS[k].move === 'walk' && !KINDS[k].heals)
+const randomWild = () => WILD_KINDS[Math.floor(Math.random() * WILD_KINDS.length)]
+export const wildAt = (g: Game, x: number, y: number) => g.wild.find((w) => w.x === x && w.y === y)
 
 export const SECOND_PLAYER_BONUS = 4500
 export const key = (x: number, y: number) => y * 100 + x
@@ -71,7 +93,7 @@ export function footprint(b: { type: BuildingType; x: number; y: number }): Pos[
 export const dist = (a: Pos, b: Pos) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
 
 function addUnit(g: Game, kind: string, team: Team, x: number, y: number): Unit {
-  const u: Unit = { id: g.nextId++, kind, team, x, y, hp: 10, moved: true }
+  const u: Unit = { id: g.nextId++, kind, team, x, y, hp: 10, moved: true, xp: 0, level: KINDS[kind].cost ? 1 : 2, status: null, statusTurns: 0 }
   g.units.push(u)
   return u
 }
@@ -79,7 +101,10 @@ function addUnit(g: Game, kind: string, team: Team, x: number, y: number): Unit 
 /** Modificador del comandante: 0 ataque, 1 defensa, 2 movimiento. */
 const coMod = (g: Game, team: Team, stat: 'atk' | 'def' | 'mv') =>
   COMMANDERS[g.co[team]][stat][g.power[team] ? 1 : 0] * (stat === 'mv' ? 1 : TUNE[g.co[team]])
-export const moveRange = (g: Game, u: Unit) => KINDS[u.kind].mv + coMod(g, u.team, 'mv')
+export const moveRange = (g: Game, u: Unit) => {
+  const mv = KINDS[u.kind].mv + coMod(g, u.team, 'mv')
+  return u.status === 'para' ? Math.ceil(mv / 2) : mv // paralizado: la mitad
+}
 
 // ---------- Niebla de guerra ----------
 
@@ -187,45 +212,75 @@ export function targetsFrom(g: Game, u: Unit, from: Pos): Unit[] {
 export const flankers = (g: Game, att: Unit, def: Unit) =>
   Math.min(2, g.units.filter((o) => o.team === att.team && o.id !== att.id && dist(o, def) === 1).length)
 
-/** El sol aviva el fuego y apaga el agua; la lluvia, al revés. */
+/** El sol aviva el fuego y apaga el agua; la lluvia, al revés, y además carga los ataques eléctricos. */
 export function weatherBonus(g: Game, type: string): number {
   if (g.weather === 'sun') return type === 'fire' ? 1.2 : type === 'water' ? 0.8 : 1
-  if (g.weather === 'rain') return type === 'water' ? 1.2 : type === 'fire' ? 0.8 : 1
+  if (g.weather === 'rain') return type === 'water' || type === 'electric' ? 1.2 : type === 'fire' ? 0.8 : 1
   return 1
 }
 
+/** Veteranía: el nivel 3 da un 10%; un nivel 2 sin evolución, un 15% (lo que ganaría evolucionando). */
+const levelBonus = (u: Unit) => (u.level >= 3 ? 1.1 : 1) * (u.level >= 2 && KINDS[u.kind].evolves === undefined && KINDS[u.kind].cost > 0 ? 1.15 : 1)
+
 export function damage(g: Game, att: Unit, def: Unit, attHp = att.hp, crit = false): number {
   const a = KINDS[att.kind], d = KINDS[def.kind]
+  if (a.heals) return 0 // el de apoyo no hace daño: duerme
+  const move = bestMove(att.kind, def.kind)
   const stars = d.move === 'fly' ? 0 : terrainAt(g, def.x, def.y).def
-  const co = coMod(g, att.team, 'atk') / coMod(g, def.team, 'def')
-  const extra = (1 + 0.1 * flankers(g, att, def)) * weatherBonus(g, a.type) * (crit ? 1.5 : 1)
-  const raw = co * extra * (a.atk / d.def) * 5 * effectiveness(a.type, d.type) * (attHp / 10) * (1 - 0.1 * stars)
+  const co = (coMod(g, att.team, 'atk') * levelBonus(att)) / (coMod(g, def.team, 'def') * levelBonus(def))
+  const extra = (1 + 0.1 * flankers(g, att, def)) * weatherBonus(g, move) * (crit ? 1.5 : 1)
+  const raw = co * extra * (a.atk / d.def) * 5 * moveMult(att.kind, move, def.kind) * (attHp / 10) * (1 - 0.1 * stars)
   return Math.max(0, Math.min(def.hp, Math.round(raw)))
 }
 
-/** ¿Puede `def` contraatacar a `att`? Solo cuerpo a cuerpo contra cuerpo a cuerpo. */
-export const canCounter = (att: Unit, def: Unit) => !isRanged(att) && !isRanged(def) && dist(att, def) === 1
+/** ¿Puede `def` contraatacar a `att`? Solo cuerpo a cuerpo contra cuerpo a cuerpo, y despierto. */
+export const canCounter = (att: Unit, def: Unit) =>
+  !isRanged(att) && !isRanged(def) && dist(att, def) === 1 && !KINDS[def.kind].heals && !KINDS[att.kind].heals && def.status !== 'sleep' && def.status !== 'freeze'
 
-export interface AttackResult { dmg: number; counter: number | null; evolved: Unit | null; crit: boolean }
+export interface AttackResult {
+  dmg: number; counter: number | null; evolved: Unit | null; crit: boolean
+  move: PType // el ataque que ha usado
+  status: Status | null // estado que le deja al defensor
+  burned: boolean // el fuego ha quemado el bosque o la hierba donde estaba el defensor
+}
 export const CRIT_CHANCE = 0.12
+// Probabilidad de dejar un estado según el tipo del ataque, y cuántos turnos dura
+const INFLICT: Partial<Record<PType, [Status, number, number]>> = {
+  fire: ['burn', 0.25, 3], poison: ['poison', 0.35, 3], electric: ['para', 0.25, 2], ice: ['freeze', 0.15, 1],
+}
 
 export function attack(g: Game, att: Unit, def: Unit): AttackResult {
   const crit = Math.random() < CRIT_CHANCE // golpe crítico: daño x1,5
-  const res: AttackResult = { dmg: damage(g, att, def, att.hp, crit), counter: null, evolved: null, crit }
+  const move = bestMove(att.kind, def.kind)
+  const res: AttackResult = { dmg: damage(g, att, def, att.hp, crit), counter: null, evolved: null, crit, move, status: null, burned: false }
   def.hp -= res.dmg
   charge(g, att.team, res.dmg * 0.5)
   charge(g, def.team, res.dmg)
+  // El fuego arrasa el bosque o la hierba alta donde está el rival
+  if (move === 'fire' && !KINDS[att.kind].heals && 'T"'.includes(g.tiles[def.y][def.x])) {
+    g.tiles[def.y][def.x] = '.'
+    g.wild = g.wild.filter((w) => w.x !== def.x || w.y !== def.y)
+    g.terrainVersion++
+    res.burned = true
+  }
   if (def.hp <= 0) {
     kill(g, def)
-    res.evolved = evolve(att)
-  } else if (canCounter(att, def)) {
-    res.counter = damage(g, def, att)
-    att.hp -= res.counter
-    charge(g, def.team, res.counter * 0.5)
-    charge(g, att.team, res.counter)
-    if (att.hp <= 0) {
-      kill(g, att)
-      res.evolved = evolve(def)
+    res.evolved = gainXp(att, res.dmg + 5)
+  } else {
+    // Estados: el de apoyo duerme siempre; los ataques de fuego, veneno, eléctricos y de hielo, a veces
+    const inflict: [Status, number, number] | undefined = KINDS[att.kind].heals ? ['sleep', 1, 1] : INFLICT[move]
+    if (inflict && !def.status && Math.random() < inflict[1]) {
+      def.status = res.status = inflict[0]
+      def.statusTurns = inflict[2]
+    }
+    res.evolved = gainXp(att, res.dmg)
+    if (canCounter(att, def)) {
+      res.counter = damage(g, def, att)
+      att.hp -= res.counter
+      charge(g, def.team, res.counter * 0.5)
+      charge(g, att.team, res.counter)
+      if (att.hp <= 0) kill(g, att)
+      res.evolved = gainXp(def, res.counter + (att.hp <= 0 ? 5 : 0)) ?? (att.hp > 0 ? res.evolved : null)
     }
   }
   att.moved = true
@@ -233,15 +288,23 @@ export function attack(g: Game, att: Unit, def: Unit): AttackResult {
   return res
 }
 
-function evolve(u: Unit): Unit | null {
-  const next = KINDS[u.kind].evolves
-  if (!next) return null
-  u.kind = next
-  return u
+export const XP_LEVEL = [0, 10, 26] // experiencia para nivel 2 y nivel 3
+
+/** Suma experiencia (PS de daño hechos, +5 por debilitar). Devuelve la unidad si evoluciona. */
+function gainXp(u: Unit, amount: number): Unit | null {
+  u.xp += amount
+  let evolved: Unit | null = null
+  while (u.level < 3 && u.xp >= XP_LEVEL[u.level]) {
+    u.level++
+    const next = KINDS[u.kind].evolves
+    if (u.level === 2 && next) { u.kind = next; evolved = u }
+  }
+  return evolved
 }
 
 function kill(g: Game, u: Unit) {
   g.units = g.units.filter((o) => o !== u)
+  g.fainted[u.team].push({ kind: u.kind, xp: u.xp, level: u.level })
   const b = buildingAt(g, u.x, u.y)
   if (b) b.cap = CAPTURE_POINTS
 }
@@ -253,12 +316,41 @@ function checkRout(g: Game) {
   }
 }
 
-export function moveUnit(g: Game, u: Unit, x: number, y: number) {
-  if (u.x === x && u.y === y) return
+/**
+ * Mueve la unidad. Si es de las que capturan y entra en hierba alta donde se escondía un salvaje, lo atrapa: el
+ * salvaje se une al equipo en una casilla de al lado. Devuelve el Pokémon atrapado, si lo hay.
+ */
+export function moveUnit(g: Game, u: Unit, x: number, y: number): Unit | null {
+  if (u.x === x && u.y === y) return null
   const b = buildingAt(g, u.x, u.y)
   if (b) b.cap = CAPTURE_POINTS
   u.x = x
   u.y = y
+  const wild = wildAt(g, x, y)
+  if (!wild || !KINDS[u.kind].capture || g.units.filter((o) => o.team === u.team).length >= MAX_UNITS) return null
+  const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
+    .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && !unitAt(g, p.x, p.y))
+  if (!spot) return null
+  g.wild = g.wild.filter((w) => w !== wild)
+  const caught = addUnit(g, wild.kind, u.team, spot.x, spot.y)
+  caught.hp = 6
+  return caught
+}
+
+/** ¿Puede congelar el agua de alrededor? Solo quien tenga un ataque de hielo, y si hay agua libre al lado. */
+export function freezable(g: Game, u: Unit, at: Pos = u): Pos[] {
+  if (!KINDS[u.kind].moves.includes('ice')) return []
+  return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: at.x + dx, y: at.y + dy }))
+    .filter((p) => g.tiles[p.y]?.[p.x] === '~' && !unitAt(g, p.x, p.y))
+}
+
+/** Congela el agua de alrededor: se puede cruzar a pie hasta que salga el sol. Gasta el turno. */
+export function freeze(g: Game, u: Unit): Pos[] {
+  const cells = freezable(g, u)
+  for (const p of cells) g.tiles[p.y][p.x] = 'i'
+  if (cells.length) g.terrainVersion++
+  u.moved = true
+  return cells
 }
 
 export function canCapture(g: Game, u: Unit, at: Pos = u): boolean {
@@ -278,15 +370,27 @@ export function capture(g: Game, u: Unit): boolean {
   return true
 }
 
+/** Un debilitado del mismo rol esperando en el Centro, si lo hay. */
+const benched = (g: Game, kind: string) => g.fainted[g.turn].find((f) => KINDS[f.kind].role === KINDS[kind].role && KINDS[f.kind].commander === KINDS[kind].commander)
+/** Lo que cuesta traer ese Pokémon: la mitad si es recuperar a uno debilitado. */
+export const recruitCost = (g: Game, kind: string) => (benched(g, kind) ? KINDS[kind].cost / 2 : KINDS[kind].cost)
+export const isRecovery = (g: Game, kind: string) => !!benched(g, kind)
+
 /** Solo se reclutan los Pokémon del comandante propio, con dinero, la puerta libre y sin pasar del tope de unidades. */
 export function canRecruit(g: Game, b: Building, kind: string): boolean {
-  return b.type === 'center' && b.owner === g.turn && !unitAt(g, b.x, b.y) && g.funds[g.turn] >= KINDS[kind].cost &&
+  return b.type === 'center' && b.owner === g.turn && !unitAt(g, b.x, b.y) && g.funds[g.turn] >= recruitCost(g, kind) &&
     KINDS[kind].commander === g.co[g.turn] && KINDS[kind].cost > 0 && g.units.filter((u) => u.team === g.turn).length < MAX_UNITS
 }
 
 export function recruit(g: Game, b: Building, kind: string): Unit {
-  g.funds[g.turn] -= KINDS[kind].cost
-  return addUnit(g, kind, g.turn, b.x, b.y)
+  g.funds[g.turn] -= recruitCost(g, kind)
+  const back = benched(g, kind)
+  if (!back) return addUnit(g, kind, g.turn, b.x, b.y)
+  g.fainted[g.turn].splice(g.fainted[g.turn].indexOf(back), 1)
+  const u = addUnit(g, back.kind, g.turn, b.x, b.y) // vuelve con su evolución y su experiencia
+  u.xp = back.xp
+  u.level = back.level
+  return u
 }
 
 function charge(g: Game, team: Team, amount: number) {
@@ -318,15 +422,37 @@ export function usePower(g: Game): { unit: Unit; hp: number }[] {
 }
 
 export function endTurn(g: Game) {
+  for (const u of g.units) if (u.team === g.turn && (u.status === 'sleep' || u.status === 'freeze') && u.statusTurns <= 0) u.status = null
   g.turn = (1 - g.turn) as Team
   g.power[g.turn] = false
   // El tiempo cambia cada tres días
   if (g.turn === 0 && g.day % 3 === 0) g.weather = (['clear', 'rain', 'sun', 'clear'] as Weather[])[Math.floor(Math.random() * 4)]
   if (g.turn === 0) g.day++
+  if (g.turn === 0 && g.weather === 'sun') { // el sol derrite el hielo
+    let melted = false
+    for (const row of g.tiles) for (let x = 0; x < row.length; x++) if (row[x] === 'i' && !g.units.some((u) => u.x === x && g.tiles[u.y] === row)) { row[x] = '~'; melted = true }
+    if (melted) g.terrainVersion++
+  }
+  if (g.turn === 0 && g.day % 4 === 0) { // cada cuatro días aparece otro salvaje en la hierba alta
+    const free: Pos[] = []
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.tiles[y][x] === '"' && !unitAt(g, x, y) && !wildAt(g, x, y)) free.push({ x, y })
+    if (free.length && g.wild.length < 8) g.wild.push({ ...free[Math.floor(Math.random() * free.length)], kind: randomWild() })
+  }
   g.funds[g.turn] += income(g, g.turn)
   for (const u of g.units) {
     u.moved = false
-    if (u.team === g.turn && buildingAt(g, u.x, u.y)?.owner === u.team) u.hp = Math.min(10, u.hp + 2)
+    if (u.team !== g.turn) continue
+    const tile = g.tiles[u.y][u.x], k = KINDS[u.kind]
+    if (buildingAt(g, u.x, u.y)?.owner === u.team) { // en un edificio propio: cura y quita estados
+      u.hp = Math.min(10, u.hp + 2)
+      u.status = null
+    }
+    // Cada tipo en su terreno: los de agua se curan en el agua y los de planta, en la hierba y el bosque
+    if ((k.types.includes('water') && '~s'.includes(tile)) || (k.types.includes('grass') && 'T"'.includes(tile))) u.hp = Math.min(10, u.hp + 1)
+    // Estados
+    if (u.status === 'burn' || u.status === 'poison') u.hp = Math.max(1, u.hp - 1)
+    if (u.status === 'sleep' || u.status === 'freeze') u.moved = true // pierde este turno
+    if (u.status && --u.statusTurns <= 0 && u.status !== 'sleep' && u.status !== 'freeze') u.status = null
   }
   // Los de apoyo curan 2 PS a cada aliado que tengan pegado (una vez por aliado)
   const healers = g.units.filter((u) => u.team === g.turn && KINDS[u.kind].heals)

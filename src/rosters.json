@@ -1,66 +1,66 @@
 {
   "pikachu": {
-    "capturador": ["mareep", "flaaffy", "electric"], "asaltante": ["elekid", "electabuzz", "electric"],
-    "explorador": ["electrike", "manectric", "electric"], "luchador": ["zigzagoon", "linoone", "normal"],
-    "coloso": ["munchlax", "snorlax", "normal"], "tirador": ["magnemite", "magneton", "steel"],
-    "artillero": ["porygon", "porygon2", "normal"], "volador": ["taillow", "swellow", "flying"],
-    "bombardero": ["starly", "staraptor", "flying"], "nadador": ["chinchou", "lanturn", "water"],
-    "apoyo": ["happiny", "chansey", "normal"]
+    "capturador": ["mareep", "flaaffy", "electric", "grass"], "asaltante": ["elekid", "electabuzz", "electric", "ice"],
+    "explorador": ["electrike", "manectric", "electric", "fire"], "luchador": ["zigzagoon", "linoone", "normal", "water"],
+    "coloso": ["munchlax", "snorlax", "normal", "ground"], "tirador": ["magnemite", "magneton", "electric/steel"],
+    "artillero": ["porygon", "porygon2", "normal", "psychic"], "volador": ["taillow", "swellow", "normal/flying"],
+    "bombardero": ["starly", "staraptor", "normal/flying"], "nadador": ["chinchou", "lanturn", "water/electric"],
+    "apoyo": ["happiny", "chansey", "normal", "fairy"]
   },
   "charizard": {
-    "capturador": ["torchic", "combusken", "fire"], "asaltante": ["machop", "machoke", "fighting"],
-    "explorador": ["growlithe", "arcanine", "fire"], "luchador": ["magby", "magmar", "fire"],
-    "coloso": ["numel", "camerupt", "ground"], "tirador": ["vulpix", "ninetales", "fire"],
-    "artillero": ["houndour", "houndoom", "dark"], "volador": ["swablu", "altaria", "dragon"],
-    "bombardero": ["bagon", "salamence", "dragon"], "nadador": ["horsea", "kingdra", "dragon"],
-    "apoyo": ["torkoal", null, "fire"]
+    "capturador": ["torchic", "combusken", "fire/fighting"], "asaltante": ["machop", "machoke", "fighting", "rock"],
+    "explorador": ["growlithe", "arcanine", "fire", "electric"], "luchador": ["magby", "magmar", "fire", "psychic"],
+    "coloso": ["numel", "camerupt", "fire/ground"], "tirador": ["vulpix", "ninetales", "fire", "grass"],
+    "artillero": ["houndour", "houndoom", "dark/fire"], "volador": ["swablu", "altaria", "dragon/flying"],
+    "bombardero": ["bagon", "salamence", "dragon/flying"], "nadador": ["horsea", "kingdra", "water/dragon"],
+    "apoyo": ["torkoal", null, "fire", "ground"]
   },
   "blastoise": {
-    "capturador": ["mudkip", "marshtomp", "ground"], "asaltante": ["aron", "lairon", "steel"],
-    "explorador": ["buizel", "floatzel", "water"], "luchador": ["marill", "azumarill", "water"],
-    "coloso": ["spheal", "walrein", "ice"], "tirador": ["staryu", "starmie", "water"],
-    "artillero": ["snover", "abomasnow", "ice"], "volador": ["wingull", "pelipper", "flying"],
-    "bombardero": ["articuno", null, "ice"], "nadador": ["wailmer", "wailord", "water"],
-    "apoyo": ["smoochum", "jynx", "ice"]
+    "capturador": ["mudkip", "marshtomp", "water/ground"], "asaltante": ["aron", "lairon", "steel/rock"],
+    "explorador": ["buizel", "floatzel", "water", "ice"], "luchador": ["marill", "azumarill", "water/fairy"],
+    "coloso": ["spheal", "walrein", "ice/water"], "tirador": ["staryu", "starmie", "water/psychic"],
+    "artillero": ["snover", "abomasnow", "grass/ice"], "volador": ["wingull", "pelipper", "water/flying"],
+    "bombardero": ["articuno", null, "ice/flying"], "nadador": ["wailmer", "wailord", "water", "ice"],
+    "apoyo": ["smoochum", "jynx", "ice/psychic"]
   },
   "gengar": {
-    "capturador": ["poochyena", "mightyena", "dark"], "asaltante": ["croagunk", "toxicroak", "poison"],
-    "explorador": ["sneasel", "weavile", "dark"], "luchador": ["shuppet", "banette", "ghost"],
-    "coloso": ["duskull", "dusclops", "ghost"], "tirador": ["gastly", "haunter", "ghost"],
-    "artillero": ["koffing", "weezing", "poison"], "volador": ["zubat", "golbat", "poison"],
-    "bombardero": ["murkrow", "honchkrow", "dark"], "nadador": ["carvanha", "sharpedo", "dark"],
-    "apoyo": ["misdreavus", "mismagius", "ghost"]
+    "capturador": ["poochyena", "mightyena", "dark", "fairy"], "asaltante": ["croagunk", "toxicroak", "poison/fighting"],
+    "explorador": ["sneasel", "weavile", "dark/ice"], "luchador": ["shuppet", "banette", "ghost", "electric"],
+    "coloso": ["duskull", "dusclops", "ghost", "ice"], "tirador": ["gastly", "haunter", "ghost/poison"],
+    "artillero": ["koffing", "weezing", "poison", "fire"], "volador": ["zubat", "golbat", "poison/flying"],
+    "bombardero": ["murkrow", "honchkrow", "dark/flying"], "nadador": ["carvanha", "sharpedo", "water/dark"],
+    "apoyo": ["misdreavus", "mismagius", "ghost", "fairy"]
   },
   "venusaur": {
-    "capturador": ["treecko", "grovyle", "grass"], "asaltante": ["shroomish", "breloom", "grass"],
-    "explorador": ["nincada", "ninjask", "bug"], "luchador": ["scyther", "scizor", "bug"],
-    "coloso": ["turtwig", "torterra", "ground"], "tirador": ["roselia", "roserade", "poison"],
-    "artillero": ["cacnea", "cacturne", "grass"], "volador": ["hoppip", "jumpluff", "grass"],
-    "bombardero": ["yanma", "yanmega", "bug"], "nadador": ["lotad", "ludicolo", "water"],
-    "apoyo": ["chikorita", "bayleef", "grass"]
+    "capturador": ["treecko", "grovyle", "grass", "rock"], "asaltante": ["shroomish", "breloom", "grass/fighting"],
+    "explorador": ["nincada", "ninjask", "bug/flying"], "luchador": ["scyther", "scizor", "bug/steel"],
+    "coloso": ["turtwig", "torterra", "grass/ground"], "tirador": ["roselia", "roserade", "grass/poison"],
+    "artillero": ["cacnea", "cacturne", "grass/dark"], "volador": ["hoppip", "jumpluff", "grass/flying"],
+    "bombardero": ["yanma", "yanmega", "bug/flying"], "nadador": ["lotad", "ludicolo", "water/grass"],
+    "apoyo": ["chikorita", "bayleef", "grass", "ground"]
   },
   "tyranitar": {
-    "capturador": ["geodude", "graveler", "rock"], "asaltante": ["cubone", "marowak", "ground"],
-    "explorador": ["sandshrew", "sandslash", "ground"], "luchador": ["rhyhorn", "rhydon", "ground"],
-    "coloso": ["onix", "steelix", "steel"], "tirador": ["nosepass", "probopass", "rock"],
-    "artillero": ["baltoy", "claydol", "ground"], "volador": ["gligar", "gliscor", "ground"],
-    "bombardero": ["aerodactyl", null, "flying"], "nadador": ["omanyte", "omastar", "rock"],
-    "apoyo": ["bronzor", "bronzong", "steel"]
+    "capturador": ["geodude", "graveler", "rock/ground"], "asaltante": ["cubone", "marowak", "ground", "fighting"],
+    "explorador": ["sandshrew", "sandslash", "ground", "bug"], "luchador": ["rhyhorn", "rhydon", "ground/rock"],
+    "coloso": ["onix", "steelix", "steel/ground"], "tirador": ["nosepass", "probopass", "rock/steel"],
+    "artillero": ["baltoy", "claydol", "ground/psychic"], "volador": ["gligar", "gliscor", "ground/flying"],
+    "bombardero": ["aerodactyl", null, "rock/flying"], "nadador": ["omanyte", "omastar", "rock/water"],
+    "apoyo": ["bronzor", "bronzong", "steel/psychic"]
   },
   "gardevoir": {
-    "capturador": ["ralts", "kirlia", "psychic"], "asaltante": ["drowzee", "hypno", "psychic"],
-    "explorador": ["abra", "kadabra", "psychic"], "luchador": ["snubbull", "granbull", "fairy"],
-    "coloso": ["slowpoke", "slowbro", "psychic"], "tirador": ["spoink", "grumpig", "psychic"],
-    "artillero": ["exeggcute", "exeggutor", "psychic"], "volador": ["natu", "xatu", "psychic"],
-    "bombardero": ["togetic", "togekiss", "fairy"], "nadador": ["psyduck", "golduck", "water"],
-    "apoyo": ["clefairy", "clefable", "fairy"]
+    "capturador": ["ralts", "kirlia", "psychic/fairy"], "asaltante": ["drowzee", "hypno", "psychic", "fighting"],
+    "explorador": ["abra", "kadabra", "psychic", "ghost"], "luchador": ["snubbull", "granbull", "fairy", "fire"],
+    "coloso": ["slowpoke", "slowbro", "water/psychic"], "tirador": ["spoink", "grumpig", "psychic", "ground"],
+    "artillero": ["exeggcute", "exeggutor", "grass/psychic"], "volador": ["natu", "xatu", "psychic/flying"],
+    "bombardero": ["togetic", "togekiss", "fairy/flying"], "nadador": ["psyduck", "golduck", "water", "psychic"],
+    "apoyo": ["clefairy", "clefable", "fairy", "fire"]
   },
   "lucario": {
-    "capturador": ["tyrogue", "hitmontop", "fighting"], "asaltante": ["makuhita", "hariyama", "fighting"],
-    "explorador": ["mankey", "primeape", "fighting"], "luchador": ["beldum", "metang", "steel"],
-    "coloso": ["shieldon", "bastiodon", "steel"], "tirador": ["mawile", null, "steel"],
-    "artillero": ["pineco", "forretress", "bug"], "volador": ["skarmory", null, "steel"],
-    "bombardero": ["hawlucha", null, "flying"], "nadador": ["poliwag", "poliwrath", "water"],
-    "apoyo": ["meditite", "medicham", "psychic"]
+    "capturador": ["tyrogue", "hitmontop", "fighting", "rock"], "asaltante": ["makuhita", "hariyama", "fighting", "ground"],
+    "explorador": ["mankey", "primeape", "fighting", "electric"], "luchador": ["beldum", "metang", "steel/psychic"],
+    "coloso": ["shieldon", "bastiodon", "rock/steel"], "tirador": ["mawile", null, "steel/fairy"],
+    "artillero": ["pineco", "forretress", "bug/steel"], "volador": ["skarmory", null, "steel/flying"],
+    "bombardero": ["hawlucha", null, "fighting/flying"], "nadador": ["poliwag", "poliwrath", "water/fighting"],
+    "apoyo": ["meditite", "medicham", "fighting/psychic"]
   }
 }

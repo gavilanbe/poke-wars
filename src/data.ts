@@ -20,6 +20,7 @@ export const TERRAIN: Record<string, Terrain> = {
   M: { name: 'Montaña', def: 4, cost: { walk: 3, fly: 1, swim: X, amph: 3 } },
   '~': { name: 'Agua', def: 0, cost: { walk: X, fly: 1, swim: 1, amph: 1 } },
   s: { name: 'Piedras del río', def: 0, cost: { walk: 1, fly: 1, swim: 2, amph: 1 } },
+  i: { name: 'Hielo', def: 0, cost: { walk: 1, fly: 1, swim: X, amph: 1 } }, // agua congelada por un Pokémon de hielo
   '=': { name: 'Camino', def: 0, cost: { walk: 1, fly: 1, swim: X, amph: 1 } },
   B: { name: 'Puerta', def: 3, cost: { walk: 1, fly: 1, swim: X, amph: 1 } },
   '#': { name: 'Edificio', def: 0, cost: { walk: X, fly: 1, swim: X, amph: X } }, // macizo: se sobrevuela, pero nadie se para
@@ -67,12 +68,26 @@ const CHART: Record<PType, [PType[], PType[]]> = {
   steel: [['ice', 'rock', 'fairy'], ['fire', 'water', 'electric', 'steel']],
   fairy: [['fighting', 'dragon', 'dark'], ['fire', 'poison', 'steel']],
 }
-// Multiplicadores suaves a propósito: como cada comandante lleva dos o tres tipos, con x1,5 y x0,67 había
-// emparejamientos de comandantes que se ganaban 6 de 6 solo por la tabla.
-export const STRONG = 1.2, WEAK = 0.9
+// Los tipos pesan de verdad. Lo que evita que elegir comandante decida la partida es que casi todos los Pokémon
+// tienen dos tipos y dos ataques (uno de cada tipo, o uno de cobertura si solo tienen un tipo).
+export const STRONG = 1.5, WEAK = 0.6, IMMUNE = 0.25, COVERAGE = 0.85
+const IMMUNITIES: Partial<Record<PType, PType[]>> = { // tipo del ataque -> tipos a los que apenas afecta
+  electric: ['ground'], ground: ['flying'], normal: ['ghost'], fighting: ['ghost'], ghost: ['normal'], psychic: ['dark'], poison: ['steel'], dragon: ['fairy'],
+}
 export function effectiveness(att: PType, def: PType): number {
+  if (IMMUNITIES[att]?.includes(def)) return IMMUNE
   const [strong, weak] = CHART[att]
   return strong.includes(def) ? STRONG : weak.includes(def) ? WEAK : 1
+}
+/** Multiplicador de un ataque contra un Pokémon: el producto contra cada uno de sus tipos. */
+export const typeMult = (move: PType, defKind: string) => KINDS[defKind].types.reduce((m, t) => m * effectiveness(move, t), 1)
+/** Potencia de un ataque de ese tipo usado por ese Pokémon: los de cobertura (de un tipo que no es el suyo) pegan algo menos. */
+const movePower = (attKind: string, move: PType) => (KINDS[attKind].types.includes(move) ? 1 : COVERAGE)
+export const moveMult = (attKind: string, move: PType, defKind: string) => movePower(attKind, move) * typeMult(move, defKind)
+/** El ataque que más le conviene a ese Pokémon contra ese rival. */
+export function bestMove(attKind: string, defKind: string): PType {
+  const [a, b] = KINDS[attKind].moves
+  return b && moveMult(attKind, b, defKind) > moveMult(attKind, a, defKind) ? b : a
 }
 
 // ---------- Roles ----------
@@ -94,7 +109,7 @@ export interface Role {
   range: [number, number]
   vision: number
   capture?: boolean
-  heals?: boolean // cura a los aliados pegados al empezar el turno; no ataca
+  heals?: boolean // cura a los aliados pegados al empezar el turno; su «ataque» no hace daño: duerme
 }
 
 export const ROLES: Record<RoleId, Role> = {
@@ -108,7 +123,7 @@ export const ROLES: Record<RoleId, Role> = {
   volador: { name: 'Volador', help: 'Vuela sobre cualquier terreno.', cost: 4500, mv: 7, move: 'fly', atk: 1.3, def: 0.9, range: [1, 1], vision: 5 },
   bombardero: { name: 'Bombardero', help: 'Volador caro y demoledor.', cost: 8500, mv: 6, move: 'fly', atk: 2, def: 1.4, range: [1, 1], vision: 4 },
   nadador: { name: 'Nadador', help: 'Solo se mueve por el agua, y ahí manda.', cost: 5000, mv: 6, move: 'swim', atk: 1.55, def: 1.4, range: [1, 1], vision: 3 },
-  apoyo: { name: 'Apoyo', help: 'No ataca. Cura 2 PS a los aliados pegados cada turno.', cost: 3000, mv: 5, move: 'walk', atk: 0, def: 1.1, range: [0, 0], vision: 3, heals: true },
+  apoyo: { name: 'Apoyo', help: 'Cura 2 PS a los aliados pegados cada turno y duerme a un rival a 1-2 casillas.', cost: 3000, mv: 5, move: 'walk', atk: 0, def: 1.1, range: [1, 2], vision: 3, heals: true },
 }
 export const ROLE_ORDER = Object.keys(ROLES) as RoleId[]
 // La segunda fase (se llega debilitando a un rival) mejora dentro del mismo rol
@@ -117,7 +132,9 @@ const VETERAN = { atk: 1.2, def: 1.15, mv: 1 }
 export interface UnitKind {
   name: string
   species: string // nombre de los archivos de sprites y retrato
-  type: PType
+  type: PType // el primero de sus tipos (para colores e iconos)
+  types: PType[] // uno o dos: deciden lo que recibe
+  moves: PType[] // dos ataques: uno por tipo, o el suyo y uno de cobertura
   role: RoleId
   commander: string
   cost: number // 0 = no se puede reclutar (solo por evolución)
@@ -132,7 +149,7 @@ export interface UnitKind {
   evolves?: string
 }
 
-type Line = [base: string, evolved: string | null, type: string]
+type Line = [base: string, evolved: string | null, types: string, coverage?: string]
 const ROSTERS = rosters as unknown as Record<string, Record<RoleId, Line>>
 const NAMES: Record<string, string> = { porygon2: 'Porygon2' }
 const displayName = (species: string) => NAMES[species] ?? species[0].toUpperCase() + species.slice(1)
@@ -141,9 +158,11 @@ const displayName = (species: string) => NAMES[species] ?? species[0].toUpperCas
 export const KINDS: Record<string, UnitKind> = {}
 for (const [commander, roster] of Object.entries(ROSTERS)) {
   for (const role of ROLE_ORDER) {
-    const [base, evolved, type] = roster[role]
+    const [base, evolved, typeList, coverage] = roster[role]
+    const types = typeList.split('/') as PType[]
+    const moves = (coverage ? [types[0], coverage] : types) as PType[]
     const r = ROLES[role]
-    const common = { type: type as PType, role, commander, move: r.move, range: r.range, vision: r.vision, capture: r.capture, heals: r.heals }
+    const common = { type: types[0], types, moves, role, commander, move: r.move, range: r.range, vision: r.vision, capture: r.capture, heals: r.heals }
     KINDS[base] = { ...common, name: displayName(base), species: base, cost: r.cost, mv: r.mv, atk: r.atk, def: r.def, evolves: evolved ?? undefined }
     if (evolved) {
       KINDS[evolved] = {
@@ -343,7 +362,7 @@ export const COMMANDERS: Record<string, Commander> = {
 // Ajuste fino de equilibrio: multiplica el ataque y la defensa de todo el equipo de cada comandante. Lo calcula
 // `pnpm tune` jugando la liga entera muchas veces hasta que todos rondan el 50% de victorias.
 export const TUNE: Record<string, number> = {
-  pikachu: 1, charizard: 1, blastoise: 1, gengar: 1, venusaur: 1, tyranitar: 1, gardevoir: 1, lucario: 1,
+  pikachu: 0.977, charizard: 1.04, blastoise: 0.962, gengar: 0.974, venusaur: 1.057, tyranitar: 0.955, gardevoir: 1.027, lucario: 1.007,
 }
 /** Estilo del comandante en una frase, sacado de sus números (sin contar el ajuste fino). */
 export function passiveText(id: string): string {

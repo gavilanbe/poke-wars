@@ -2,12 +2,14 @@
 
 Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 
-## Que cada turno tenga más decisiones
-- Habilidades por tipo: Agua se cura en el agua, Planta se esconde mejor en hierba, Fuego quema, Siniestro pega más
-  desde la niebla. Ahora los tipos solo cambian el daño.
-- Objetos en el mapa: bayas que curan, cajas con dinero.
-- Pokémon salvajes en la hierba alta que se pueden capturar para el equipo.
-- Experiencia: ahora se evoluciona con un solo K.O.; subir de nivel poco a poco.
+## Identidad propia (hecho el 4 de octubre; queda afinar)
+Tipos fuertes con doble tipo y dos ataques, terreno que reacciona (fuego quema, hielo congela, agua y planta se curan
+en lo suyo), estados, experiencia con tres niveles, debilitados que se recuperan a mitad de precio y salvajes.
+- La IA no usa «Congelar» y no busca quemar bosque a propósito.
+- Los salvajes se atrapan con solo pisar su hierba con un capturador; falta debilitarlos antes, como en los juegos.
+- El nivel 3 es solo un 10% de bonificación: falta una tercera fase evolutiva de verdad.
+- Los ataques de cobertura usan la animación del tipo, pero no tienen nombre propio por Pokémon.
+- Objetos en el mapa (bayas, cajas con dinero).
 
 ## Roles y comandantes (hecho el 4 de octubre; queda afinar)
 - Equilibrio: sumando 7 ligas (588 partidas por comandante) todos quedan entre el 47% y el 53%, dentro del ruido.

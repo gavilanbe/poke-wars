@@ -244,3 +244,10 @@ main { display: block; }
 .cocard .team { display: flex; gap: 1px; margin: 3px 0; }
 .cocard .mini { width: 20px; height: 20px; border: 1px solid var(--ink); border-radius: 2px; image-rendering: pixelated; background: #fff; }
 .cocard:hover > img { animation: talk-bob 0.3s infinite steps(2); }
+
+/* Tipos dobles, nivel y estado */
+#info .who small { font-size: 16px; opacity: 0.9; }
+#info .hpline em { font-style: normal; font-size: 14px; padding: 1px 5px; border-radius: 3px; color: #10141c; text-shadow: none; }
+.pc .tys { display: flex; gap: 2px; }
+.ic.ice { background: #58b8e0; }
+#info .who small em { font-style: normal; }

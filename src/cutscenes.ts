@@ -1,6 +1,6 @@
 // Escenas a pantalla completa: combate y captura. Todo se dibuja en un lienzo de 256x176 (vista lateral,
 // como las escenas de Advance Wars) con los sprites de Mundo Misterioso y los efectos de Esmeralda.
-import { ATTACK_NAME, KINDS, PType, TYPE_COLOR, TYPE_NAME, effectiveness } from './data'
+import { ATTACK_NAME, KINDS, PType, TYPE_COLOR, TYPE_NAME, bestMove, moveMult } from './data'
 import { Actor, Scene, easeBack, easeIn, easeOut, rnd } from './scene'
 import { music, sfx } from './sfx'
 import { cover, uncover } from './ui'
@@ -365,9 +365,9 @@ const MOVES = {
 } as Record<PType, Move>
 
 async function strike(a: Side, d: Side, dmg: number, crit = false) {
-  const type = KINDS[a.kind].type
-  const eff = effectiveness(type, KINDS[d.kind].type)
-  const big = eff > 1
+  const type = bestMove(a.kind, d.kind) // usa el ataque que más le conviene
+  const eff = moveMult(a.kind, type, d.kind)
+  const big = eff > 1.05
   say(`¡${KINDS[a.kind].name} usó ${ATTACK_NAME[type]}!`)
   sfx.cry(KINDS[a.kind].species, 1, 0.6) // grita al atacar
   setTimeout(() => sfx.move(type), 260) // y luego el sonido propio del ataque
@@ -386,7 +386,7 @@ async function strike(a: Side, d: Side, dmg: number, crit = false) {
     const ang = rnd(0, Math.PI * 2), v = rnd(2.5, big ? 6 : 4.5)
     scene.add({ x: dx, y: dy, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, drag: 0.9, line: [Math.cos(ang) * 10, Math.sin(ang) * 10], size: 2, max: 320, colors: ['#fff', TYPE_COLOR[type]] })
   }
-  ;(big ? sfx.bigHit : eff < 1 ? sfx.weakHit : sfx.hit)()
+  ;(big ? sfx.bigHit : eff < 0.9 ? sfx.weakHit : sfx.hit)()
   scene.play(d.actor, 'Hurt')
   d.actor.tint = ['#fff', 1]
   void scene.tween(300, (t) => { d.actor.tint[1] = Math.floor(t * 6) % 2 ? 0 : 1 - t })
@@ -404,7 +404,7 @@ async function strike(a: Side, d: Side, dmg: number, crit = false) {
     scene.addShake(12)
     scene.hitStop(120)
   }
-  if (eff !== 1) stamp(big ? '¡SÚPER EFICAZ!' : 'Poco eficaz…', d.sign < 0 ? 86 : 170, 52, big ? 'super' : 'weak')
+  if (big || eff < 0.9) stamp(big ? '¡SÚPER EFICAZ!' : eff < 0.4 ? 'Casi no le afecta…' : 'Poco eficaz…', d.sign < 0 ? 86 : 170, 52, big ? 'super' : 'weak')
   d.hp = hpAfter
   setHp(d.plate, hpAfter)
   restartClass(d.plate, 'hurt')

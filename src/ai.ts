@@ -2,7 +2,7 @@
 import { KINDS, RoleId, rosterOf } from './data'
 import {
   Building, Game, Pos, Unit, buildingAt, canCapture, canCounter, canRecruit, damage, dist, key,
-  reachable, stoppable, targetsFrom, unitAt,
+  reachable, stoppable, targetsFrom, unitAt, wildAt,
 } from './game'
 
 export interface Plan { to: Pos; action: 'attack' | 'capture' | 'wait'; target?: Unit }
@@ -40,7 +40,8 @@ export function planUnit(g: Game, u: Unit): Plan {
     const consider = (score: number, plan: Plan) => {
       if (score > bestScore) { bestScore = score; best = plan }
     }
-    consider(base, { to: spot, action: 'wait' })
+    // Un salvaje en la hierba: quien captura va a por él
+    consider(base + (k.capture && wildAt(g, spot.x, spot.y) ? 30 : 0), { to: spot, action: 'wait' })
     if (canCapture(g, u, spot)) {
       const b = buildingAt(g, spot.x, spot.y)!
       consider(base + 40 + (b.type === 'gym' ? 100 : 0) + (b.cap - u.hp <= 0 ? 30 : 0), { to: spot, action: 'capture' })
@@ -50,6 +51,7 @@ export function planUnit(g: Game, u: Unit): Plan {
       const dmg = damage(g, here, target)
       const value = (KINDS[target.kind].cost || 6000) / 1000
       let score = base + dmg * value * 2 + (dmg >= target.hp ? 25 : 0)
+      if (k.heals) score = target.status ? -Infinity : base + value * 3 // el de apoyo duerme al rival más valioso que esté despierto
       if (dmg < target.hp && canCounter(here, target)) {
         const back = damage(g, { ...target, hp: target.hp - dmg }, here)
         score -= back * ((KINDS[u.kind].cost || 6000) / 1000) * 1.5
@@ -69,6 +71,7 @@ function goalsFor(g: Game, u: Unit): Pos[] {
     if (allies.length) return hurt.length ? hurt : allies
   }
   if (KINDS[u.kind].capture) {
+    goals.push(...g.wild)
     for (const b of g.buildings) {
       const o = unitAt(g, b.x, b.y)
       if (b.owner !== u.team && (!o || o === u || o.team !== u.team)) goals.push(b)
