@@ -26,8 +26,17 @@ export function planUnit(g: Game, u: Unit): Plan {
     return d
   }
 
+  // Los que atacan a distancia no buscan el cuerpo a cuerpo: se colocan a tiro, sin pegarse al rival
+  const k = KINDS[u.kind]
+  const foes = g.units.filter((e) => e.team !== u.team)
+  const standoff = (p: Pos) => {
+    if (k.range[1] < 2 || !foes.length) return 0
+    const nearest = Math.min(...foes.map((e) => dist(p, e)))
+    return -Math.abs(nearest - k.range[1]) * 1.5 - (nearest < k.range[0] ? 6 : 0)
+  }
+
   for (const spot of spots) {
-    const base = -goalDist(spot) + (buildingAt(g, spot.x, spot.y)?.owner === u.team && u.hp < 6 ? 4 : 0)
+    const base = (k.range[1] < 2 ? -goalDist(spot) : -goalDist(spot) * 0.25 + standoff(spot)) + (buildingAt(g, spot.x, spot.y)?.owner === u.team && u.hp < 6 ? 4 : 0)
     const consider = (score: number, plan: Plan) => {
       if (score > bestScore) { bestScore = score; best = plan }
     }

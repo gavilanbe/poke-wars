@@ -1,7 +1,7 @@
 // Pintado, entrada y flujo de la partida.
 import { planRecruit, planUnit } from './ai'
 import {
-  BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, MAX_UNITS, POWER_COST, PType, ROLES, TYPE_COLOR, TYPE_NAME, rosterOf,
+  BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, MAX_UNITS, POWER_COST, PType, ROLES, TYPE_COLOR, TYPE_NAME, passiveText, rosterOf,
   effectiveness,
 } from './data'
 import * as fx from './fx'
@@ -1027,24 +1027,103 @@ async function powerFx(team: Team, affected: { unit: Unit; hp: number }[]) {
       await sleep(170)
     }
     await sleep(450)
-  } else {
-    // Los demás: estallido del color del comandante en cada Pokémon afectado, con su toque propio
-    const id = g.co[team]
+  } else if (g.co[team] === 'venusaur') {
+    // Rayo Solar: el mapa se ilumina y una columna de luz baja sobre cada aliado, con hojas y brotes
+    mapFx.flashScreen('#fff6b0', 0.6, 0.7)
     sfx.cast()
-    if (id === 'tyranitar') mapFx.flashScreen('#b89858', 0.6, 0.5) // tormenta de arena
     for (const { unit, hp } of affected) {
       const [x, y] = center(unit)
-      mapFx.add({ ring: 30, size: 5, color: c.color, x, y, max: 450 })
-      fx.burst(x, y, { n: 18, colors: [c.color, '#fff'], speed: 2.4, life: 700, size: 4, up: 1 })
-      if (id === 'venusaur') for (let i = 0; i < 5; i++) mapFx.add({ img: 'leaf', fps: 14, loop: true, x, y, vx: rnd(-2, 2), vy: rnd(-3, -1), g: 0.12, max: 800, scale: 1 })
-      if (id === 'gardevoir') mapFx.fx('sparkle_1', x, y - 8, { scale: 1, fps: 10 })
-      if (id === 'lucario') mapFx.add({ ring: 46, size: 3, color: '#a8d0ff', x, y, max: 600, delay: 120 })
-      if (hp < 0 && g.units.includes(unit)) hurt(unit, 400)
-      else setFx(unit, { pop: performance.now() })
+      for (let yy = y - 6; yy > y - 260; yy -= 9) { // columna de luz que cae
+        mapFx.add({ x: x + rnd(-2, 2), y: yy, max: 420, delay: (y - yy) * 0.25, size: 12, colors: ['#ffffff', '#fff6b0', '#ffe070'], add: true })
+      }
+      mapFx.add({ ring: 26, size: 5, color: '#fff6b0', x, y, max: 500, delay: 80 })
+      mapFx.fx('sparkle_1', x, y - 8, { scale: 1, fps: 10, delay: 120 })
+      for (let i = 0; i < 7; i++) {
+        const ang = (i / 7) * Math.PI * 2
+        mapFx.add({ img: 'leaf', fps: 16, loop: true, x, y, vx: Math.cos(ang) * 2.2, vy: Math.sin(ang) * 2.2 - 1, g: 0.06, drag: 0.96, max: 900, scale: 1, delay: 140 })
+      }
+      setFx(unit, { pop: performance.now() + 140 })
+      hpLabel(unit, hp, 180)
+      label(unit, 'ATQ +30%', 'gold', 520)
+      sfx.heal()
+      await sleep(130)
+    }
+  } else if (g.co[team] === 'tyranitar') {
+    // Tormenta Arena: un muro de arena barre el mapa; golpea a los rivales y endurece a los suyos
+    const dir = team === 0 ? 1 : -1
+    const allies = g.units.filter((u) => u.team === team)
+    const passed = new Set<Unit>()
+    mapFx.flashScreen('#b89858', 0.55, 0.45)
+    sfx.shoot()
+    await mapFx.tween(1100, (t) => {
+      const front = dir > 0 ? t * (worldW() + 80) - 40 : worldW() + 40 - t * (worldW() + 80)
+      for (let i = 0; i < 7; i++) {
+        mapFx.add({ x: front + rnd(-26, 26), y: rnd(0, worldH()), vx: dir * rnd(3, 6), vy: rnd(-0.6, 0.6), max: rnd(260, 480), size: rnd(3, 7), colors: ['#f0dca0', '#c8a860', '#8a6c38'] })
+      }
+      if (Math.random() < 0.5) mapFx.add({ img: 'gray_smoke', fps: 10, x: front, y: rnd(0, worldH()), vx: dir * 2, max: 500, scale: 1.5 })
+      fx.addShake(2)
+      for (const unit of [...affected.map((a) => a.unit), ...allies]) {
+        const [x, y] = center(unit)
+        if (passed.has(unit) || (x - front) * dir > 0) continue
+        passed.add(unit)
+        if (unit.team === team) { // los suyos se cubren de roca
+          mapFx.add({ ring: 24, size: 6, color: '#c8a860', x, y, max: 500 })
+          setFx(unit, { pop: performance.now() })
+          label(unit, 'DEF +40%', 'gold')
+        } else {
+          mapFx.fx('hit', x, y, { scale: 1.2, fps: 20 })
+          for (let i = 0; i < 5; i++) mapFx.add({ img: 'rocks', frame: 3 + (i % 3), x, y, vx: rnd(-2, 2) + dir * 2, vy: rnd(-3, -1), g: 0.25, vr: 0.3, max: 600, scale: 1 })
+          if (g.units.includes(unit)) hurt(unit, 450)
+          hpLabel(unit, affected.find((a) => a.unit === unit)!.hp)
+          sfx.hit()
+        }
+      }
+    })
+  } else if (g.co[team] === 'gardevoir') {
+    // Paz Mental: ondas rosas salen del gimnasio; cada aliado queda envuelto en anillos y levita
+    mapFx.flashScreen('#f8a8c8', 0.5, 0.6)
+    for (let i = 0; i < 4; i++) mapFx.add({ ring: 260 + i * 90, size: 6 - i, color: i % 2 ? '#ffd8e8' : '#f85888', x: hx, y: hy, max: 1200, delay: i * 140 })
+    sfx.cast()
+    await sleep(350)
+    for (const { unit, hp } of affected) {
+      const [x, y] = center(unit)
+      for (let i = 0; i < 3; i++) mapFx.add({ ring: 14 + i * 9, size: 3, color: i % 2 ? '#ffffff' : '#f85888', x, y: y - 4, vy: -0.5, max: 700, delay: i * 90 })
+      for (let i = 0; i < 5; i++) {
+        const ang = (i / 5) * Math.PI * 2
+        mapFx.fx('eye_sparkle', x + Math.cos(ang) * 16, y - 6 + Math.sin(ang) * 12, { scale: 1, fps: 10, delay: 100 + i * 60, vy: -0.4 })
+      }
+      setFx(unit, { pop: performance.now() })
       hpLabel(unit, hp)
-      ;(hp < 0 ? sfx.hit : sfx.heal)()
+      label(unit, 'MOV +2', 'gold', 400)
+      sfx.heal()
       await sleep(110)
     }
+  } else if (g.co[team] === 'lucario') {
+    // Aura Esfera: una esfera azul sale del gimnasio hacia cada aliado y estalla en llamas de aura
+    const AURA = ['#ffffff', '#a8d8ff', '#3c8cf0', '#1848b0']
+    mapFx.flashScreen('#3c8cf0', 0.45, 0.6)
+    for (const { unit } of affected) {
+      const [x, y] = center(unit)
+      const orb = mapFx.add({ x: hx, y: hy, max: 420, size: 9, color: '#a8d8ff', add: true, fade: false })
+      sfx.cast()
+      void mapFx.tween(400, (t) => {
+        orb.x = hx + (x - hx) * t
+        orb.y = hy + (y - hy) * t - Math.sin(t * Math.PI) * 46
+        mapFx.add({ x: orb.x, y: orb.y, max: 260, size: 6, colors: AURA, add: true })
+        mapFx.add({ ring: 7, size: 2, color: '#ffffff', x: orb.x, y: orb.y, max: 160 })
+      }).then(() => {
+        mapFx.add({ ring: 34, size: 6, color: '#3c8cf0', x, y, max: 450 })
+        mapFx.add({ ring: 22, size: 3, color: '#ffffff', x, y, max: 380, delay: 60 })
+        for (let i = 0; i < 16; i++) mapFx.add({ x: x + rnd(-9, 9), y: y + rnd(-2, 10), vy: -rnd(1, 2.6), vx: rnd(-0.3, 0.3), max: rnd(450, 800), size: rnd(3, 6), colors: AURA, add: true })
+        mapFx.fx('blue_star', x, y - 6, { scale: 1, fps: 14 })
+        setFx(unit, { pop: performance.now() })
+        label(unit, 'ATQ +50%', 'gold')
+        fx.addShake(3)
+        sfx.hit()
+      })
+      await sleep(150)
+    }
+    await sleep(450)
   }
   await sleep(650)
 }
@@ -1219,7 +1298,7 @@ function chooseCommanders(): Promise<[string, string]> {
         const squad = rosterOf(id).map((k) => `<img class="mini" src="${facePath(KINDS[k].species)}" title="${ROLES[KINDS[k].role].name}: ${KINDS[k].name}">`).join('')
         btn.innerHTML = `<img src="${facePath(id)}"><b>${c.name}</b><i>${c.title}</i>
           <div class="team">${squad}</div>
-          <p>${c.passive}</p><p><strong>★ ${c.power}</strong><br>${c.powerHelp}</p>`
+          <p>${passiveText(id)}</p><p><strong>★ ${c.power}</strong><br>${c.powerHelp}</p>`
         btn.onmouseenter = () => { sfx.cursor(); btn.querySelector('img')!.src = facePath(id, 'Happy'); sfx.cry(id, 1, 0.3) }
         btn.onmouseleave = () => (btn.querySelector('img')!.src = facePath(id))
         btn.onclick = () => {

@@ -1,6 +1,6 @@
 // Estado y reglas, sin nada de DOM (se puede simular desde node: tools/sim.ts).
 import {
-  BUILDINGS, BUILDING_INFO, BuildingType, CAPTURE_POINTS, COMMANDERS, KINDS, MAP, MAX_UNITS, POWER_COST, ROLE_ORDER, START_UNITS,
+  BUILDINGS, BUILDING_INFO, BuildingType, CAPTURE_POINTS, COMMANDERS, KINDS, MAP, MAX_UNITS, POWER_COST, ROLE_ORDER, START_UNITS, TUNE,
   TERRAIN, Terrain, rosterOf,
   effectiveness,
 } from './data'
@@ -53,7 +53,7 @@ export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog 
   return g
 }
 
-export const SECOND_PLAYER_BONUS = 3000
+export const SECOND_PLAYER_BONUS = 4500
 export const key = (x: number, y: number) => y * 100 + x
 export const terrainAt = (g: Game, x: number, y: number): Terrain => TERRAIN[g.tiles[y][x]]
 export const unitAt = (g: Game, x: number, y: number) => g.units.find((u) => u.x === x && u.y === y)
@@ -77,7 +77,8 @@ function addUnit(g: Game, kind: string, team: Team, x: number, y: number): Unit 
 }
 
 /** Modificador del comandante: 0 ataque, 1 defensa, 2 movimiento. */
-const coMod = (g: Game, team: Team, stat: 'atk' | 'def' | 'mv') => COMMANDERS[g.co[team]][stat][g.power[team] ? 1 : 0]
+const coMod = (g: Game, team: Team, stat: 'atk' | 'def' | 'mv') =>
+  COMMANDERS[g.co[team]][stat][g.power[team] ? 1 : 0] * (stat === 'mv' ? 1 : TUNE[g.co[team]])
 export const moveRange = (g: Game, u: Unit) => KINDS[u.kind].mv + coMod(g, u.team, 'mv')
 
 // ---------- Niebla de guerra ----------
@@ -308,7 +309,7 @@ export function usePower(g: Game): { unit: Unit; hp: number }[] {
   switch (g.co[team]) {
     case 'pikachu': return change(mine, 3)
     case 'blastoise': return change(mine, 1)
-    case 'gengar': return change(foes, -2)
+    case 'gengar': return change(foes, -1)
     case 'venusaur': return change(mine, 2)
     case 'tyranitar': return change(foes, -1)
     case 'gardevoir': return change(mine, 1)

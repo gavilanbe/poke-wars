@@ -6,6 +6,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "sim": "tsx tools/sim.ts",
+    "tune": "tsx tools/tune.ts",
     "assets": ".venv/bin/python tools/extract.py"
   },
   "devDependencies": {

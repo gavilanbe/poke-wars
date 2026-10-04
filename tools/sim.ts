@@ -1,51 +1,20 @@
-// IA contra IA sin gráficos, para comprobar que las reglas aguantan una partida entera.
-//   pnpm sim
-import { planRecruit, planUnit } from '../src/ai'
-import { attack, canUsePower, capture, createGame, endTurn, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
-
-import { COMMANDERS } from '../src/data'
+// Informe de equilibrio: tasa de victorias por comandante, emparejamientos y rendimiento de cada rol.
+//   pnpm sim [rondas]
+import { COMMANDERS, ROLES } from '../src/data'
+import { league } from './league'
 
 declare const process: { argv: string[] }
-
-// Todos los comandantes contra todos, con cada uno jugando de rojo y de azul
-const ids = Object.keys(COMMANDERS)
-const wins: Record<string, number> = Object.fromEntries(ids.map((id) => [id, 0]))
-const games: Record<string, number> = Object.fromEntries(ids.map((id) => [id, 0]))
-let first = 0, total = 0, unfinished = 0
 const ROUNDS = Number(process.argv[2] ?? 2)
-for (let round = 0; round < ROUNDS; round++) for (const red of ids) for (const blue of ids) {
-  if (red === blue) continue
-  const g = createGame([red, blue])
-  let turns = 0
-  while (g.winner === null && turns < 400) {
-    if (canUsePower(g)) usePower(g)
-    for (const u of g.units.filter((u) => u.team === g.turn)) {
-      if (g.winner !== null || !g.units.includes(u)) continue
-      const plan = planUnit(g, u)
-      const { path, ambushed } = resolvePath(g, u, pathTo(reachable(g, u), plan.to.x, plan.to.y))
-      const end = path[path.length - 1]
-      moveUnit(g, u, end.x, end.y)
-      if (ambushed) u.moved = true
-      else if (plan.action === 'attack' && g.units.includes(plan.target!)) attack(g, u, plan.target!)
-      else if (plan.action === 'capture') capture(g, u)
-      else u.moved = true
-    }
-    for (const b of g.buildings) {
-      if (g.winner !== null || b.type !== 'center' || b.owner !== g.turn) continue
-      const kind = planRecruit(g, b)
-      if (kind) recruit(g, b, kind)
-    }
-    if (g.winner === null) endTurn(g)
-    turns++
-  }
-  total++
-  games[red]++
-  games[blue]++
-  if (g.winner === null) unfinished++
-  else {
-    wins[g.winner === 0 ? red : blue]++
-    if (g.winner === 0) first++
-  }
+const { total, first, unfinished, days, wins, games, versus, roleStats } = league(ROUNDS)
+const ids = Object.keys(COMMANDERS)
+const pct = (n: number, d: number) => String(Math.round((n / Math.max(1, d)) * 100)).padStart(3) + '%'
+console.log(`${total} partidas · gana el rojo ${pct(first, total)} · sin terminar ${unfinished} · duración media ${Math.round(days / total)} días`)
+const order = [...ids].sort((a, b) => wins[b] / games[b] - wins[a] / games[a])
+console.log('\nVictorias (fila gana a columna, sobre ' + ROUNDS * 2 + ')')
+console.log(' '.repeat(18) + order.map((id) => id.slice(0, 5).padStart(6)).join(''))
+for (const id of order) console.log(`${id.padEnd(10)} ${pct(wins[id], games[id])}   ` + order.map((o) => (o === id ? '     ·' : String(versus[id][o]).padStart(6))).join(''))
+console.log('\nRoles: comprados · bajas causadas/sufridas · valor destruido por cada 1000 gastados')
+for (const [name, r] of Object.entries(roleStats).sort((a, b) => b[1].bought - a[1].bought)) {
+  const spent = (r.bought * ROLES[name as keyof typeof ROLES].cost) / 1000
+  console.log(`${name.padEnd(11)} ${String(r.bought).padStart(5)} · ${String(r.kills).padStart(4)}/${String(r.deaths).padEnd(4)} · ${(r.dealt / Math.max(1, spent)).toFixed(2)} (recibe ${(r.taken / Math.max(1, spent)).toFixed(2)})`)
 }
-console.log(`${total} partidas · gana el rojo ${first} · sin terminar ${unfinished}`)
-for (const id of ids.sort((a, b) => wins[b] / games[b] - wins[a] / games[a])) console.log(`gana ${id.padEnd(10)} ${Math.round((wins[id] / games[id]) * 100)}%`)

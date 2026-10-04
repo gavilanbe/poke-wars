@@ -67,9 +67,12 @@ const CHART: Record<PType, [PType[], PType[]]> = {
   steel: [['ice', 'rock', 'fairy'], ['fire', 'water', 'electric', 'steel']],
   fairy: [['fighting', 'dragon', 'dark'], ['fire', 'poison', 'steel']],
 }
+// Multiplicadores suaves a propósito: como cada comandante lleva dos o tres tipos, con x1,5 y x0,67 había
+// emparejamientos de comandantes que se ganaban 6 de 6 solo por la tabla.
+export const STRONG = 1.2, WEAK = 0.9
 export function effectiveness(att: PType, def: PType): number {
   const [strong, weak] = CHART[att]
-  return strong.includes(def) ? 1.5 : weak.includes(def) ? 0.67 : 1
+  return strong.includes(def) ? STRONG : weak.includes(def) ? WEAK : 1
 }
 
 // ---------- Roles ----------
@@ -95,15 +98,15 @@ export interface Role {
 }
 
 export const ROLES: Record<RoleId, Role> = {
-  capturador: { name: 'Capturador', help: 'Barato. Captura edificios.', cost: 1000, mv: 4, move: 'walk', atk: 1, def: 1, range: [1, 1], vision: 3, capture: true },
+  capturador: { name: 'Capturador', help: 'Barato. Captura edificios.', cost: 1000, mv: 4, move: 'walk', atk: 0.65, def: 0.9, range: [1, 1], vision: 3, capture: true },
   asaltante: { name: 'Asaltante', help: 'Captura y pega fuerte, pero es lento.', cost: 2500, mv: 3, move: 'walk', atk: 1.35, def: 1.2, range: [1, 1], vision: 3, capture: true },
-  explorador: { name: 'Explorador', help: 'Muy rápido y ve lejos. Frágil.', cost: 2000, mv: 7, move: 'walk', atk: 0.9, def: 0.85, range: [1, 1], vision: 5 },
+  explorador: { name: 'Explorador', help: 'Muy rápido y ve lejos. Frágil.', cost: 2000, mv: 7, move: 'walk', atk: 0.8, def: 0.85, range: [1, 1], vision: 5 },
   luchador: { name: 'Luchador', help: 'La línea de combate.', cost: 4000, mv: 5, move: 'walk', atk: 1.45, def: 1.3, range: [1, 1], vision: 3 },
   coloso: { name: 'Coloso', help: 'Caro y lento, pero lo aguanta todo.', cost: 8000, mv: 3, move: 'walk', atk: 1.8, def: 1.9, range: [1, 1], vision: 2 },
-  tirador: { name: 'Tirador', help: 'Ataca a 2-3 casillas. No mueve y ataca.', cost: 4500, mv: 4, move: 'walk', atk: 1.3, def: 0.8, range: [2, 3], vision: 3 },
-  artillero: { name: 'Artillero', help: 'Ataca a 3-5 casillas. Muy frágil.', cost: 7000, mv: 3, move: 'walk', atk: 1.5, def: 0.7, range: [3, 5], vision: 2 },
-  volador: { name: 'Volador', help: 'Vuela sobre cualquier terreno.', cost: 4500, mv: 7, move: 'fly', atk: 1.2, def: 0.9, range: [1, 1], vision: 5 },
-  bombardero: { name: 'Bombardero', help: 'Volador caro y demoledor.', cost: 9500, mv: 6, move: 'fly', atk: 1.9, def: 1.3, range: [1, 1], vision: 4 },
+  tirador: { name: 'Tirador', help: 'Ataca a 2-3 casillas. No mueve y ataca.', cost: 4500, mv: 4, move: 'walk', atk: 1.5, def: 0.8, range: [2, 3], vision: 3 },
+  artillero: { name: 'Artillero', help: 'Ataca a 3-5 casillas. Muy frágil.', cost: 7000, mv: 3, move: 'walk', atk: 1.65, def: 0.75, range: [3, 5], vision: 2 },
+  volador: { name: 'Volador', help: 'Vuela sobre cualquier terreno.', cost: 4500, mv: 7, move: 'fly', atk: 1.3, def: 0.9, range: [1, 1], vision: 5 },
+  bombardero: { name: 'Bombardero', help: 'Volador caro y demoledor.', cost: 8500, mv: 6, move: 'fly', atk: 2, def: 1.4, range: [1, 1], vision: 4 },
   nadador: { name: 'Nadador', help: 'Solo se mueve por el agua, y ahí manda.', cost: 5000, mv: 6, move: 'swim', atk: 1.55, def: 1.4, range: [1, 1], vision: 3 },
   apoyo: { name: 'Apoyo', help: 'No ataca. Cura 2 PS a los aliados pegados cada turno.', cost: 3000, mv: 5, move: 'walk', atk: 0, def: 1.1, range: [0, 0], vision: 3, heals: true },
 }
@@ -229,7 +232,6 @@ export const ATTACK_NAME: Record<PType, string> = {
 export interface Commander {
   name: string
   title: string
-  passive: string
   power: string
   powerHelp: string
   color: string
@@ -243,9 +245,8 @@ export interface Commander {
 export const COMMANDERS: Record<string, Commander> = {
   pikachu: {
     name: 'Pikachu', title: 'El alma del equipo', color: '#f8d030',
-    passive: 'Equilibrado: sin puntos débiles.',
-    power: 'Onda Vital', powerHelp: 'Cura 3 PS a todo tu equipo y le da +1 de movimiento y +10% de ataque.',
-    atk: [1, 1.1], def: [1, 1], mv: [0, 1],
+    power: 'Onda Vital', powerHelp: 'Cura 3 PS a todo tu equipo y le da +1 de movimiento y +20% de ataque.',
+    atk: [1, 1.2], def: [1, 1], mv: [0, 1],
     quotes: {
       start: ['¡Pika! ¡Vamos, equipo!', '¡Nadie se queda atrás!', '¡Hoy ganamos seguro!'],
       ko: ['¡Pi-ka-CHU! ¡Toma ya!', '¡Bien hecho!', '¡Así se hace!'],
@@ -256,9 +257,8 @@ export const COMMANDERS: Record<string, Commander> = {
   },
   charizard: {
     name: 'Charizard', title: 'Puro fuego', color: '#f0803c',
-    passive: '+15% de ataque.',
-    power: 'Sofoco', powerHelp: '+50% de ataque y +1 de movimiento hasta tu próximo turno.',
-    atk: [1.15, 1.5], def: [1, 1], mv: [0, 1],
+    power: 'Sofoco', powerHelp: '+55% de ataque y +1 de movimiento hasta tu próximo turno.',
+    atk: [1.15, 1.55], def: [0.97, 0.97], mv: [0, 1],
     quotes: {
       start: ['¡A quemarlo todo!', 'No pienso esperar. ¡Al ataque!', '¿Defender? Eso es de cobardes.'],
       ko: ['¡Reducido a cenizas!', '¡JA! ¿Eso era todo?', '¡Siguiente!'],
@@ -269,7 +269,6 @@ export const COMMANDERS: Record<string, Commander> = {
   },
   blastoise: {
     name: 'Blastoise', title: 'La muralla', color: '#4a90e0',
-    passive: '+10% de defensa.',
     power: 'Fortaleza', powerHelp: '+60% de defensa hasta tu próximo turno y cura 1 PS a todo tu equipo.',
     atk: [1, 1], def: [1.1, 1.6], mv: [0, 0],
     quotes: {
@@ -282,9 +281,8 @@ export const COMMANDERS: Record<string, Commander> = {
   },
   gengar: {
     name: 'Gengar', title: 'El tramposo', color: '#8858c8',
-    passive: '+1 de movimiento, −10% de defensa.',
-    power: 'Bola Sombra', powerHelp: 'Todos los rivales pierden 2 PS (sin debilitarlos).',
-    atk: [1, 1.1], def: [0.9, 0.9], mv: [1, 1],
+    power: 'Bola Sombra', powerHelp: 'Todos los rivales pierden 1 PS (sin debilitarlos); tu equipo gana +25% de ataque y +1 de movimiento.',
+    atk: [1, 1.25], def: [0.97, 0.97], mv: [0, 1],
     quotes: {
       start: ['Kekeke… ¿jugamos?', '¿Quién tiene miedo a la oscuridad?', 'No mires detrás de ti…'],
       ko: ['¡Bu! Kekeke.', '¿Ya te vas? Qué pena…', 'Ni lo ha visto venir.'],
@@ -295,9 +293,8 @@ export const COMMANDERS: Record<string, Commander> = {
   },
   venusaur: {
     name: 'Venusaur', title: 'El jardín que avanza', color: '#5fbf4a',
-    passive: '+5% de ataque y +10% de defensa.',
     power: 'Rayo Solar', powerHelp: 'Cura 2 PS a todo tu equipo y le da +30% de ataque.',
-    atk: [1.05, 1.3], def: [1.1, 1.1], mv: [0, 0],
+    atk: [1, 1.3], def: [1.05, 1.05], mv: [0, 0],
     quotes: {
       start: ['Sin prisa. Todo crece a su tiempo.', 'Echad raíces y aguantad.', 'Hoy hace un día precioso para ganar.'],
       ko: ['Abono para el jardín.', 'Se marchitó pronto.', 'Así se poda.'],
@@ -308,9 +305,8 @@ export const COMMANDERS: Record<string, Commander> = {
   },
   tyranitar: {
     name: 'Tyranitar', title: 'La montaña que anda', color: '#b8a038',
-    passive: '+10% de defensa, −5% de ataque.',
-    power: 'Tormenta Arena', powerHelp: 'Todos los rivales pierden 1 PS y tu equipo gana +50% de defensa.',
-    atk: [0.95, 1.1], def: [1.1, 1.45], mv: [0, 0],
+    power: 'Tormenta Arena', powerHelp: 'Todos los rivales pierden 1 PS y tu equipo gana +40% de defensa.',
+    atk: [0.95, 1.05], def: [1.1, 1.45], mv: [0, 0],
     quotes: {
       start: ['Que tiemble el suelo.', 'Apartaos. Paso yo.', 'No pienso moverme de aquí.'],
       ko: ['Aplastado.', 'Polvo.', '¿Eso era un golpe?'],
@@ -321,9 +317,8 @@ export const COMMANDERS: Record<string, Commander> = {
   },
   gardevoir: {
     name: 'Gardevoir', title: 'La que ve venir', color: '#f85888',
-    passive: '+1 de movimiento.',
-    power: 'Paz Mental', powerHelp: 'Cura 1 PS a tu equipo y le da +2 de movimiento y +20% de ataque.',
-    atk: [1, 1.2], def: [1, 1], mv: [1, 3],
+    power: 'Paz Mental', powerHelp: 'Cura 1 PS a tu equipo y le da +2 de movimiento y +25% de ataque.',
+    atk: [1.05, 1.25], def: [1, 1], mv: [0, 2],
     quotes: {
       start: ['Ya sé cómo acaba esto.', 'Calma. Todo está previsto.', 'Un paso por delante, siempre.'],
       ko: ['Lo vi venir.', 'Tal como estaba escrito.', 'Elegante.'],
@@ -334,9 +329,8 @@ export const COMMANDERS: Record<string, Commander> = {
   },
   lucario: {
     name: 'Lucario', title: 'El aura firme', color: '#4a78c8',
-    passive: '+10% de ataque.',
-    power: 'Aura Esfera', powerHelp: '+45% de ataque, +10% de defensa y +1 de movimiento.',
-    atk: [1.1, 1.45], def: [1, 1.1], mv: [0, 1],
+    power: 'Aura Esfera', powerHelp: '+50% de ataque, +15% de defensa y +1 de movimiento.',
+    atk: [1.12, 1.5], def: [1, 1.15], mv: [0, 1],
     quotes: {
       start: ['Respira. Concéntrate. Golpea.', 'El aura está con nosotros.', 'Honor y disciplina.'],
       ko: ['Un golpe limpio.', 'Entrenamiento superado.', 'Bien luchado.'],
@@ -346,4 +340,17 @@ export const COMMANDERS: Record<string, Commander> = {
     },
   },
 }
+// Ajuste fino de equilibrio: multiplica el ataque y la defensa de todo el equipo de cada comandante. Lo calcula
+// `pnpm tune` jugando la liga entera muchas veces hasta que todos rondan el 50% de victorias.
+export const TUNE: Record<string, number> = {
+  pikachu: 1, charizard: 1, blastoise: 1, gengar: 1, venusaur: 1, tyranitar: 1, gardevoir: 1, lucario: 1,
+}
+/** Estilo del comandante en una frase, sacado de sus números (sin contar el ajuste fino). */
+export function passiveText(id: string): string {
+  const c = COMMANDERS[id]
+  const pct = (v: number) => `${v > 1 ? '+' : '−'}${Math.round(Math.abs(v - 1) * 100)}%`
+  const parts = [c.atk[0] !== 1 ? `${pct(c.atk[0])} de ataque` : '', c.def[0] !== 1 ? `${pct(c.def[0])} de defensa` : '', c.mv[0] ? `+${c.mv[0]} de movimiento` : '']
+  return parts.filter(Boolean).join(', ') || 'Equilibrado: sin puntos débiles'
+}
+
 export const POWER_COST = 24 // puntos de medidor (PS de daño repartido y recibido)
