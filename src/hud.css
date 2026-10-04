@@ -133,3 +133,13 @@ main { display: block; }
 #power { filter: brightness(0.85); background-image: var(--btn-off); color: #c8d0e0; text-shadow: 2px 2px 0 #10141c; }
 #power.ready { filter: none; background-image: var(--btn-power); color: #fff; }
 .cmd button:disabled { filter: brightness(0.8); }
+
+/* Fase del día y clima en el reloj */
+#clock .sky { display: flex; align-items: center; gap: 6px; font-size: 18px; color: #dfe6f4; }
+#clock .sky i { width: 18px; height: 18px; border-radius: 50%; background: #ffd84a; box-shadow: 0 0 0 2px #10141c, 0 0 8px #ffd84a; }
+#clock .sky.p0 i { background: #ffe9a0; }
+#clock .sky.p2 i { background: #ff8a3c; box-shadow: 0 0 0 2px #10141c, 0 0 8px #ff8a3c; }
+#clock .sky.p3 i { background: #dfe6f4; box-shadow: inset -6px -2px 0 #5870a0, 0 0 0 2px #10141c; }
+#clock .sky.w-rain i { background: #88c8ff; box-shadow: 0 0 0 2px #10141c; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
+#clock .sky.w-sun i { animation: glow-pip 0.6s infinite alternate; }
+#dock { bottom: 18px; }

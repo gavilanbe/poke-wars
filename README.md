@@ -51,6 +51,8 @@ en el `.venv`); Jersey 15/25 son de Google Fonts.
 - `src/main.ts`: pintado, menús, comandantes y pantalla de combate.
 - `src/scene.ts`: motor de escenas (actores, partículas con los sprites de efectos de Esmeralda, parada de impacto).
 - `src/cutscenes.ts`: escenas de combate (un ataque por tipo en `MOVES`) y de captura.
+- `src/hud.css`: HUD superpuesto (placas de comandante, reloj, tarjeta de información, botones, minimapa); las piezas se
+  recolorean por equipo en `setupHud` de `src/main.ts`.
 - `src/ui.ts` + `src/ui.css`: carteles a pantalla completa (cortinilla, cambio de turno, súper poder, «VS», victoria).
 - `src/units.ts`, `src/fx.ts`, `src/sfx.ts`: sprites de las unidades, partículas del mapa y sonido.
 - Comandantes (frases, modificadores y poder) en `COMMANDERS` de `src/data.ts`; el efecto del poder, en `usePower` de `src/game.ts`.

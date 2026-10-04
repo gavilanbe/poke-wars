@@ -8,7 +8,7 @@ import * as fx from './fx'
 import {
   Building, Game, Pos, Reach, Team, Unit, attack, buildingAt, canCapture, canCounter, canRecruit, canUsePower,
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
-  canSee, footprint, resolvePath, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
+  PHASES, WEATHER_NAME, canSee, flankers, footprint, phaseOf, resolvePath, weatherBonus, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
 } from './game'
 import { Place, initCutscenes, playBattle, playCapture } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
@@ -241,7 +241,9 @@ const unitAnim = new Map<number, { name: Anim; start: number; until: number }>()
 const buildingFlash = new Map<Building, number>()
 const faces: { face: string; timer: number }[] = [{ face: 'Normal', timer: 0 }, { face: 'Normal', timer: 0 }]
 const isAI: [boolean, boolean] = AUTO ? [true, true] : [false, true]
+let weatherShown = 'clear'
 let fogOn = true
+const dayLight = [255, 255, 255, 0] // tinte actual del día (se acerca poco a poco al de la fase)
 
 // Cámara: el mapa es más grande que la pantalla. `cam` es la esquina visible en píxeles del mundo.
 const cam = { x: 0, y: 0, tx: 0, ty: 0 }
@@ -722,6 +724,36 @@ function draw(time: number) {
     }
   }
 
+  // Luz según el momento del día (cambia poco a poco) y tiempo: lluvia o sol abrasador
+  const light = [[255, 214, 150, 0.1], [255, 255, 255, 0], [255, 120, 50, 0.17], [16, 26, 96, 0.4]][phaseOf(g)]
+  for (let i = 0; i < 4; i++) dayLight[i] += (light[i] - dayLight[i]) * Math.min(1, dt * 0.002)
+  ctx.fillStyle = `rgba(${dayLight[0] | 0}, ${dayLight[1] | 0}, ${dayLight[2] | 0}, ${dayLight[3]})`
+  ctx.fillRect(cx0, cy0, canvas.width, canvas.height)
+  if (g.weather === 'rain') {
+    ctx.fillStyle = 'rgba(20, 40, 80, 0.16)'
+    ctx.fillRect(cx0, cy0, canvas.width, canvas.height)
+    ctx.fillStyle = 'rgba(200, 225, 255, 0.55)'
+    for (let i = 0; i < 90; i++) { // gotas en diagonal que caen a saltos
+      const x = (i * 97 + Math.floor(time / 40) * 9 * ((i % 3) + 2)) % (canvas.width + 60), y = (i * 53 + Math.floor(time / 40) * 17 * ((i % 3) + 2)) % (canvas.height + 40)
+      ctx.fillRect(cx0 + canvas.width - x, cy0 + y - 20, 1, 5)
+      ctx.fillRect(cx0 + canvas.width - x - 1, cy0 + y - 15, 1, 4)
+    }
+    if (Math.random() < 0.3) mapFx.add({ img: 'ripple', fps: 10, x: cx0 + Math.random() * canvas.width, y: cy0 + Math.random() * canvas.height, max: 500, scale: 1 })
+  } else if (g.weather === 'sun') {
+    ctx.fillStyle = 'rgba(255, 230, 140, 0.1)'
+    ctx.fillRect(cx0, cy0, canvas.width, canvas.height)
+    for (let i = 0; i < 5; i++) { // rayos de sol que barren despacio
+      const x = cx0 + ((i * 190 + time * 0.01) % (canvas.width + 300)) - 150
+      ctx.fillStyle = `rgba(255, 244, 190, ${0.07 + 0.03 * Math.sin(time / 900 + i)})`
+      ctx.beginPath()
+      ctx.moveTo(x, cy0)
+      ctx.lineTo(x + 46, cy0)
+      ctx.lineTo(x - 90, cy0 + canvas.height)
+      ctx.lineTo(x - 150, cy0 + canvas.height)
+      ctx.fill()
+    }
+  }
+
   // Sombras de nubes que cruzan el mapa despacio
   ctx.fillStyle = 'rgba(16, 40, 72, 0.09)'
   for (let i = 0; i < 6; i++) {
@@ -1023,7 +1055,8 @@ function statBar(name: string, value: number, max: number) {
 let lastTurnShown = -1
 function refreshStatus() {
   const turnKey = g.day * 2 + g.turn
-  dayEl.innerHTML = `<i class="pb"></i><small>DÍA</small><b>${g.day}</b><span class="turn t${g.turn}">${isAI[g.turn] ? 'Turno rival' : 'Tu turno'}</span>`
+  const phase = phaseOf(g)
+  dayEl.innerHTML = `<i class="pb"></i><small>DÍA</small><b>${g.day}</b><span class="sky p${phase} w-${g.weather}" title="${g.weather === 'sun' ? 'Fuego +20%, Agua −20%' : g.weather === 'rain' ? 'Agua +20%, Fuego −20%, se ve una casilla menos' : ''}${phase === 3 ? ' De noche se ve una casilla menos' : ''}"><i></i>${PHASES[phase]}${g.weather !== 'clear' ? ' · ' + WEATHER_NAME[g.weather] : ''}</span><span class="turn t${g.turn}">${isAI[g.turn] ? 'Turno rival' : 'Tu turno'}</span>`
   if (turnKey !== lastTurnShown) { lastTurnShown = turnKey; restart(dayEl, 'tick') }
   cosEl.innerHTML = [0, 1].map((t) => {
     const filled = (shownMeter[t] / POWER_COST) * 6
@@ -1240,11 +1273,12 @@ async function battle(att: Unit, def: Unit) {
   if (AUTO) return
   talkEl.hidden = true
   await playBattle({
-    a, d, dmg: res.dmg, counter: res.counter,
+    a, d, dmg: res.dmg, counter: res.counter, crit: res.crit,
     evolved: res.evolved ? (res.evolved === att ? 'a' : 'd') : null, evolvedKind: res.evolved?.kind ?? '',
   })
 
   label(d, `-${res.dmg}`, 'dmg')
+  if (res.crit) label(d, '¡Crítico!', 'gold', 200)
   if (g.units.includes(def)) hurt(def)
   else koFx(d, d.team)
   if (res.counter !== null) {
@@ -1440,7 +1474,9 @@ function showForecast() {
   const back = dmg < t.hp && canCounter(here, t) ? damage(g, { ...t, hp: t.hp - dmg }, here) : null
   forecastEl.innerHTML = `<div class="row"><b class="out">−${dmg}</b><span>${KINDS[t.kind].name}${dmg >= t.hp ? ' · <em>¡K.O.!</em>' : ''}</span></div>
     ${back !== null ? `<div class="row"><b class="in">−${back}</b><span>contraataque</span></div>` : ''}
-    ${eff !== 1 ? `<div class="eff ${eff > 1 ? 'good' : 'bad'}">${eff > 1 ? '▲ Súper eficaz' : '▼ Poco eficaz'}</div>` : ''}`
+    ${eff !== 1 ? `<div class="eff ${eff > 1 ? 'good' : 'bad'}">${eff > 1 ? '▲ Súper eficaz' : '▼ Poco eficaz'}</div>` : ''}
+    ${flankers(g, here, t) ? `<div class="eff good">▲ Flanqueo +${flankers(g, here, t) * 10}%</div>` : ''}
+    ${weatherBonus(g, KINDS[here.kind].type) !== 1 ? `<div class="eff ${weatherBonus(g, KINDS[here.kind].type) > 1 ? 'good' : 'bad'}">${WEATHER_NAME[g.weather]}</div>` : ''}`
   placeNear(forecastEl, t)
 }
 
@@ -1452,6 +1488,10 @@ async function nextTurn() {
   for (const u of g.units) unitDir.delete(u.id)
   refreshPanel()
   await turnBanner()
+  if (g.weather !== weatherShown) {
+    weatherShown = g.weather
+    if (!AUTO) say(g.turn, g.weather === 'rain' ? 'Empieza a llover: el agua pega más fuerte y se ve menos.' : g.weather === 'sun' ? '¡Qué solazo! El fuego pega más fuerte.' : 'Se despeja el cielo.')
+  }
   const mine = g.units.find((u) => u.team === g.turn && shown(u)) ?? g.buildings.find((b) => b.owner === g.turn)
   if (mine && !isAI[g.turn]) panTo(mine.x * T, mine.y * T)
   turnStartFx(hpBefore)

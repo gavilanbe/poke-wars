@@ -332,7 +332,7 @@ const MOVES: Record<PType, Move> = {
   },
 }
 
-async function strike(a: Side, d: Side, dmg: number) {
+async function strike(a: Side, d: Side, dmg: number, crit = false) {
   const type = KINDS[a.kind].type
   const eff = effectiveness(type, KINDS[d.kind].type)
   const big = eff > 1
@@ -363,6 +363,12 @@ async function strike(a: Side, d: Side, dmg: number) {
     d.actor.sx = 1 - 0.2 * k
   })
   stamp(`-${dmg}`, dx - a.sign * 4, dy - 50, big ? 'dmg big' : 'dmg')
+  if (crit) {
+    stamp('¡CRÍTICO!', W / 2, 92, 'super')
+    scene.flashScreen('#ffd84a', 0.6, 5)
+    scene.addShake(12)
+    scene.hitStop(120)
+  }
   if (eff !== 1) stamp(big ? '¡SÚPER EFICAZ!' : 'Poco eficaz…', d.sign < 0 ? 86 : 170, 52, big ? 'super' : 'weak')
   d.hp = hpAfter
   setHp(d.plate, hpAfter)
@@ -437,6 +443,7 @@ export interface BattleData {
   d: { kind: string; hp: number; team: number; place: Place }
   dmg: number
   counter: number | null
+  crit?: boolean // golpe crítico del atacante
   evolved: 'a' | 'd' | null
   evolvedKind: string
 }
@@ -502,7 +509,7 @@ export async function playBattle(b: BattleData) {
   root.classList.add('ready')
   await scene.wait(520)
 
-  await strike(left, right, b.dmg)
+  await strike(left, right, b.dmg, b.crit)
   if (right.hp > 0 && b.counter !== null) {
     await scene.wait(200)
     await strike(right, left, b.counter)

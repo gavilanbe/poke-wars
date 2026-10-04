@@ -22,14 +22,22 @@ export interface Game {
   meter: [number, number]
   power: [boolean, boolean] // poder activo hasta el siguiente turno propio
   fog: boolean // niebla de guerra: solo se ve lo que queda cerca de tus Pokémon y edificios
+  weather: Weather
 }
+
+export type Weather = 'clear' | 'rain' | 'sun'
+export const WEATHER_NAME: Record<Weather, string> = { clear: 'Despejado', rain: 'Lluvia', sun: 'Sol abrasador' }
+export const PHASES = ['Mañana', 'Mediodía', 'Atardecer', 'Noche']
+/** Momento del día: avanza una fase cada día de juego. De noche se ve una casilla menos. */
+export const phaseOf = (g: Game) => (g.day - 1) % 4
+const sightPenalty = (g: Game) => (phaseOf(g) === 3 ? 1 : 0) + (g.weather === 'rain' ? 1 : 0)
 export interface Pos { x: number; y: number }
 
 export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog = true): Game {
   const g: Game = {
     w: MAP[0].length, h: MAP.length, tiles: [], units: [], buildings: [],
     turn: 0, day: 1, funds: [0, 0], winner: null, nextId: 1,
-    co, meter: [0, 0], power: [false, false], fog,
+    co, meter: [0, 0], power: [false, false], fog, weather: 'clear',
   }
   g.tiles = MAP.map((row) => [...row])
   for (const def of BUILDINGS) {
@@ -85,7 +93,8 @@ export function visibleCells(g: Game, team: Team): Set<number> {
       }
     }
   }
-  for (const u of g.units) if (u.team === team) look(u.x, u.y, KINDS[u.kind].vision ?? 3)
+  const penalty = sightPenalty(g)
+  for (const u of g.units) if (u.team === team) look(u.x, u.y, Math.max(1, (KINDS[u.kind].vision ?? 3) - penalty))
   for (const b of g.buildings) if (b.owner === team) look(b.x, b.y, BUILDING_SIGHT)
   return seen
 }
@@ -170,21 +179,35 @@ export function targetsFrom(g: Game, u: Unit, from: Pos): Unit[] {
   return g.units.filter((e) => e.team !== u.team && dist(from, e) >= min && dist(from, e) <= max && canSee(g, u.team, e, cells))
 }
 
-export function damage(g: Game, att: Unit, def: Unit, attHp = att.hp): number {
+/** Aliados del atacante pegados al objetivo (sin contarle a él): cada uno suma un 10% de daño, hasta dos. */
+export const flankers = (g: Game, att: Unit, def: Unit) =>
+  Math.min(2, g.units.filter((o) => o.team === att.team && o.id !== att.id && dist(o, def) === 1).length)
+
+/** El sol aviva el fuego y apaga el agua; la lluvia, al revés. */
+export function weatherBonus(g: Game, type: string): number {
+  if (g.weather === 'sun') return type === 'fire' ? 1.2 : type === 'water' ? 0.8 : 1
+  if (g.weather === 'rain') return type === 'water' ? 1.2 : type === 'fire' ? 0.8 : 1
+  return 1
+}
+
+export function damage(g: Game, att: Unit, def: Unit, attHp = att.hp, crit = false): number {
   const a = KINDS[att.kind], d = KINDS[def.kind]
   const stars = d.move === 'fly' ? 0 : terrainAt(g, def.x, def.y).def
   const co = coMod(g, att.team, 'atk') / coMod(g, def.team, 'def')
-  const raw = co * (a.atk / d.def) * 5 * effectiveness(a.type, d.type) * (attHp / 10) * (1 - 0.1 * stars)
+  const extra = (1 + 0.1 * flankers(g, att, def)) * weatherBonus(g, a.type) * (crit ? 1.5 : 1)
+  const raw = co * extra * (a.atk / d.def) * 5 * effectiveness(a.type, d.type) * (attHp / 10) * (1 - 0.1 * stars)
   return Math.max(0, Math.min(def.hp, Math.round(raw)))
 }
 
 /** ¿Puede `def` contraatacar a `att`? Solo cuerpo a cuerpo contra cuerpo a cuerpo. */
 export const canCounter = (att: Unit, def: Unit) => !isRanged(att) && !isRanged(def) && dist(att, def) === 1
 
-export interface AttackResult { dmg: number; counter: number | null; evolved: Unit | null }
+export interface AttackResult { dmg: number; counter: number | null; evolved: Unit | null; crit: boolean }
+export const CRIT_CHANCE = 0.12
 
 export function attack(g: Game, att: Unit, def: Unit): AttackResult {
-  const res: AttackResult = { dmg: damage(g, att, def), counter: null, evolved: null }
+  const crit = Math.random() < CRIT_CHANCE // golpe crítico: daño x1,5
+  const res: AttackResult = { dmg: damage(g, att, def, att.hp, crit), counter: null, evolved: null, crit }
   def.hp -= res.dmg
   charge(g, att.team, res.dmg * 0.5)
   charge(g, def.team, res.dmg)
@@ -288,6 +311,8 @@ export function usePower(g: Game): { unit: Unit; hp: number }[] {
 export function endTurn(g: Game) {
   g.turn = (1 - g.turn) as Team
   g.power[g.turn] = false
+  // El tiempo cambia cada tres días
+  if (g.turn === 0 && g.day % 3 === 0) g.weather = (['clear', 'rain', 'sun', 'clear'] as Weather[])[Math.floor(Math.random() * 4)]
   if (g.turn === 0) g.day++
   g.funds[g.turn] += income(g, g.turn)
   for (const u of g.units) {
