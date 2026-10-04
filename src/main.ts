@@ -21,6 +21,7 @@ const TEAM_NAME = ['Rojo', 'Azul']
 const TEAM_RGB: [number, number, number][] = [[232, 72, 60], [60, 124, 232]]
 const TEAM_HEX = ['#e8483c', '#3c7ce8']
 const TEAM_LIGHT = ['#ffb0a0', '#a8d0ff']
+const TEAM_DARK = ['#a82c24', '#2452b0']
 const AUTO = new URLSearchParams(location.search).has('auto') // IA contra IA, para probar
 
 const $ = <E extends HTMLElement>(sel: string) => document.querySelector(sel) as E
@@ -324,46 +325,137 @@ function drawUnit(u: Unit, time: number) {
   }
 }
 
-function drawPathArrow(path: Pos[]) {
+/**
+ * Flecha de ruta en pixel art: tres capas de rectángulos (contorno, color del equipo y brillo), así las
+ * esquinas encajan solas y no hay ni un píxel suavizado. El brillo avanza a rayas hacia la punta.
+ */
+function drawPathArrow(path: Pos[], time: number) {
   if (path.length < 2) return
-  const last = center(path[path.length - 1]), prev = center(path[path.length - 2])
+  const pts = path.map((p) => center(p))
+  const last = pts[pts.length - 1], prev = pts[pts.length - 2]
   const dx = Math.sign(last[0] - prev[0]), dy = Math.sign(last[1] - prev[1])
-  const trace = () => {
-    ctx.beginPath()
-    path.forEach((p, i) => (i ? ctx.lineTo(...center(p)) : ctx.moveTo(...center(p))))
-    ctx.stroke()
-    ctx.beginPath() // punta de flecha
-    ctx.moveTo(last[0] + dx * 12, last[1] + dy * 12)
-    ctx.lineTo(last[0] - dy * 9 - dx * 2, last[1] - dx * 9 - dy * 2)
-    ctx.lineTo(last[0] + dy * 9 - dx * 2, last[1] + dx * 9 - dy * 2)
-    ctx.closePath()
-    ctx.fill()
-    ctx.stroke()
+  // El cuerpo acaba un poco antes para dejar sitio a la punta
+  pts[pts.length - 1] = [last[0] - dx * 6, last[1] - dy * 6]
+  const body = (half: number) => {
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]
+      ctx.fillRect(Math.min(x0, x1) - half, Math.min(y0, y1) - half, Math.abs(x1 - x0) + half * 2, Math.abs(y1 - y0) + half * 2)
+    }
   }
-  ctx.lineJoin = ctx.lineCap = 'round'
-  ctx.strokeStyle = ctx.fillStyle = '#10141c'
-  ctx.lineWidth = 11
-  trace()
-  ctx.strokeStyle = ctx.fillStyle = TEAM_HEX[g.turn]
-  ctx.lineWidth = 7
-  trace()
-  ctx.strokeStyle = ctx.fillStyle = TEAM_LIGHT[g.turn]
-  ctx.lineWidth = 2
-  trace()
+  // Punta escalonada: filas (o columnas) cada vez más estrechas
+  const head = (grow: number) => {
+    for (let i = -grow; i < 11 + grow; i++) {
+      const half = Math.max(0, 11 - i) + grow
+      const along = -5 + i
+      if (dx) ctx.fillRect(last[0] + dx * along - (dx < 0 ? 1 : 0), last[1] - half, 1, half * 2)
+      else ctx.fillRect(last[0] - half, last[1] + dy * along - (dy < 0 ? 1 : 0), half * 2, 1)
+    }
+  }
+  ctx.fillStyle = '#10141c'
+  body(7)
+  head(2)
+  ctx.fillStyle = TEAM_HEX[g.turn]
+  body(5)
+  head(0)
+  ctx.fillStyle = TEAM_DARK[g.turn] // sombra abajo y a la derecha, como un relieve
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]
+    if (y0 === y1) ctx.fillRect(Math.min(x0, x1) - 5, y0 + 3, Math.abs(x1 - x0) + 10, 2)
+    else ctx.fillRect(x0 + 3, Math.min(y0, y1) - 5, 2, Math.abs(y1 - y0) + 10)
+  }
+  // Rayas de brillo que corren hacia la punta
+  ctx.fillStyle = TEAM_LIGHT[g.turn]
+  let walked = 0
+  const offset = Math.floor(time / 45)
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]
+    const len = Math.abs(x1 - x0) + Math.abs(y1 - y0), sx = Math.sign(x1 - x0), sy = Math.sign(y1 - y0)
+    for (let d = 0; d < len; d += 2) {
+      if ((walked + d - offset + 4000) % 12 < 6) ctx.fillRect(x0 + sx * d - 1, y0 + sy * d - 1, 2, 2)
+    }
+    walked += len
+  }
+  ctx.fillStyle = '#fff'
+  if (dx) ctx.fillRect(last[0] + dx * 1 - 1, last[1] - 4, 2, 3)
+  else ctx.fillRect(last[0] - 4, last[1] + dy * 1 - 1, 3, 2)
 }
 
+/** Selector: cuatro esquinas gruesas con relieve que laten a saltos, y un velo claro sobre la casilla. */
 function drawCursor(time: number) {
   if (!hover || mode === 'busy' || mode === 'select') return
-  cursor.x += (hover.x * T - cursor.x) * 0.4
-  cursor.y += (hover.y * T - cursor.y) * 0.4
-  const grow = Math.sin(time / 180) * 1.5 + 1.5 // las esquinas respiran
-  const x = Math.round(cursor.x - grow), y = Math.round(cursor.y - grow), s = Math.round(T + grow * 2), len = 9
-  const corners = [[x, y, 1, 1], [x + s, y, -1, 1], [x, y + s, 1, -1], [x + s, y + s, -1, -1]]
-  for (const [color, w, extra] of [['#10141c', 5, 1], [mode === 'over' ? '#fff' : TEAM_HEX[g.turn], 3, 0], ['#fff', 1, 0]] as const) {
-    ctx.fillStyle = color
-    for (const [cx, cy, hx, vy] of corners) {
-      ctx.fillRect(Math.min(cx - hx * (w / 2), cx + hx * (len + extra)), cy - w / 2, len + extra + w / 2, w)
-      ctx.fillRect(cx - w / 2, Math.min(cy - vy * (w / 2), cy + vy * (len + extra)), w, len + extra + w / 2)
+  cursor.x += (hover.x * T - cursor.x) * 0.45
+  cursor.y += (hover.y * T - cursor.y) * 0.45
+  const beat = Math.floor(time / 240) % 2 ? 2 : 0 // dos fotogramas, como un sprite
+  const x = Math.round(cursor.x) - 3 - beat, y = Math.round(cursor.y) - 3 - beat, s = T + 6 + beat * 2
+  const color = mode === 'over' ? '#ffd84a' : TEAM_HEX[g.turn], light = mode === 'over' ? '#fff' : TEAM_LIGHT[g.turn]
+  ctx.fillStyle = `rgba(255, 255, 255, ${beat ? 0.1 : 0.2})`
+  ctx.fillRect(Math.round(cursor.x), Math.round(cursor.y), T, T)
+  const arm = 11, thick = 5
+  // Cada esquina es una L: se pinta en capas de fuera adentro
+  const corner = (cx: number, cy: number, hx: number, vy: number) => {
+    const layer = (inset: number, fill: string) => {
+      ctx.fillStyle = fill
+      const w = thick - inset * 2, len = arm - inset
+      const ox = hx > 0 ? cx + inset : cx - inset - len, oy = vy > 0 ? cy + inset : cy - inset - w
+      ctx.fillRect(ox, oy, len, w)
+      const ox2 = hx > 0 ? cx + inset : cx - inset - w, oy2 = vy > 0 ? cy + inset : cy - inset - len
+      ctx.fillRect(ox2, oy2, w, len)
+    }
+    layer(0, '#10141c')
+    layer(1, '#fff')
+    ctx.fillStyle = color // relleno interior
+    ctx.fillRect(hx > 0 ? cx + 2 : cx - arm + 1, vy > 0 ? cy + 2 : cy - 3, arm - 3, 1)
+    ctx.fillRect(hx > 0 ? cx + 2 : cx - 3, vy > 0 ? cy + 2 : cy - arm + 1, 1, arm - 3)
+    ctx.fillStyle = light
+    ctx.fillRect(hx > 0 ? cx + 1 : cx - 2, vy > 0 ? cy + 1 : cy - 2, 1, 1)
+  }
+  corner(x, y, 1, 1)
+  corner(x + s, y, -1, 1)
+  corner(x, y + s, 1, -1)
+  corner(x + s, y + s, -1, -1)
+}
+
+/** Retícula de objetivo: se dibuja una vez en un lienzo pequeño, a píxel, y luego se estampa. */
+let reticle: HTMLCanvasElement | null = null
+function makeReticle() {
+  const [c, cx] = makeCanvas(96, 48) // dos fotogramas de 48x48: rojo y amarillo
+  for (let f = 0; f < 2; f++) {
+    const put = (x: number, y: number, color: string) => { cx.fillStyle = color; cx.fillRect(f * 48 + x, y, 1, 1) }
+    const main = f ? '#ffd84a' : '#f04838', dark = '#10141c'
+    for (let y = 0; y < 48; y++) {
+      for (let x = 0; x < 48; x++) {
+        const d = Math.hypot(x - 23.5, y - 23.5)
+        const tick = (Math.abs(x - 23.5) < 2 && Math.abs(y - 23.5) > 12) || (Math.abs(y - 23.5) < 2 && Math.abs(x - 23.5) > 12)
+        const tickEdge = (Math.abs(x - 23.5) < 3 && Math.abs(y - 23.5) > 11) || (Math.abs(y - 23.5) < 3 && Math.abs(x - 23.5) > 11)
+        if (d < 24 && (tick || (d > 14.5 && d < 18.5))) put(x, y, d > 15.5 && d < 16.6 && !tick ? '#fff' : main)
+        else if (d < 24.5 && (tickEdge || (d > 13.5 && d < 19.5))) put(x, y, dark)
+        else if (d < 3.2) put(x, y, d < 2.2 ? '#fff' : dark)
+      }
+    }
+  }
+  return c
+}
+
+function drawTarget(t: Unit, time: number) {
+  reticle ??= makeReticle()
+  const [cx, cy] = center(t)
+  const age = time - selTime
+  const hot = hover && hover.x === t.x && hover.y === t.y
+  ctx.fillStyle = `rgba(240, 50, 40, ${Math.floor(time / 200) % 2 ? 0.42 : 0.28})`
+  ctx.fillRect(t.x * T, t.y * T, T, T)
+  // Cae desde grande y se queda latiendo; si el ratón está encima, se cierra sobre el objetivo
+  const size = age < 90 ? 96 : age < 180 ? 64 : hot ? 40 + (Math.floor(time / 110) % 2) * 4 : 48
+  const frame = hot ? Math.floor(time / 110) % 2 : 0
+  ctx.drawImage(reticle, frame * 48, 0, 48, 48, cx - size / 2, cy - size / 2 - 2, size, size)
+  // Cuatro flechitas que empujan hacia dentro
+  const push = 20 + (Math.floor(time / 160) % 3) * 2
+  ctx.fillStyle = '#10141c'
+  for (const [ax, ay] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+    for (let i = 0; i < 5; i++) {
+      const w = 5 - i, px = cx + ax * (push - i), py = cy - 2 + ay * (push - i)
+      ctx.fillStyle = i === 0 || i === 4 ? '#10141c' : '#fff'
+      if (ax) ctx.fillRect(px - (ax > 0 ? 0 : 1), py - w, 1, w * 2)
+      else ctx.fillRect(px - w, py - (ay > 0 ? 0 : 1), w * 2, 1)
     }
   }
 }
@@ -441,33 +533,27 @@ function draw(time: number) {
   for (const f of flowerSpots) ctx.drawImage(flowers, sway * 16, 0, 16, 16, f.x, f.y, 16, 16)
 
 
-  // Casillas alcanzables: se abren como una onda desde la unidad
+  // Casillas alcanzables: se abren como una onda desde la unidad y las recorre un brillo en diagonal
   if ((mode === 'move' || mode === 'inspect') && sel) {
     const enemy = sel.team !== g.turn
-    const pulse = 0.34 + 0.08 * Math.sin(time / 220)
+    const [fill, edge] = enemy ? ['240, 70, 50', '255, 200, 180'] : ['50, 120, 255', '200, 230, 255']
     for (const k of stops) {
       const r = reach.get(k)!
       const a = clamp01((time - selTime - r.cost * 38) / 170)
       if (a <= 0) continue
-      const s = (T - 2) * easeOutBack(a)
-      ctx.fillStyle = enemy ? `rgba(240, 70, 50, ${pulse})` : `rgba(60, 130, 255, ${pulse + 0.08})`
-      ctx.fillRect(r.x * T + (T - s) / 2, r.y * T + (T - s) / 2, s, s)
-      ctx.fillStyle = enemy ? 'rgba(255, 190, 170, 0.55)' : 'rgba(190, 225, 255, 0.6)'
-      ctx.fillRect(r.x * T + (T - s) / 2, r.y * T + (T - s) / 2, s, 1)
-      ctx.fillRect(r.x * T + (T - s) / 2, r.y * T + (T - s) / 2, 1, s)
+      const s = Math.round((T - 2) * easeOutBack(a) / 2) * 2
+      const x = r.x * T + (T - s) / 2, y = r.y * T + (T - s) / 2
+      const shine = ((r.x + r.y) * 90 - time * 0.5 + 100000) % 1300 < 180
+      ctx.fillStyle = `rgba(${fill}, ${shine ? 0.62 : 0.42})`
+      ctx.fillRect(x, y, s, s)
+      ctx.fillStyle = `rgba(${edge}, ${shine ? 0.95 : 0.6})` // bisel claro arriba e izquierda
+      ctx.fillRect(x, y, s, 2)
+      ctx.fillRect(x, y, 2, s)
+      ctx.fillStyle = `rgba(16, 24, 60, 0.35)` // y oscuro abajo y derecha
+      ctx.fillRect(x, y + s - 2, s, 2)
+      ctx.fillRect(x + s - 2, y, 2, s)
     }
-    if (mode === 'move' && hover && stops.has(key(hover.x, hover.y))) drawPathArrow(pathTo(reach, hover.x, hover.y))
-  }
-  if (mode === 'target') {
-    const beat = Math.abs(Math.sin(time / 160))
-    for (const t of targets) {
-      ctx.fillStyle = `rgba(250, 50, 40, ${0.3 + 0.3 * beat})`
-      ctx.fillRect(t.x * T + 1, t.y * T + 1, T - 2, T - 2)
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 1
-      const o = 2.5 + beat * 2
-      ctx.strokeRect(t.x * T + o, t.y * T + o, T - o * 2, T - o * 2)
-    }
+    if (mode === 'move' && hover && stops.has(key(hover.x, hover.y))) drawPathArrow(pathTo(reach, hover.x, hover.y), time)
   }
 
   // Edificios y unidades por filas, de arriba abajo: quien está detrás de un tejado queda tapado por él
@@ -479,6 +565,7 @@ function draw(time: number) {
   things.sort((a, b) => a[0] - b[0])
   for (const [, paint] of things) paint()
   fx.draw(ctx)
+  if (mode === 'target') for (const t of targets) drawTarget(t, time)
 
   // Sombras de nubes que cruzan el mapa despacio
   ctx.fillStyle = 'rgba(16, 40, 72, 0.09)'
@@ -994,7 +1081,7 @@ function openMenu() {
   const u = sel!, at = pending!
   targets = targetsFrom(g, u, at)
   const items: [string, () => void][] = []
-  if (targets.length) items.push(['Atacar', () => { mode = 'target'; menuEl.hidden = true; sfx.confirm() }])
+  if (targets.length) items.push(['Atacar', () => { mode = 'target'; selTime = performance.now(); menuEl.hidden = true; sfx.confirm() }])
   if (canCapture(g, u, at)) {
     items.push(['Capturar', async () => {
       mode = 'busy'
