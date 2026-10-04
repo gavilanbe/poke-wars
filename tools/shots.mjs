@@ -25,6 +25,9 @@ const enter = () => page.evaluate(() => document.querySelector('#title [data-go=
 
 await page.goto(URL)
 await sleep(2600)
+await shot('00-intro')
+await page.keyboard.press('Space') // «pulsa cualquier tecla»
+await sleep(1600)
 await shot('00-titulo')
 await enter()
 await sleep(1900)

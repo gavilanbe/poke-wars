@@ -1,6 +1,6 @@
 // Escenas a pantalla completa: combate y captura. Todo se dibuja en un lienzo de 256x176 (vista lateral,
 // como las escenas de Advance Wars) con los sprites de Mundo Misterioso y los efectos de Esmeralda.
-import { ATTACK_NAME, KINDS, PType, TYPE_COLOR, TYPE_NAME, bestMove, moveMult } from './data'
+import { ATTACK_NAME, BUILDING_INFO, BuildingType, KINDS, PType, ROLES, TYPE_COLOR, TYPE_NAME, bestMove, moveMult } from './data'
 import { Actor, Scene, easeBack, easeIn, easeOut, rnd } from './scene'
 import { music, sfx } from './sfx'
 import { cover, uncover } from './ui'
@@ -106,7 +106,9 @@ export const setSceneLight = (rgba: string) => { light = rgba }
 
 // ---------- Interfaz sobre la escena ----------
 
-const pct = (x: number, y: number) => `left:${(x / W) * 100}%;top:${(y / H) * 100}%`
+// El combate se dibuja en un lienzo tan ancho como la ventana: `pad` es lo que sobra a cada lado de los 256 px de siempre
+let pad = 0
+const pct = (x: number, y: number) => `left:${((x + pad) / (W + pad * 2)) * 100}%;top:${(y / H) * 100}%`
 
 function stamp(text: string, x: number, y: number, cls = '') {
   const el = document.createElement('div')
@@ -495,16 +497,22 @@ export interface BattleData {
 }
 
 export async function playBattle(b: BattleData) {
+  // A pantalla completa: el lienzo se ensancha hasta la proporción de la ventana y la escena de siempre queda centrada
+  pad = Math.max(0, Math.round((H * Math.min(2.4, innerWidth / innerHeight) - W) / 4) * 2)
+  scene.resize(W + pad * 2, H)
+  scene.camera.x = -pad
   await open('battle')
   const plates = root.querySelectorAll<HTMLElement>('.plate')
-  const left: Side = { actor: scene.actor(KINDS[b.a.kind].species, 72, FEET, DIR.right, scaleOf(b.a.kind)), kind: b.a.kind, team: b.a.team, hp: b.a.hp, plate: plates[0], sign: 1 }
-  const right: Side = { actor: scene.actor(KINDS[b.d.kind].species, 184, FEET, DIR.left, scaleOf(b.d.kind)), kind: b.d.kind, team: b.d.team, hp: b.d.hp, plate: plates[1], sign: -1 }
+  const apart = Math.round(pad * 0.45) // con más sitio, cada uno se va un poco hacia su lado
+  const left: Side = { actor: scene.actor(KINDS[b.a.kind].species, 72 - apart, FEET, DIR.right, scaleOf(b.a.kind)), kind: b.a.kind, team: b.a.team, hp: b.a.hp, plate: plates[0], sign: 1 }
+  const right: Side = { actor: scene.actor(KINDS[b.d.kind].species, 184 + apart, FEET, DIR.left, scaleOf(b.d.kind)), kind: b.d.kind, team: b.d.team, hp: b.d.hp, plate: plates[1], sign: -1 }
   setPlate(left.plate, left.kind, left.team, left.hp)
   setPlate(right.plate, right.kind, right.team, right.hp)
   say('')
 
   // Dos paneles en diagonal que entran chocando, cada uno con su terreno
   let slide = 1
+  const wide = 148 + pad, away = 150 + pad
   const panel = (ctx: CanvasRenderingContext2D, offset: number, points: number[][], place: Place, x0: number, time: number, team: number) => {
     ctx.save()
     ctx.translate(offset, 0)
@@ -512,16 +520,16 @@ export async function playBattle(b: BattleData) {
     points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)))
     ctx.closePath()
     ctx.clip()
-    backdrop(ctx, place, x0, 148, time)
+    backdrop(ctx, place, x0, wide, time)
     ctx.fillStyle = TEAM_HEX[team]
-    ctx.fillRect(x0, H - 4, 148, 4)
+    ctx.fillRect(x0, H - 4, wide, 4)
     ctx.restore()
   }
   scene.background = (ctx, time) => {
     ctx.fillStyle = '#10141c'
-    ctx.fillRect(-20, -20, W + 40, H + 40)
-    panel(ctx, -slide * 150, [[-20, -20], [140, -20], [116, H + 20], [-20, H + 20]], b.a.place, -20, time, b.a.team)
-    panel(ctx, slide * 150, [[140, -20], [W + 20, -20], [W + 20, H + 20], [116, H + 20]], b.d.place, 112, time, b.d.team)
+    ctx.fillRect(-20 - pad, -20, W + 40 + pad * 2, H + 40)
+    panel(ctx, -slide * away, [[-20 - pad, -20], [140, -20], [116, H + 20], [-20 - pad, H + 20]], b.a.place, -20 - pad, time, b.a.team)
+    panel(ctx, slide * away, [[140, -20], [W + 20 + pad, -20], [W + 20 + pad, H + 20], [116, H + 20]], b.d.place, 112, time, b.d.team)
     if (slide < 0.02) {
       for (const [color, w] of [['#10141c', 7], ['#fff', 3]] as const) {
         ctx.strokeStyle = color
@@ -534,18 +542,18 @@ export async function playBattle(b: BattleData) {
     }
   }
   scene.foreground = (ctx) => { // hierba alta por delante de los pies
-    for (const [side, x0] of [[b.a, 0], [b.d, 128]] as const) {
+    for (const [side, x0, x1] of [[b.a, -32 * Math.ceil(pad / 32), 128], [b.d, 128, W + pad]] as const) {
       if (side.place.terrain !== '"' || slide > 0.02) continue
-      for (let x = x0; x < x0 + 128; x += 32) tallGrass(ctx, x, FEET - 18)
+      for (let x = x0; x < x1; x += 32) tallGrass(ctx, x, FEET - 18)
     }
   }
-  left.actor.ox = -150
-  right.actor.ox = 150
+  left.actor.ox = -away
+  right.actor.ox = away
   sfx.battle()
   await scene.tween(300, (t) => {
     slide = 1 - easeOut(t)
-    left.actor.ox = -150 * slide
-    right.actor.ox = 150 * slide
+    left.actor.ox = -away * slide
+    right.actor.ox = away * slide
   })
   slide = 0
   scene.addShake(6)
@@ -563,6 +571,8 @@ export async function playBattle(b: BattleData) {
   if (b.evolved) await evolve(b.evolved === 'a' ? left : right, b.evolvedKind)
   else await scene.wait(380)
   await close()
+  scene.camera.x = pad = 0
+  scene.resize(W, H)
 }
 
 // ---------- Captura ----------
@@ -573,34 +583,46 @@ export interface CaptureData {
   capBefore: number; capAfter: number; done: boolean; total: number
 }
 
-/** Captura: el Pokémon salta al tejado del edificio real y lo pisotea hasta rendirlo. Todo a escala 1. */
+/**
+ * Captura a pantalla completa: el edificio real al doble de tamaño, el Pokémon salta al tejado y lo pisotea. Cada
+ * pisotón vacía un tramo de la barra de resistencia y arría un poco la bandera; al rendirlo, sube la del nuevo dueño.
+ * El lienzo se ensancha hasta la proporción de la ventana (y vuelve a su tamaño al salir, para el combate).
+ */
 export async function playCapture(c: CaptureData) {
+  const piece = pieceAt[c.building.type], tree = pieceAt.tree, info = BUILDING_INFO[c.building.type as BuildingType]
+  const S = 2, CH = piece.h * S + 196, CW = Math.round((CH * Math.max(1.25, Math.min(2.4, innerWidth / innerHeight))) / 2) * 2
+  scene.resize(CW, CH)
   await open('capture')
-  const piece = pieceAt[c.building.type], tree = pieceAt.tree
-  const bx = W / 2, base = 150, left = bx - piece.w / 2, roof = base - piece.h + (c.building.type === 'gym' ? 20 : 16)
-  let squash = 0, glow = 0, color = c.building.owner >= 0 ? 1 : 0, flag = c.building.owner >= 0 ? 1 : 0, flagTeam = c.building.owner
+  const bx = CW / 2, base = CH - 46, horizon = base - 56, roof = base - piece.h * S + (c.building.type === 'gym' ? 20 : 16) * S
+  const k = KINDS[c.kind], scale = scaleOf(c.kind)
+  let squash = 0, glow = 0, color = c.building.owner >= 0 ? 1 : 0, flagTeam = c.building.owner
+  let flag = c.capBefore / c.total // la bandera está tan alta como resistencia le queda al edificio
   scene.background = (ctx, time) => {
-    SKY.forEach((color, i) => { ctx.fillStyle = color; ctx.fillRect(-20, i * 22 - 10, W + 40, 22) })
+    SKY.forEach((band, i) => { ctx.fillStyle = band; ctx.fillRect(-16, Math.round((i * horizon) / 5) - (i ? 0 : 16), CW + 32, Math.ceil(horizon / 5) + (i ? 1 : 17)) })
     ctx.fillStyle = '#ffffffd8'
-    for (const [cx, cy, cw] of [[20, 16, 30], [110, 30, 22], [190, 12, 26]]) {
-      const x = ((cx + time * 0.004) % (W + 60)) - 30
-      ctx.fillRect(x, cy, cw, 5)
-      ctx.fillRect(x + 5, cy - 3, cw - 12, 3)
+    for (const [cx, cy, cw] of [[30, 26, 54], [190, 52, 38], [330, 20, 46], [470, 44, 40]]) { // nubes que pasan despacio
+      const x = ((cx + time * 0.006) % (CW + 80)) - 60
+      ctx.fillRect(x, cy, cw, 8)
+      ctx.fillRect(x + 8, cy - 5, cw - 20, 5)
     }
-    ctx.fillStyle = '#58b888'
-    for (let x = -20; x < W + 20; x += 2) ctx.fillRect(x, 100 - 12 - Math.sin(x * 0.05) * 7 - Math.sin(x * 0.13) * 3, 2, 30)
-    for (let y = 100; y < H + 16; y += 16) {
-      for (let x = -32; x < W + 32; x += 16) ctx.drawImage(pieces, pieceAt.grass.x + (((x + 64) >> 4) % 4) * 16, ((y >> 4) % 4) * 16, 16, 16, x, y, 16, 16)
+    for (const [fill, lift, f1, f2] of [['#7cc8a0', 30, 0.021, 0.05], ['#58b888', 14, 0.034, 0.09]] as [string, number, number, number][]) { // dos filas de colinas
+      ctx.fillStyle = fill
+      for (let x = -16; x < CW + 16; x += 2) ctx.fillRect(x, horizon - lift - Math.sin(x * f1) * 12 - Math.sin(x * f2) * 5, 2, 60)
     }
-    for (let y = base; y < H + 16; y += 16) { // caminito de tierra hasta la puerta
-      const mid = Math.round(bx - 16)
-      ctx.drawImage(pieces, pieceAt.path.x, 16, 16, 16, mid, y, 16, 16)
-      ctx.drawImage(pieces, pieceAt.path.x + 32, 16, 16, 16, mid + 16, y, 16, 16)
+    for (let y = horizon; y < CH + 16; y += 32) {
+      for (let x = -32; x < CW + 32; x += 32) ctx.drawImage(pieces, pieceAt.grass.x + (((x + 32) >> 5) % 4) * 16, ((y >> 5) % 4) * 16, 16, 16, x, y, 32, 32)
     }
-    for (const x of [-6, 26, 200, 232]) ctx.drawImage(pieces, tree.x, 0, tree.w, tree.h, x, 112 - tree.h + (x % 3) * 4, tree.w, tree.h)
+    for (let y = base - 2; y < CH + 16; y += 32) { // camino de tierra hasta la puerta
+      ctx.drawImage(pieces, pieceAt.path.x, 16, 16, 16, bx - 32, y, 32, 32)
+      ctx.drawImage(pieces, pieceAt.path.x + 32, 16, 16, 16, bx, y, 32, 32)
+    }
+    for (let x = -10; x < CW; x += 58) { // pinos al fondo, menos detrás del edificio
+      if (Math.abs(x + tree.w - bx) < piece.w + 34) continue
+      ctx.drawImage(pieces, tree.x, 0, tree.w, tree.h, x, horizon + 22 + ((x * 7) % 3) * 6 - tree.h * S, tree.w * S, tree.h * S)
+    }
     ctx.save()
     ctx.translate(bx, base)
-    ctx.scale(1 + 0.08 * squash, 1 - 0.12 * squash)
+    ctx.scale(S * (1 + 0.08 * squash), S * (1 - 0.12 * squash))
     ctx.fillStyle = 'rgba(8, 24, 40, 0.28)'
     ctx.fillRect(-piece.w / 2 + 3, -3, piece.w - 2, 6)
     // Sin dueño está en gris; al capturarlo el color baja como una cortina
@@ -614,38 +636,67 @@ export async function playCapture(c: CaptureData) {
       ctx.globalAlpha = 1
     }
     // Mástil y bandera
-    const fx0 = piece.w / 2 - 10, top = -piece.h - 16
+    const fx0 = piece.w / 2 - 8, top = -piece.h - 22
     ctx.fillStyle = '#10141c'
-    ctx.fillRect(fx0, top, 2, 26)
-    if (flag > 0 && flagTeam >= 0) {
-      const y = top + 1 + (1 - flag) * 16, wave = Math.floor(time / 160) % 3
-      ctx.fillRect(fx0 - 17, y - 1, 18, 12)
+    ctx.fillRect(fx0, top, 2, 34)
+    ctx.fillRect(fx0 - 1, top - 2, 4, 3)
+    if (flagTeam >= 0) {
+      const y = top + 1 + (1 - Math.max(0, Math.min(1, flag))) * 21, wave = Math.floor(time / 160) % 3
+      ctx.fillRect(fx0 - 19, y - 1, 20, 13)
       ctx.fillStyle = TEAM_HEX[flagTeam]
-      ctx.fillRect(fx0 - 16, y, 16, 10)
+      ctx.fillRect(fx0 - 18, y, 18, 11)
       ctx.fillStyle = '#ffffff70'
-      ctx.fillRect(fx0 - 16 + wave * 5, y, 4, 10)
+      ctx.fillRect(fx0 - 18 + wave * 6, y, 4, 11)
     }
     ctx.restore()
   }
-  scene.foreground = null
-  const counter = root.querySelector<HTMLElement>('.counter')!
-  const showCount = (n: number) => {
-    counter.innerHTML = `<small>CAPTURA</small><b>${Math.max(0, n)}</b><div class="bar"><i style="width:${(Math.max(0, n) / c.total) * 100}%"></i></div>`
-    restartClass(counter, 'tick')
+  scene.foreground = (ctx) => { // hierba alta en primer plano, para dar profundidad
+    for (const x of [0, 32, CW - 64, CW - 32]) ctx.drawImage(pieces, pieceAt.tall.x, 0, 16, 16, x, CH - 26, 32, 32)
   }
-  showCount(c.capBefore)
-  say(`¡${KINDS[c.kind].name} intenta capturar el edificio!`)
-  sfx.cry(KINDS[c.kind].species, 1, 0.6)
 
-  const act = scene.actor(KINDS[c.kind].species, left - 22, base + 12, DIR.right, 1)
+  // Interfaz: quién captura, qué captura y la barra de resistencia del edificio
+  const TEAM_NAME = ['Rojo', 'Azul'], owner = c.building.owner
+  const ui = document.createElement('div')
+  ui.className = `capui t${c.team}`
+  ui.innerHTML = `<div class="capwho"><img src="${facePath(k.species)}" alt=""><div><b>${k.name}</b><span>${ROLES[k.role].name} · Equipo ${TEAM_NAME[c.team]}</span></div></div>
+    <div class="capwhat o${owner}"><small>CAPTURANDO</small><b>${info.name}</b><span>${owner < 0 ? 'Sin dueño' : 'Del Equipo ' + TEAM_NAME[owner]}</span></div>
+    <div class="capgauge o${owner}"><div class="num"><b></b><small>/ ${c.total}</small></div>
+      <div class="segs">${'<i></i>'.repeat(c.total)}</div><span>RESISTENCIA DEL EDIFICIO</span></div>`
+  root.append(ui)
+  const segs = [...ui.querySelectorAll<HTMLElement>('.segs i')], num = ui.querySelector<HTMLElement>('.num b')!, gauge = ui.querySelector<HTMLElement>('.capgauge')!
+  const at = (x: number, y: number) => `left:${(x / CW) * 100}%;top:${(y / CH) * 100}%`
+  const pop = (text: string, x: number, y: number, cls: string) => {
+    const el = document.createElement('div')
+    el.className = 'cappop ' + cls
+    el.style.cssText = at(x, y)
+    el.textContent = text
+    ui.append(el)
+    setTimeout(() => el.remove(), 1100)
+  }
+  let shown = c.capBefore
+  const showCount = (n: number, quiet = false) => {
+    n = Math.max(0, n)
+    segs.forEach((seg, i) => seg.classList.toggle('off', i >= n))
+    num.textContent = String(n)
+    if (!quiet) { restartClass(gauge, 'tick'); if (n < shown) pop('−' + (shown - n), bx - piece.w * S * 0.5 - 26, roof + 6, 'dmg') }
+    shown = n
+  }
+  showCount(c.capBefore, true)
+  void ui.offsetWidth
+  ui.classList.add('in')
+  sfx.cry(k.species, 1, 0.6)
+
+  // Entra andando desde la izquierda y salta al tejado
+  const startX = bx - piece.w * S / 2 - 40
+  const act = scene.actor(k.species, -30, base + 18, DIR.right, scale)
   scene.play(act, 'Walk', true)
-  await scene.tween(260, (t) => { act.ox = 14 * t })
-  // Salta al tejado
+  await scene.tween(520, (t) => { act.ox = (startX + 30) * easeOut(t) })
+  act.x = startX; act.ox = 0
   scene.play(act, 'Hop')
   sfx.lunge()
   act.shadow = false
   const jumpX = bx - act.x, jumpY = roof - act.y
-  await scene.tween(380, (t) => { act.ox = 14 + (jumpX - 14) * t; act.oy = jumpY * t - Math.sin(t * Math.PI) * 30 })
+  await scene.tween(420, (t) => { act.ox = jumpX * t; act.oy = jumpY * t - Math.sin(t * Math.PI) * 46 })
   act.x = bx; act.y = roof; act.ox = act.oy = 0
   act.dir = DIR.down
 
@@ -653,50 +704,69 @@ export async function playCapture(c: CaptureData) {
   for (let i = 1; i <= stomps; i++) {
     const last = i === stomps && c.done
     scene.play(act, 'Hop')
-    await scene.tween(last ? 380 : 240, (t) => { act.oy = -Math.sin(t * Math.PI) * Math.min(last ? 34 : 18, roof - 34); act.sy = 1 + 0.15 * Math.sin(t * Math.PI) })
+    await scene.tween(last ? 420 : 260, (t) => { act.oy = -Math.sin(t * Math.PI) * (last ? 56 : 32); act.sy = 1 + 0.15 * Math.sin(t * Math.PI) })
     act.oy = 0
-    // Pisotón: el edificio se aplasta y rebota
-    showCount(Math.round(c.capBefore + ((c.capAfter - c.capBefore) * i) / stomps))
-    scene.addShake(last ? 6 : 3)
-    scene.hitStop(last ? 90 : 40)
+    // Pisotón: el edificio se aplasta y rebota, la barra se vacía y la bandera baja
+    const now = Math.round(c.capBefore + ((c.capAfter - c.capBefore) * i) / stomps)
+    showCount(now)
+    void scene.tween(240, (t) => { flag += (now / c.total - flag) * t })
+    scene.addShake(last ? 9 : 5)
+    scene.hitStop(last ? 110 : 50)
     sfx.capture() // el pisotón contra el tejado, siempre
     if (last) sfx.bigHit()
-    scene.add({ ring: last ? 40 : 22, size: 3, color: '#fff', x: bx, y: roof, max: 260 })
+    scene.add({ ring: last ? 90 : 50, size: 5, color: '#fff', x: bx, y: roof, max: 280 })
     for (const side of [-1, 1]) {
-      scene.fx('gray_smoke', bx + side * (piece.w / 2 + 2), base - 6, { fps: 12, scale: 1, flipX: side < 0, vx: side * 0.5 })
-      scene.burst(bx + side * piece.w / 2, base - 2, 5, { colors: ['#e8f0d8', '#c8d0b8'], speed: 1.4, up: 0.8, max: 350, size: 2 })
+      scene.fx('gray_smoke', bx + side * (piece.w * S / 2 + 4), base - 12, { fps: 12, scale: 2, flipX: side < 0, vx: side * 0.9 })
+      scene.burst(bx + side * piece.w * S / 2, base - 4, 8, { colors: ['#e8f0d8', '#c8d0b8'], speed: 2.4, up: 1.4, max: 420, size: 4 })
     }
-    void scene.tween(320, (t) => { squash = (1 - t) * Math.cos(t * Math.PI * 3) * (last ? 1.6 : 1); act.oy = piece.h * 0.12 * squash })
-    await scene.wait(last ? 260 : 170)
+    void scene.tween(340, (t) => { squash = (1 - t) * Math.cos(t * Math.PI * 3) * (last ? 1.6 : 1); act.oy = piece.h * S * 0.12 * squash })
+    await scene.wait(last ? 300 : 210)
   }
 
+  const banner = document.createElement('div')
   if (c.done) {
     scene.flashScreen('#fff', 0.9, 5)
     music.play('') // se corta la tensión y entra la fanfarria
     sfx.captured()
-    say('¡Edificio capturado!')
     void scene.tween(700, (t) => { glow = Math.sin(t * Math.PI) })
     if (color < 1) void scene.tween(520, (t) => { color = easeOut(t) })
-    await scene.tween(300, (t) => { flag = flagTeam >= 0 ? 1 - t : 0 })
+    await scene.tween(260, (t) => { flag = Math.min(flag, 1 - t) })
     flagTeam = c.team
-    void scene.tween(420, (t) => { flag = easeBack(t) })
-    scene.add({ ring: 120, size: 6, color: TEAM_HEX[c.team], x: bx, y: base - piece.h / 2, max: 600 })
-    for (let i = 0; i < 46; i++) {
-      scene.add({ img: 'confetti', frame: Math.floor(rnd(0, 12)), x: bx + rnd(-30, 30), y: base - piece.h, vx: rnd(-2.6, 2.6), vy: rnd(-4.5, -1.5), g: 0.12, drag: 0.98, max: rnd(900, 1500), scale: 1, vr: 0.2 })
+    void scene.tween(460, (t) => { flag = easeBack(t) })
+    // La barra se vuelve a llenar, ya del color del nuevo dueño
+    gauge.className = `capgauge o${c.team} won`
+    const what = ui.querySelector<HTMLElement>('.capwhat')!
+    what.className = `capwhat o${c.team}`
+    what.querySelector('small')!.textContent = 'CAPTURADO'
+    what.querySelector('span')!.textContent = 'Ahora del Equipo ' + TEAM_NAME[c.team]
+    setTimeout(() => gauge.classList.add('out'), 700) // deja sitio al cartel
+    segs.forEach((seg, i) => { seg.style.transitionDelay = i * 18 + 'ms'; seg.classList.remove('off') })
+    num.textContent = String(c.total)
+    scene.add({ ring: 260, size: 8, color: TEAM_HEX[c.team], x: bx, y: base - piece.h * S / 2, max: 650 })
+    for (let i = 0; i < 70; i++) {
+      scene.add({ img: 'confetti', frame: Math.floor(rnd(0, 12)), x: bx + rnd(-60, 60), y: base - piece.h * S, vx: rnd(-4.4, 4.4), vy: rnd(-7, -2.5), g: 0.16, drag: 0.98, max: rnd(1000, 1700), scale: 2, vr: 0.2 })
     }
-    for (let i = 0; i < 10; i++) scene.add({ img: 'gold_stars', x: bx, y: roof, vx: Math.cos(i) * 2.2, vy: Math.sin(i) * 2.2 - 1, drag: 0.94, max: 700, scale: 1 })
-    stamp('¡CAPTURADO!', W / 2, 162, `super t${c.team}`)
-    sfx.cry(KINDS[c.kind].species, 1.1, 0.7)
+    for (let i = 0; i < 12; i++) scene.add({ img: 'gold_stars', x: bx, y: roof, vx: Math.cos(i) * 3.6, vy: Math.sin(i) * 3.6 - 1.5, drag: 0.94, max: 800, scale: 2 })
+    await scene.wait(380)
+    banner.className = `capbanner t${c.team}`
+    banner.innerHTML = `<b>${[...'¡CAPTURADO!'].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')}</b>
+      <span>${c.building.type === 'gym' ? '¡El gimnasio rival ha caído!' : `${info.name} · ${info.help}`}</span>`
+    ui.append(banner)
+    sfx.cry(k.species, 1.1, 0.7)
     scene.play(act, 'Rotate')
-    await scene.tween(520, (t) => { act.oy = -Math.sin(t * Math.PI) * 22 })
+    await scene.tween(520, (t) => { act.oy = -Math.sin(t * Math.PI) * 40 })
     scene.play(act, 'Hop')
-    await scene.tween(360, (t) => { act.oy = -Math.sin(t * Math.PI) * 12 })
+    await scene.tween(360, (t) => { act.oy = -Math.sin(t * Math.PI) * 22 })
     scene.play(act, 'Idle', true)
-    await scene.wait(500)
+    await scene.wait(900)
   } else {
-    say(`¡Aguanta! Quedan ${c.capAfter} puntos.`)
+    banner.className = 'capbanner hold'
+    banner.innerHTML = `<b>¡AGUANTA!</b><span>Le quedan ${c.capAfter} puntos: sigue encima el próximo turno</span>`
+    ui.append(banner)
     scene.play(act, 'Idle', true)
-    await scene.wait(650)
+    await scene.wait(1100)
   }
   await close()
+  ui.remove()
+  scene.resize(W, H)
 }

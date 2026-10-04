@@ -14,6 +14,7 @@ import {
 import { Place, initCutscenes, playBattle, playCapture, setSceneLight } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
 import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
+import { Lesson, tutorial } from './tutorial'
 import { cover, fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, uncover, versus, victory } from './ui'
 import { Anim, DIR, animDuration, dirFrom, drawSprite, facePath, loadUnits } from './units'
 
@@ -106,6 +107,27 @@ async function setupHud() {
     '--btn-end': recolor(button, 132), '--btn-power': recolor(button, 40), '--btn-off': recolor(button, null),
   }
   for (const [name, value] of Object.entries(vars)) stage.style.setProperty(name, value)
+}
+
+// De noche se encienden las ventanas de los edificios con dueño: se localizan por el color del cristal en cada pieza
+const GLASS: Record<string, number[][]> = { house: [[127, 160, 250]], center: [[123, 210, 230], [151, 229, 233]], gym: [[88, 104, 176], [104, 128, 192]] }
+let windowGlow: HTMLCanvasElement // el atlas con solo los cristales, en amarillo cálido
+function makeWindows(img: HTMLImageElement) {
+  const [c, cx] = makeCanvas(img.width, img.height)
+  cx.drawImage(img, 0, 0)
+  const data = cx.getImageData(0, 0, c.width, c.height), d = data.data
+  for (const [name, colors] of Object.entries(GLASS)) {
+    const piece = at[name]
+    for (let y = 0; y < piece.h; y++) for (let x = piece.x; x < piece.x + piece.w; x++) {
+      const i = (y * c.width + x) * 4
+      if (colors.some(([r, g2, b]) => d[i] === r && d[i + 1] === g2 && d[i + 2] === b)) d[i + 3] = 254 // marca: cristal
+    }
+  }
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] === 254) { d[i] = 255; d[i + 1] = 216; d[i + 2] = 112; d[i + 3] = 255 } else d[i + 3] = 0
+  }
+  cx.putImageData(data, 0, 0)
+  return c
 }
 
 /** Copia en gris (algo aclarada) de una imagen: los edificios que aún no son de nadie. */
@@ -320,7 +342,7 @@ function resize() {
 const SAVE_KEY = 'pokewars-save'
 /** Guarda la partida (siempre en un momento en que le toca mover a una persona). */
 function saveGame() {
-  if (AUTO || titleOn) return
+  if (AUTO || titleOn || tutorial.isOpen) return
   try { localStorage.setItem(SAVE_KEY, JSON.stringify({ g, isAI, fogOn })) } catch { /* sin sitio: se juega sin guardar */ }
 }
 function loadSave(): { g: Game; isAI: [boolean, boolean]; fogOn: boolean } | null {
@@ -412,7 +434,9 @@ function drawUnit(u: Unit, time: number) {
   const live = anim && time < anim.until ? anim : undefined
   const name: Anim = live?.name ?? (waiting ? 'Walk' : 'Idle')
   const flashing = !!f?.flash && time < f.flash && Math.floor(time / 50) % 2 === 0
-  drawSprite(ctx, spriteOf(u), name, unitDir.get(u.id) ?? (u.team === 0 ? DIR.right : DIR.left),
+  // Los que aún pueden actuar miran hacia el cursor si lo tienen cerca
+  const near = !moving && hover && u.team === g.turn && !u.moved && (hover.x !== u.x || hover.y !== u.y) && Math.abs(hover.x - u.x) + Math.abs(hover.y - u.y) <= 4
+  drawSprite(ctx, spriteOf(u), name, unitDir.get(u.id) ?? (near ? dirFrom(hover!.x - u.x, hover!.y - u.y) : u.team === 0 ? DIR.right : DIR.left),
     live ? time - live.start : time + u.id * 137, x + 16, y + 13 - lift,
     { dim: done && name === 'Idle', white: flashing, sx, sy, loop: name === 'Idle' || name === 'Walk' })
 
@@ -650,6 +674,13 @@ function drawBuilding(b: Building, time: number) {
   ctx.fillStyle = b.owner < 0 ? '#fff' : TEAM_LIGHT[b.owner]
   ctx.fillRect(dx + 4, dy + T - 7, T - 8, 1)
 
+  if (b.type === 'house' && b.owner >= 0) { // en las casas habitadas sale humo de la chimenea
+    for (let i = 0; i < 3; i++) {
+      const p = (time / 2800 + i / 3 + b.x * 0.37) % 1, size = 3 + p * 5
+      ctx.fillStyle = `rgba(232, 236, 244, ${(1 - p) * 0.55})`
+      ctx.fillRect(Math.round(r.x + 56 + Math.sin(p * 5 + b.x) * 3 + p * 7 - size / 2), Math.round(r.y + 2 - p * 26 - size / 2), Math.round(size), Math.round(size))
+    }
+  }
   if (b.owner >= 0) { // bandera en el tejado
     const fx0 = r.x + r.w - 16, top = r.y - 12
     const wave = Math.floor(time / 180 + b.x) % 3
@@ -685,11 +716,11 @@ function draw(time: number) {
   const [shakeX, shakeY] = fx.update(dt)
   canvas.style.transform = shakeX || shakeY ? `translate(${shakeX * scale}px, ${shakeY * scale}px)` : ''
 
-  // Cámara: bordes de la pantalla, WASD o flechas; sigue suave a su objetivo
+  // Cámara: bordes de la pantalla o WASD (las flechas mueven el cursor); sigue suave a su objetivo
   if (mode !== 'select' && mode !== 'recruit' && sceneEl.hidden) {
     const edge = 0.045, speed = dt * 0.55
-    const dx = (keysDown.has('a') || keysDown.has('arrowleft') || (mouse.inside && mouse.x < edge) ? -1 : 0) + (keysDown.has('d') || keysDown.has('arrowright') || (mouse.inside && mouse.x > 1 - edge) ? 1 : 0)
-    const dy = (keysDown.has('w') || keysDown.has('arrowup') || (mouse.inside && mouse.y < edge) ? -1 : 0) + (keysDown.has('s') || keysDown.has('arrowdown') || (mouse.inside && mouse.y > 1 - edge) ? 1 : 0)
+    const dx = (keysDown.has('a') || (mouse.inside && mouse.x < edge) ? -1 : 0) + (keysDown.has('d') || (mouse.inside && mouse.x > 1 - edge) ? 1 : 0)
+    const dy = (keysDown.has('w') || (mouse.inside && mouse.y < edge) ? -1 : 0) + (keysDown.has('s') || (mouse.inside && mouse.y > 1 - edge) ? 1 : 0)
     if ((dx || dy) && mode !== 'menu') panTo(cam.tx + canvas.width / 2 + dx * speed, cam.ty + canvas.height / 2 + dy * speed)
   }
   if (titleOn) {
@@ -816,6 +847,20 @@ function draw(time: number) {
   for (let i = 0; i < 4; i++) dayLight[i] += (light[i] - dayLight[i]) * Math.min(1, dt * 0.002)
   ctx.fillStyle = `rgba(${dayLight[0] | 0}, ${dayLight[1] | 0}, ${dayLight[2] | 0}, ${dayLight[3]})`
   ctx.fillRect(cx0, cy0, canvas.width, canvas.height)
+  const dusk = clamp01((dayLight[3] - 0.14) / 0.2) // al atardecer se van encendiendo las ventanas de los edificios con dueño
+  if (dusk > 0) {
+    for (const b of g.buildings) {
+      if (b.owner < 0 || !GLASS[b.type]) continue
+      const r = buildingRect(b)
+      ctx.globalAlpha = dusk * (0.86 + 0.14 * Math.sin(time / 300 + b.x * 2.1)) // tiemblan un poco, como una lámpara
+      ctx.drawImage(windowGlow, r.piece.x, 0, r.w, r.h, r.x, r.y, r.w, r.h)
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.globalAlpha *= 0.35
+      ctx.drawImage(windowGlow, r.piece.x, 0, r.w, r.h, r.x - 1, r.y - 1, r.w + 2, r.h + 2) // halo
+      ctx.globalCompositeOperation = 'source-over'
+    }
+    ctx.globalAlpha = 1
+  }
   if (g.weather === 'rain') {
     ctx.fillStyle = 'rgba(20, 40, 80, 0.16)'
     ctx.fillRect(cx0, cy0, canvas.width, canvas.height)
@@ -858,7 +903,7 @@ function draw(time: number) {
   }
   drawCursor(time)
   ctx.setTransform(1, 0, 0, 1, 0, 0)
-  if (Math.floor(time / 120) !== Math.floor((time - dt) / 120)) drawMinimap()
+  if (Math.floor(time / 120) !== Math.floor((time - dt) / 120)) { drawMinimap(); refreshHints() }
 
   if (mode === 'over' && g.winner !== null && Math.random() < 0.5) {
     fx.burst(cam.x + Math.random() * canvas.width, cam.y - 4, { n: 2, colors: [TEAM_HEX[g.winner], TEAM_LIGHT[g.winner], '#ffd84a', '#fff'], speed: 0.8, life: 2600, gravity: 60, size: 5 })
@@ -1320,7 +1365,7 @@ function refreshPanel() {
   powerBtn.innerHTML = `★ ${powerBtn.disabled && !g.power[g.turn] ? `${charge}%` : co(g.turn).power} <kbd>P</kbd>`
   powerBtn.title = `${co(g.turn).power}: ${co(g.turn).powerHelp}`
   powerBtn.style.setProperty('--p', String(g.power[g.turn] ? 100 : charge))
-  endBtn.innerHTML = `Fin del turno <kbd>Enter</kbd>`
+  endBtn.innerHTML = `Fin del turno <kbd>E</kbd>`
   aiBtn.textContent = `Azul: ${isAI[1] ? 'IA' : 'humano'}`
   muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`
   refreshInfo()
@@ -1389,7 +1434,7 @@ function finish() {
   const winner = g.winner
   setFace(winner, 'Happy', 1e7)
   setFace((1 - winner) as Team, 'Pain', 1e7)
-  if (AUTO) return
+  if (AUTO || tutorial.isOpen) return
   talkEl.hidden = true
   setTimeout(() => {
     music.ambience('')
@@ -1408,7 +1453,8 @@ function finish() {
  * retrato en grande, su estilo, su poder y su equipo animado. Todo se tiñe de su color y suena su tema.
  * Si el rival lo lleva la IA, se sortea a la vista con una ruleta.
  */
-function chooseCommanders(): Promise<[string, string]> {
+let selectBack: (() => void) | null = null // Esc en la elección de comandante
+function chooseCommanders(): Promise<[string, string] | null> {
   const ids = Object.keys(COMMANDERS)
   if (AUTO) return Promise.resolve([pick(ids), pick(ids)])
   mode = 'select'
@@ -1425,7 +1471,7 @@ function chooseCommanders(): Promise<[string, string]> {
       </section>
       <div class="equipo"><canvas class="campo" width="528" height="52"></canvas><div class="roles"></div></div>
       <div class="plantel"></div>
-      <footer>Flechas o ratón para mirar · Clic o Enter para elegir</footer>`
+      <footer><kbd>←</kbd><kbd>→</kbd> mirar · <kbd>Enter</kbd> elegir · <kbd>Esc</kbd> volver</footer>`
     const q = <E extends HTMLElement>(sel: string) => selectEl.querySelector(sel) as E
     const show = q('.show'), plantel = q('.plantel')
     let current = '', locked = false, team = 0, themeTimer = 0
@@ -1519,6 +1565,16 @@ function chooseCommanders(): Promise<[string, string]> {
       stampEl.remove()
     }
 
+    // Esc: el segundo jugador devuelve la elección al primero; el primero vuelve al título
+    selectBack = () => {
+      if (locked) return
+      sfx.cancel()
+      clearTimeout(themeTimer)
+      if (team === 1 && picks.length) { tiles[ids.indexOf(picks.pop()!)].classList.remove('rojo'); return ask(0) }
+      selectBack = null
+      resolve(null)
+    }
+
     async function choose(id: string) {
       locked = true
       clearTimeout(themeTimer)
@@ -1544,6 +1600,7 @@ function chooseCommanders(): Promise<[string, string]> {
         picks.push(rival)
         await confirm(rival, '¡RIVAL!')
       }
+      selectBack = null
       resolve(picks as [string, string])
     }
 
@@ -1577,18 +1634,40 @@ function chooseCommanders(): Promise<[string, string]> {
 // ---------- Pantalla de título ----------
 
 const titleEl = $('#title')
-const helpEl = $('#help')
-helpEl.onclick = () => (helpEl.hidden = true)
-$('#helpbtn').onclick = () => (helpEl.hidden = !helpEl.hidden)
+$('#helpbtn').onclick = () => void tutorial.open()
 let titleOn = false
+let titleIntro = true // la primera vez espera a que pulses algo (y así el navegador ya deja sonar la música)
+let idleTimer = 0, duelTimer = 0, wokeAt = 0
+let duel: string[] = []
 
 /** Título: el mapa vivo de fondo (la cámara pasea, los Pokémon se mueven, pasa el día) y el menú encima. */
 function showTitle() {
   hideOverlay()
   titleOn = true
-  mode = 'select'
   bannerEl.hidden = talkEl.hidden = sceneEl.hidden = selectEl.hidden = menuEl.hidden = recruitEl.hidden = true
-  // Un campo de batalla de exhibición, sin niebla y con Pokémon de los dos equipos repartidos
+  loadDemo()
+  stage.classList.add('titling')
+  stage.classList.remove('attract')
+  titleEl.hidden = false
+  titleEl.classList.toggle('intro', titleIntro)
+  restart(titleEl, 'open')
+  if (!titleIntro) restart(titleEl, 'enter')
+  // El botón principal es el que más probablemente quieres: seguir tu partida o, si no hay, empezar una
+  const saved = !!loadSave()
+  titleEl.querySelector<HTMLElement>('[data-go=continue]')!.hidden = !saved
+  for (const btn of titleEl.querySelectorAll<HTMLElement>('.menu > button')) btn.classList.toggle('main', btn.dataset.go === (saved ? 'continue' : 'solo'))
+  refreshTitle()
+  music.play('title')
+  music.ambience('')
+  nextDuel()
+  clearInterval(duelTimer)
+  duelTimer = window.setInterval(nextDuel, 6500)
+  titleWake()
+  if (!titleIntro) titleEl.querySelector<HTMLElement>('.menu > .main')!.focus()
+}
+
+/** Un campo de batalla de exhibición en el mapa elegido, sin niebla y con Pokémon de todos los equipos paseando. */
+function loadDemo() {
   const demo = createGame(['pikachu', 'charizard'], false, mapChoice)
   const cast = Object.keys(COMMANDERS).flatMap((id) => [pick(rosterOf(id)), pick(rosterOf(id))]).filter((k) => KINDS[k].move !== 'swim')
   cast.forEach((kind, i) => {
@@ -1605,13 +1684,6 @@ function showTitle() {
   for (const m of [unitFx, unitDir, unitAnim, animPos]) m.clear()
   reset()
   mode = 'select'
-  stage.classList.add('titling')
-  titleEl.hidden = false
-  restart(titleEl, 'open')
-  titleEl.querySelector<HTMLElement>('[data-go=continue]')!.hidden = !loadSave()
-  refreshTitle()
-  music.play('title')
-  music.ambience('')
   void (async () => { // los Pokémon pasean por el mapa mientras estás en el menú
     while (titleOn && g === demo) {
       const u = pick(demo.units)
@@ -1628,25 +1700,95 @@ function showTitle() {
   })()
 }
 
+/** Dos comandantes cara a cara a los lados del logo; cada pocos segundos entra otra pareja y uno de ellos suelta su frase. */
+function nextDuel() {
+  if (!titleOn) return void clearInterval(duelTimer)
+  const fresh = Object.keys(COMMANDERS).filter((id) => !duel.includes(id))
+  const a = pick(fresh)
+  duel = [a, pick(fresh.filter((id) => id !== a))]
+  const speaker = Math.random() < 0.5 ? 0 : 1
+  titleEl.querySelectorAll<HTMLElement>('.rival').forEach((el, t) => {
+    const c = COMMANDERS[duel[t]]
+    el.style.setProperty('--c', c.color)
+    for (const img of el.querySelectorAll('img')) img.src = facePath(duel[t], t === speaker ? 'Determined' : 'Normal')
+    el.querySelector('b')!.textContent = c.name
+    el.querySelector('span')!.textContent = c.title
+    el.querySelector('.say')!.textContent = t === speaker ? `«${pick(c.quotes.start)}»` : ''
+    restart(el, 'swap')
+  })
+}
+
+/**
+ * Cualquier tecla o clic: la primera vez abre el menú; después, lo despierta si se había retirado. Tras medio
+ * minuto sin tocar nada el menú se aparta y deja ver el mapa (modo escaparate).
+ */
+function titleWake(e?: Event) {
+  if (!titleOn || titleEl.hidden) return
+  clearTimeout(idleTimer)
+  idleTimer = window.setTimeout(() => { if (titleOn && !titleIntro && !titleEl.hidden) stage.classList.add('attract') }, 30000)
+  const asleep = titleIntro || stage.classList.contains('attract')
+  if (!e || !asleep) return
+  stage.classList.remove('attract')
+  if (e.type === 'mousemove') return
+  e.stopPropagation() // esa pulsación solo despierta: no elige nada
+  e.preventDefault()
+  wokeAt = performance.now()
+  if (titleIntro) {
+    titleIntro = false
+    titleEl.classList.remove('intro')
+    restart(titleEl, 'enter')
+    sfx.confirm()
+    music.play('title')
+  }
+  titleEl.querySelector<HTMLElement>('.menu > .main')!.focus()
+}
+for (const type of ['keydown', 'pointerdown', 'mousemove']) addEventListener(type, titleWake, true)
+
 function refreshTitle() {
-  titleEl.querySelector('[data-opt=map]')!.innerHTML = `Mapa: <b>${MAPS[mapChoice].name}</b>`
+  titleEl.querySelectorAll<HTMLElement>('.maps button').forEach((btn, i) => btn.classList.toggle('on', i === mapChoice))
   titleEl.querySelector('.blurb')!.textContent = MAPS[mapChoice].blurb
-  titleEl.querySelector('[data-opt=fog]')!.textContent = `Niebla de guerra: ${fogOn ? 'sí' : 'no'}`
-  titleEl.querySelector('[data-opt=sound]')!.textContent = `Sonido: ${muted ? 'no' : 'sí'}`
+  const toggle = (opt: string, on: boolean, text: string) => {
+    const btn = titleEl.querySelector<HTMLElement>(`[data-opt=${opt}]`)!
+    btn.classList.toggle('on', on)
+    btn.innerHTML = `<i></i>${text}`
+  }
+  toggle('fog', fogOn, 'Niebla de guerra')
+  toggle('sound', !muted, 'Sonido')
 }
 
 // El logo se monta letra a letra para animarlas por separado; la O de POKÉ es una Poké Ball
 titleEl.querySelector('.poke')!.innerHTML = ['P', '<i class="ball"></i>', 'K', 'É'].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')
 titleEl.querySelector('.wars')!.innerHTML = [...'WARS'].map((ch, i) => `<span style="--i:${i + 4}">${ch}</span>`).join('')
+// Un botón por mapa, con su miniatura
+MAPS.forEach((map, i) => {
+  const btn = document.createElement('button'), mini = document.createElement('canvas'), k = 3
+  btn.dataset.map = String(i)
+  mini.width = map.rows[0].length * k
+  mini.height = map.rows.length * k
+  const mx = mini.getContext('2d')!
+  map.rows.forEach((row, y) => [...row].forEach((tile, x) => { mx.fillStyle = MINI_COLOR[tile] ?? '#8fd880'; mx.fillRect(x * k, y * k, k, k) }))
+  for (const b of map.buildings) {
+    mx.fillStyle = b.owner < 0 ? '#e8ecf4' : TEAM_HEX[b.owner]
+    for (const c of footprint(b)) mx.fillRect(c.x * k, c.y * k, k, k)
+  }
+  btn.append(mini)
+  btn.insertAdjacentHTML('beforeend', `<b>${map.name}</b>`)
+  titleEl.querySelector('.maps')!.append(btn)
+})
 for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
   btn.onmouseenter = () => { sfx.cursor(); btn.focus() }
   btn.onclick = () => {
-    if (btn.dataset.opt === 'map') { // cambia de mapa y lo enseña de fondo
-      mapChoice = (mapChoice + 1) % MAPS.length
+    if (performance.now() - wokeAt < 300) return // el clic que despertó el menú
+    if (btn.dataset.map) { // cambia de mapa y lo enseña de fondo
+      if (Number(btn.dataset.map) === mapChoice) return
+      mapChoice = Number(btn.dataset.map)
       localStorage.setItem('pokewars-map', String(mapChoice))
       sfx.confirm()
-      return showTitle()
+      loadDemo()
+      restart(stage, 'mapswap')
+      return refreshTitle()
     }
+    if (btn.dataset.opt === 'help') return void tutorial.open()
     if (btn.dataset.opt === 'fog') { fogOn = !fogOn; fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`; sfx.confirm(); return refreshTitle() }
     if (btn.dataset.opt === 'sound') { toggleMute(); music.sync(); sfx.confirm(); return refreshTitle() }
     const saved = btn.dataset.go === 'continue' ? loadSave() : null
@@ -1654,6 +1796,10 @@ for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
     else isAI[1] = btn.dataset.go === 'solo' // contra la IA o dos personas por turnos
     sfx.confirm()
     void (async () => { // el botón destella, el logo sale volando y la cortinilla da paso a la selección
+      if (!saved && !localStorage.getItem('pokewars-tutorial') && !navigator.webdriver) { // la primera partida empieza por el tutorial
+        localStorage.setItem('pokewars-tutorial', '1')
+        await tutorial.open()
+      }
       btn.classList.add('chosen')
       titleEl.classList.add('leaving')
       await sleep(420)
@@ -1668,10 +1814,91 @@ for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
   }
 }
 
+// ---------- Tutorial: lecciones sobre el juego de verdad ----------
+
+let stash: { g: Game; isAI: [boolean, boolean]; cam: [number, number]; title: boolean } | null = null
+tutorial.init({
+  canOpen: () => !!g && (titleOn ? !titleEl.hidden : (mode === 'idle' || mode === 'inspect') && !isAI[g.turn]),
+  enter() { // se aparta lo que hubiera (el título o la partida) hasta que se cierre
+    stash = { g, isAI: [isAI[0], isAI[1]], cam: [cam.tx, cam.ty], title: titleOn }
+    titleOn = false
+    clearInterval(duelTimer)
+    clearTimeout(idleTimer)
+    titleEl.hidden = true
+    stage.classList.remove('titling', 'attract')
+    stage.classList.add('tutoring')
+    talkEl.hidden = true
+    reset()
+    mode = 'idle' // en el título el modo es «select»: las lecciones necesitan el tablero libre
+  },
+  leave() {
+    const back = stash!
+    stash = null
+    stage.classList.remove('tutoring')
+    isAI[0] = back.isAI[0]; isAI[1] = back.isAI[1]
+    talkEl.hidden = bannerEl.hidden = true
+    if (back.title) return showTitle()
+    enterGame(back.g)
+    panTo(back.cam[0] + canvas.width / 2, back.cam[1] + canvas.height / 2, true)
+    themeNow()
+  },
+  load(lesson: Lesson) {
+    const game = createGame(['pikachu', 'charizard'], false, 0)
+    for (const change of lesson.buildings ?? []) {
+      const b = buildingAt(game, change.x, change.y)!
+      if (change.owner !== undefined) b.owner = change.owner
+      if (change.cap !== undefined) b.cap = change.cap
+    }
+    game.units = lesson.units.map((u, i) => ({ id: i + 1, kind: u.kind, team: u.team, x: u.x, y: u.y, hp: u.hp ?? 10, moved: false, xp: u.xp ?? 0, level: 1, status: u.status ?? null, statusTurns: u.status ? 6 : 0 }))
+    game.nextId = game.units.length + 1
+    game.wild = lesson.wild ?? []
+    game.items = lesson.items ?? []
+    game.funds = lesson.funds ?? [0, 0]
+    game.meter = lesson.meter ?? [0, 0]
+    isAI[0] = false; isAI[1] = true
+    enterGame(game)
+    shownFunds[0] = game.funds[0]; shownMeter[0] = game.meter[0]
+    hover = { x: lesson.cursor[0], y: lesson.cursor[1] }
+    cursor.x = hover.x * T; cursor.y = hover.y * T
+    panTo(hover.x * T + 3 * T, hover.y * T, true)
+    refreshInfo()
+    themeNow()
+  },
+  idle: () => (mode === 'idle' || mode === 'inspect' || mode === 'move' || mode === 'menu' || mode === 'target' || mode === 'recruit') && sceneEl.hidden && overlayEl.hidden,
+  key(key: string) {
+    dispatchEvent(new KeyboardEvent('keydown', { key }))
+    dispatchEvent(new KeyboardEvent('keyup', { key }))
+  },
+  look(x: number, y: number) {
+    hover = { x, y }
+    panTo(x * T, y * T)
+    refreshInfo()
+  },
+  mode: () => mode,
+  hover: () => hover,
+})
+
+/** Pone un estado de partida ya montado en pantalla (sin presentación): lo usan las lecciones y la vuelta del tutorial. */
+function enterGame(game: Game) {
+  g = game
+  terrainLayer = makeTerrainLayer(g)
+  fx.clear()
+  for (const m of [unitFx, unitDir, unitAnim, animPos]) m.clear()
+  bannerEl.hidden = sceneEl.hidden = selectEl.hidden = true
+  reset()
+  refreshPanel()
+}
+
 async function newGame() {
   hideOverlay()
   bannerEl.hidden = talkEl.hidden = true
   const cos = await chooseCommanders()
+  if (!cos) { // se ha echado atrás: de vuelta al título
+    await cover()
+    showTitle()
+    await uncover()
+    return
+  }
   if (AUTO) return startGame(cos)
   // Presentación: los comandantes frente a frente mientras se monta el mapa por debajo
   sfx.battle()
@@ -1961,7 +2188,7 @@ function openRecruit(b: Building) {
   recruitKey = (e) => {
     const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -COLS, ArrowDown: COLS }[e.key]
     if (step !== undefined) show(Math.max(0, Math.min(cells.length - 1, current + step)))
-    else if (e.key === 'Enter') pickUp(current)
+    else if (e.key === 'Enter' || e.key === ' ' || e.key.toLowerCase() === 'z') pickUp(current)
     else return
     e.preventDefault()
   }
@@ -2071,11 +2298,13 @@ function passScreen(): Promise<void> {
 }
 
 /** Salta al siguiente Pokémon propio que aún no ha actuado. */
-function nextUnit() {
+function nextUnit(step = 1) {
   if (!g || isAI[g.turn] || (mode !== 'idle' && mode !== 'inspect' && mode !== 'move') || pending) return
   const mine = g.units.filter((u) => u.team === g.turn && !u.moved)
   if (!mine.length) return
-  const next = mine[(mine.indexOf(sel as Unit) + 1) % mine.length]
+  const at = mine.indexOf(sel as Unit)
+  const next = mine[at < 0 ? (step > 0 ? 0 : mine.length - 1) : (at + step + mine.length) % mine.length]
+  if (hover === null) (cursor.x = next.x * T), (cursor.y = next.y * T)
   reset()
   select(next)
   hover = { x: next.x, y: next.y }
@@ -2184,10 +2413,12 @@ function tileFromEvent(e: MouseEvent): Pos {
 }
 canvas.addEventListener('mousemove', (e) => {
   if (!g) return
+  if (e.movementX || e.movementY) setKbd(false)
   const p = tileFromEvent(e)
   if (hover && hover.x === p.x && hover.y === p.y) return
   if (!hover) (cursor.x = p.x * T), (cursor.y = p.y * T)
   hover = p
+  greet()
   refreshInfo()
   showForecast()
 })
@@ -2196,33 +2427,135 @@ stage.addEventListener('mousemove', (e) => {
   const r = canvas.getBoundingClientRect()
   mouse.x = (e.clientX - r.left) / r.width
   mouse.y = (e.clientY - r.top) / r.height
-  mouse.inside = true
+  mouse.inside = !tutorial.isOpen
 })
 stage.addEventListener('mouseleave', () => (mouse.inside = false))
 addEventListener('keyup', (e) => keysDown.delete(e.key.toLowerCase()))
 addEventListener('blur', () => keysDown.clear())
 stage.addEventListener('contextmenu', (e) => { e.preventDefault(); if (g) cancel() })
+// ---------- Teclado ----------
+// Todo el juego se puede manejar sin ratón: las flechas mueven el cursor del mapa o el foco de los menús, Enter
+// (o Espacio, o Z) confirma y Esc (o X) vuelve atrás. `kbd` dice si lo último que se usó fue el teclado: entonces
+// se enseña la barra de teclas y el ratón parado en un borde no arrastra la cámara.
+
+const hintsEl = $('#hints'), overlayEl = $('#overlay')
+let hintsFor = ''
+function setKbd(on: boolean) {
+  if (on) mouse.inside = false
+  stage.classList.toggle('kbd', on)
+}
+const HINTS: Partial<Record<Mode, string>> = {
+  idle: '<kbd>←↑↓→</kbd> cursor · <kbd>Enter</kbd> elegir · <kbd>Tab</kbd> siguiente Pokémon · <kbd>P</kbd> poder · <kbd>E</kbd> fin del turno',
+  inspect: '<kbd>←↑↓→</kbd> cursor · <kbd>Enter</kbd> elegir · <kbd>Esc</kbd> soltar',
+  move: '<kbd>←↑↓→</kbd> destino · <kbd>Enter</kbd> mover · <kbd>Tab</kbd> siguiente · <kbd>Esc</kbd> cancelar',
+  menu: '<kbd>↑↓</kbd> orden · <kbd>Enter</kbd> aceptar · <kbd>Esc</kbd> atrás',
+  target: '<kbd>←→</kbd> objetivo · <kbd>Enter</kbd> atacar · <kbd>Esc</kbd> atrás',
+  recruit: '<kbd>←↑↓→</kbd> elegir · <kbd>Enter</kbd> reclutar · <kbd>Esc</kbd> salir',
+}
+/** Barra de teclas del momento (la llama el bucle de pintado; solo toca el DOM cuando cambia). */
+function refreshHints() {
+  const html = (!titleOn && !isAI[g.turn] && HINTS[mode]) || ''
+  if (html === hintsFor) return
+  hintsFor = html
+  hintsEl.innerHTML = html
+  hintsEl.hidden = !html
+}
+
+const DIRS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+/** Lleva el foco al botón visible más cercano en esa dirección; si no hay ninguno, da la vuelta por el otro lado. */
+function moveFocus(host: HTMLElement, [dx, dy]: [number, number]) {
+  const buttons = [...host.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')].filter((b) => b.offsetParent)
+  const from = document.activeElement as HTMLButtonElement
+  if (!buttons.includes(from)) return buttons[0]?.focus()
+  const centre = (el: Element) => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2] }
+  const [fx0, fy0] = centre(from)
+  let best: HTMLButtonElement | null = null, bestScore = Infinity, wrap: HTMLButtonElement | null = null, wrapScore = Infinity
+  for (const b of buttons) {
+    if (b === from) continue
+    const [x, y] = centre(b)
+    const along = (x - fx0) * dx + (y - fy0) * dy, across = Math.abs((x - fx0) * dy) + Math.abs((y - fy0) * dx)
+    const cone = dy ? along * 2 : along * 0.6 + 20 // de lado solo vale lo que está en la misma fila; arriba y abajo, casi todo
+    if (along > 8 && across <= cone && along + across * 3 < bestScore) { bestScore = along + across * 3; best = b }
+    if (along < -8 && across <= -cone + 40 && along + across * 3 < wrapScore) { wrapScore = along + across * 3; wrap = b } // el más lejano hacia atrás
+  }
+  ;(best ?? wrap)?.focus()
+}
+
+/** Mueve el cursor del mapa una casilla (o, eligiendo objetivo, salta al siguiente rival a tiro). */
+function moveCursor([dx, dy]: [number, number]) {
+  if (!hover) {
+    const p = sel ?? g.units.find((u) => u.team === g.turn && !u.moved) ?? { x: Math.floor((cam.x + canvas.width / 2) / T), y: Math.floor((cam.y + canvas.height / 2) / T) }
+    hover = { x: p.x, y: p.y }
+    cursor.x = hover.x * T
+    cursor.y = hover.y * T
+  } else if (mode === 'target' && targets.length) {
+    const at = targets.findIndex((t) => t.x === hover!.x && t.y === hover!.y)
+    const next = targets[(at + (dx + dy > 0 ? 1 : -1) + targets.length) % targets.length]
+    hover = { x: next.x, y: next.y }
+  } else hover = { x: Math.max(0, Math.min(g.w - 1, hover.x + dx)), y: Math.max(0, Math.min(g.h - 1, hover.y + dy)) }
+  follow(hover, 3)
+  sfx.cursor()
+  greet()
+  refreshInfo()
+  showForecast()
+}
+/** El Pokémon sobre el que se posa el cursor da un saltito (solo mientras se elige, no en mitad de una orden). */
+function greet() {
+  const u = (mode === 'idle' || mode === 'inspect') && hover ? unitShownAt(hover.x, hover.y) : undefined
+  if (u && u !== sel) setFx(u, { pop: performance.now() })
+}
+
 addEventListener('keydown', (e) => {
-  if (!g) return
-  if (mode === 'recruit' && recruitKey && (e.key.startsWith('Arrow') || e.key === 'Enter')) return recruitKey(e)
-  if (e.key.startsWith('Arrow') && (mode === 'menu' || mode === 'select')) {
-    const host = mode === 'menu' ? menuEl : titleOn && !titleEl.hidden ? titleEl : selectEl
-    const buttons = [...host.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
-    const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1
-    const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
-    buttons[(at + step + buttons.length) % buttons.length]?.focus()
+  if (!g || e.metaKey || e.ctrlKey || e.altKey) return
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
+  const dir = DIRS[k], confirm = k === 'Enter' || k === ' ' || k === 'z', back = k === 'Escape' || k === 'x' || k === 'Backspace'
+  const focused = document.activeElement instanceof HTMLButtonElement ? document.activeElement : null
+  if (dir || confirm || back || k === 'Tab') setKbd(true)
+
+  // Con el tutorial abierto, las teclas de la persona pasan sus páginas; las que pulsa él mismo sí llegan al juego
+  if (tutorial.isOpen && e.isTrusted) { e.preventDefault(); return tutorial.key(k) }
+  if (k === 'h' || k === '?') return void tutorial.open()
+  if (k === 'm') return muteBtn.click()
+
+  const pass = document.querySelector('#pass'), overlayBtn = overlayEl.hidden ? null : overlayEl.querySelector('button')
+  if (pass) return // la pantalla de pasar el ordenador tiene su propia tecla
+  if (overlayBtn) { if (confirm) { e.preventDefault(); overlayBtn.click() } return } // victoria: Enter juega otra vez
+
+  // Menús hechos de botones: título, elección de comandante y órdenes del Pokémon
+  const host = mode === 'menu' ? menuEl : mode !== 'select' ? null : titleOn && !titleEl.hidden ? titleEl : !selectEl.hidden ? selectEl : null
+  if (host) {
     e.preventDefault()
+    if (dir) return moveFocus(host, dir)
+    if (confirm) return (focused && host.contains(focused) ? focused : host.querySelector<HTMLButtonElement>('button.main, button:not(:disabled)'))?.click()
+    if (back) return host === selectEl ? selectBack?.() : host === menuEl ? cancel() : undefined
+    if (host === titleEl) {
+      if (k === 'n') titleEl.querySelector<HTMLElement>('[data-opt=fog]')!.click()
+      const map = titleEl.querySelectorAll<HTMLElement>('.maps button')[Number(k) - 1]
+      if (map) { map.focus(); map.click() }
+    }
     return
   }
-  keysDown.add(e.key.toLowerCase())
-  if (e.key === '+' || e.key === '=') return setZoom(1)
-  if (e.key === '-') return setZoom(-1)
-  if (e.key === 'Tab') { e.preventDefault(); return nextUnit() }
-  if (e.key === 'h' && !titleOn) helpEl.hidden = !helpEl.hidden
-  if (e.key === 'Escape') cancel()
-  if (e.key === 'Enter' && !(document.activeElement instanceof HTMLButtonElement)) finishTurn()
-  if (e.key === 'p') firePower()
-  if (e.key === 'm') muteBtn.click()
+  if (mode === 'recruit' && recruitKey) {
+    if (back) return cancel()
+    return recruitKey(e)
+  }
+
+  // En el mapa
+  keysDown.add(k)
+  if (k === '+' || k === '=') return setZoom(1)
+  if (k === '-') return setZoom(-1)
+  if (k === 'Tab') { e.preventDefault(); return nextUnit(e.shiftKey ? -1 : 1) }
+  if (back) { e.preventDefault(); return cancel() }
+  if (k === 'e') return finishTurn()
+  if (k === 'p') return firePower()
+  const onMap = mode === 'idle' || mode === 'inspect' || mode === 'move' || mode === 'target'
+  if (!onMap) return
+  if (dir || confirm) {
+    e.preventDefault()
+    focused?.blur() // que Enter no vuelva a pulsar el último botón del HUD que se tocó con el ratón
+  }
+  if (dir) return moveCursor(dir)
+  if (confirm && hover && !isAI[g.turn]) void click(hover)
 })
 addEventListener('resize', resize)
 /** Acerca o aleja el mapa (teclas + y −, o la rueda con Ctrl). */
@@ -2249,7 +2582,7 @@ fogBtn.onclick = () => {
   if (g) g.fog = fogOn
   fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`
 }
-muteBtn.onclick = () => { toggleMute(); music.sync(); muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`; sfx.confirm() }
+muteBtn.onclick = () => { toggleMute(); music.sync(); muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`; sfx.confirm(); if (titleOn) refreshTitle() }
 $('#new').onclick = async () => {
   if (mode === 'busy') return
   await cover()
@@ -2271,6 +2604,7 @@ async function boot() {
   void loadAudio()
   await setupHud()
   grayAtlas = makeGray(atlas)
+  windowGlow = makeWindows(atlas)
   mapFx = new Scene(mapFxCanvas, canvas.width, canvas.height)
   mapFx.start()
   initCutscenes(sceneEl, atlas, at, water, grayAtlas)
