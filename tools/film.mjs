@@ -6,20 +6,20 @@ import puppeteer from 'puppeteer-core'
 
 const URL = process.env.URL ?? 'http://localhost:5199/'
 const place = (terrain, building) => ({ terrain, building })
-const fight = (a, d, extra = {}) => ({
-  a: { kind: a, hp: 10, team: 0, place: place('.') }, d: { kind: d, hp: 10, team: 1, place: place('B', { type: 'mart', owner: 1 }) },
+const fight = (a, d, extra = {}, terrain = '.') => ({
+  a: { kind: a, hp: 10, team: 0, place: place('.') }, d: { kind: d, hp: 10, team: 1, place: place(terrain) },
   dmg: 4, counter: 2, evolved: null, evolvedKind: '', ...extra,
 })
 // nombre -> [código que arranca la escena, milisegundos a grabar]
 const SCENES = {
   fuego: [`lab.battle(${JSON.stringify(fight('torchic', 'treecko', { dmg: 8, counter: 1 }))})`, 5200],
   planta: [`lab.battle(${JSON.stringify(fight('treecko', 'mudkip', { dmg: 7, counter: 2 }))})`, 3200],
-  agua: [`lab.battle(${JSON.stringify(fight('mudkip', 'geodude', { dmg: 10, counter: null }))})`, 4200],
-  rayo: [`lab.battle(${JSON.stringify(fight('pikachu', 'taillow', { dmg: 9, counter: null }))})`, 3200],
+  agua: [`lab.battle(${JSON.stringify(fight('mudkip', 'geodude', { dmg: 10, counter: null }, '~'))})`, 4200],
+  rayo: [`lab.battle(${JSON.stringify(fight('pikachu', 'taillow', { dmg: 9, counter: null }, 'M'))})`, 3200],
   psiquico: [`lab.battle(${JSON.stringify(fight('ralts', 'machop', { dmg: 6, counter: null }))})`, 3200],
   roca: [`lab.battle(${JSON.stringify(fight('geodude', 'torchic', { dmg: 6, counter: 1 }))})`, 3400],
   placaje: [`lab.battle(${JSON.stringify(fight('zigzagoon', 'poochyena', { dmg: 4, counter: 5 }))})`, 5200],
-  mordisco: [`lab.battle(${JSON.stringify(fight('poochyena', 'ralts', { dmg: 7, counter: null }))})`, 3200],
+  mordisco: [`lab.battle(${JSON.stringify(fight('poochyena', 'ralts', { dmg: 7, counter: null }, 'T'))})`, 3200],
   lucha: [`lab.battle(${JSON.stringify(fight('machop', 'snorlax', { dmg: 6, counter: 3 }))})`, 3200],
   ala: [`lab.battle(${JSON.stringify(fight('taillow', 'treecko', { dmg: 6, counter: 2 }))})`, 3200],
   acero: [`lab.battle(${JSON.stringify(fight('metagross', 'geodude', { dmg: 9, counter: 1 }))})`, 3200],

@@ -37,6 +37,12 @@ Los sprites animados del mapa y los retratos son de Pokémon Mundo Misterioso, b
 [PMDCollab/SpriteCollab](https://github.com/PMDCollab/SpriteCollab) con `tools/extract_pmd.py`
 (lista de especies y comandantes al principio del script; caché en `vendor/pmd`).
 
+El combate usa los sprites animados de Pokémon Blanco/Negro ([PokeAPI/sprites](https://github.com/PokeAPI/sprites)) y
+fondos, plataformas y hojas de animación de ataques de la comunidad (recursos de Pokémon Essentials tomados del
+repositorio de Pokémon Infinite Fusion): `tools/extract_battle.py`. Las fuentes de `public/fonts` salen de las hojas
+de letras de Esmeralda con `tools/make_font.py` (necesita `fonttools` y `brotli` en el `.venv`); Jersey 15/25 son de
+Google Fonts.
+
 ## Dónde tocar
 
 - `src/data.ts`: terrenos, tabla de tipos, unidades (coste, movimiento, ataque…), el mapa en ASCII (mitad izquierda; se

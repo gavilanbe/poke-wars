@@ -10,7 +10,7 @@ import {
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
   footprint, stoppable, targetsFrom, terrainAt, unitAt, usePower,
 } from './game'
-import { Place, initCutscenes, playBattle, playCapture } from './cutscenes'
+import { Place, initCutscenes, loadBattle, playBattle, playCapture } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
 import { muted, sfx, toggleMute } from './sfx'
 import { fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, versus, victory } from './ui'
@@ -1326,7 +1326,7 @@ async function boot() {
   const [tileImg, pieceImg, flowerImg, pieceMeta, names] = await Promise.all([
     loadImage('/assets/tiles_general.png'), loadImage('/assets/pieces.png'), loadImage('/assets/flowers.png'),
     fetch('/assets/pieces.json').then((r) => r.json()),
-    fetch('/assets/species.json').then((r) => r.json()), loadUnits(), loadFx(),
+    fetch('/assets/species.json').then((r) => r.json()), loadUnits(), loadFx().then(loadBattle),
   ])
   tiles = tileImg
   species = names

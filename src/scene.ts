@@ -2,7 +2,7 @@
 // actores (sprites de Mundo Misterioso), partículas (sprites de efectos de Esmeralda) y parada de impacto.
 import { Anim, drawSprite } from './units'
 
-interface FxMeta { w: number; h: number; n: number }
+interface FxMeta { w: number; h: number; n: number; cols?: number } // sin `cols`, los fotogramas van apilados en vertical
 let fxMeta: Record<string, FxMeta> = {}
 const fxImages = new Map<string, HTMLImageElement>()
 
@@ -17,7 +17,21 @@ export async function loadFx() {
   })))
 }
 
+/** Añade una hoja de efectos ya cargada (las de la comunidad van en rejilla). */
+export function registerSheet(name: string, img: HTMLImageElement, meta: FxMeta) {
+  fxMeta[name] = meta
+  fxImages.set(name, img)
+}
+
+// Hoja de un sprite de combate animado (GIF pasado a rejilla): si el actor la lleva, se pinta en vez del de Mundo Misterioso
+export interface SpriteSheet { img: HTMLImageElement; w: number; h: number; cols: number; d: number[] }
+
+const scratch = document.createElement('canvas')
+scratch.width = scratch.height = 160
+const scratchCtx = scratch.getContext('2d')!
+
 export interface Actor {
+  sheet?: SpriteSheet
   species: string; anim: Anim; animStart: number; loop: boolean; dir: number
   x: number; y: number // pies
   ox: number; oy: number; sx: number; sy: number; rot: number; alpha: number; scale: number
@@ -28,7 +42,7 @@ export interface Part {
   x: number; y: number; vx?: number; vy?: number; g?: number; drag?: number
   life?: number; max: number; delay?: number
   img?: string // sprite de efecto; si no hay, cuadrado de color
-  frame?: number; fps?: number; loop?: boolean // animación del sprite
+  frame?: number; fps?: number; loop?: boolean; count?: number // animación del sprite: desde `frame`, `count` fotogramas
   color?: string; colors?: string[] // rampa de colores a lo largo de la vida
   size?: number; scale?: number; grow?: number // escala final relativa
   rot?: number; vr?: number; flipX?: boolean; fade?: boolean; add?: boolean; behind?: boolean
@@ -60,9 +74,13 @@ export class Scene {
   private tweens: { start: number; ms: number; fn: (t: number) => void; resolve: () => void }[] = []
 
   constructor(public canvas: HTMLCanvasElement, public w: number, public h: number) {
-    canvas.width = w
-    canvas.height = h
     this.ctx = canvas.getContext('2d')!
+    this.resize(w, h)
+  }
+
+  resize(w: number, h: number) {
+    this.w = this.canvas.width = w
+    this.h = this.canvas.height = h
   }
 
   start() {
@@ -110,7 +128,8 @@ export class Scene {
   /** Sprite de efecto animado una vez (dura lo que su animación salvo que se indique `max`). */
   fx(img: string, x: number, y: number, opts: Partial<Part> = {}) {
     const fps = opts.fps ?? 14
-    return this.add({ img, x, y, fps, max: (fxMeta[img].n / fps) * 1000, scale: 2, ...opts })
+    const count = opts.count ?? fxMeta[img].n - (opts.frame ?? 0)
+    return this.add({ img, x, y, fps, max: (count / fps) * 1000, scale: 2, ...opts })
   }
 
   burst(x: number, y: number, n: number, opts: Partial<Part> & { speed?: number; colors?: string[]; up?: number } = {}) {
@@ -188,9 +207,35 @@ export class Scene {
     if (!a.visible) return
     const { ctx } = this
     const x = a.x + a.ox, y = a.y + a.oy
-    drawSprite(ctx, a.species, a.anim, a.dir, frameTime, x, y - 10, {
-      sx: a.sx * a.scale, sy: a.sy * a.scale, loop: a.loop, tint: a.tint, rot: a.rot, alpha: a.alpha * alpha,
-    })
+    if (!a.sheet) {
+      drawSprite(ctx, a.species, a.anim, a.dir, frameTime, x, y - 10, {
+        sx: a.sx * a.scale, sy: a.sy * a.scale, loop: a.loop, tint: a.tint, rot: a.rot, alpha: a.alpha * alpha,
+      })
+      return
+    }
+    // Sprite de combate: anclado por los pies (centro del borde inferior)
+    const sh = a.sheet
+    const total = sh.d.reduce((sum, d) => sum + d, 0)
+    let t = Math.max(0, frameTime) % total, frame = 0
+    while (t >= sh.d[frame]) t -= sh.d[frame++]
+    const sx = (frame % sh.cols) * sh.w, sy = Math.floor(frame / sh.cols) * sh.h
+    ctx.save()
+    ctx.translate(Math.round(x), Math.round(y))
+    ctx.scale(a.sx * a.scale, a.sy * a.scale)
+    if (a.rot) { ctx.translate(0, -sh.h / 2); ctx.rotate(a.rot); ctx.translate(0, sh.h / 2) }
+    ctx.globalAlpha = a.alpha * alpha
+    if (a.tint[1] > 0) {
+      scratchCtx.globalCompositeOperation = 'source-over'
+      scratchCtx.clearRect(0, 0, 160, 160)
+      scratchCtx.drawImage(sh.img, sx, sy, sh.w, sh.h, 0, 0, sh.w, sh.h)
+      scratchCtx.globalCompositeOperation = 'source-atop'
+      scratchCtx.globalAlpha = a.tint[1]
+      scratchCtx.fillStyle = a.tint[0]
+      scratchCtx.fillRect(0, 0, sh.w, sh.h)
+      scratchCtx.globalAlpha = 1
+      ctx.drawImage(scratch, 0, 0, sh.w, sh.h, -sh.w / 2, -sh.h, sh.w, sh.h)
+    } else ctx.drawImage(sh.img, sx, sy, sh.w, sh.h, -sh.w / 2, -sh.h, sh.w, sh.h)
+    ctx.restore()
   }
 
   private drawPart(p: Part) {
@@ -219,15 +264,16 @@ export class Scene {
       const m = fxMeta[p.img]
       let frame = p.frame ?? 0
       if (p.fps) {
-        const n = Math.floor((p.life! / 1000) * p.fps)
-        frame += p.loop ? n % (m.n - (p.frame ?? 0)) : Math.min(m.n - 1 - (p.frame ?? 0), n)
+        const n = Math.floor((p.life! / 1000) * p.fps), count = p.count ?? m.n - (p.frame ?? 0)
+        frame += p.loop ? n % count : Math.min(count - 1, n)
       }
+      const fx0 = m.cols ? (frame % m.cols) * m.w : 0, fy0 = m.cols ? Math.floor(frame / m.cols) * m.h : frame * m.h
       const s = (p.scale ?? 2) * (p.grow ? 1 + (p.grow - 1) * k : 1)
       ctx.save()
       ctx.translate(snap(p.x), snap(p.y))
       if (p.rot) ctx.rotate(p.rot)
       ctx.scale(p.flipX ? -s : s, s)
-      ctx.drawImage(fxImages.get(p.img)!, 0, frame * m.h, m.w, m.h, -m.w / 2, -m.h / 2, m.w, m.h)
+      ctx.drawImage(fxImages.get(p.img)!, fx0, fy0, m.w, m.h, -m.w / 2, -m.h / 2, m.w, m.h)
       ctx.restore()
     } else {
       const s = Math.max(2, snap((p.size ?? 2) * (p.grow ? 1 + (p.grow - 1) * k : 1)))
@@ -247,7 +293,7 @@ export class Scene {
     this.background?.(ctx, this.time)
     for (const p of this.parts) if (p.behind) this.drawPart(p)
     for (const a of this.actors) {
-      if (!a.shadow || !a.visible) continue
+      if (!a.shadow || !a.visible || a.sheet) continue
       ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'
       ctx.beginPath()
       ctx.ellipse(a.x + a.ox, a.y + 2, 9 * a.scale * Math.max(0.3, 1 + a.oy / 120), 3 * a.scale * Math.max(0.3, 1 + a.oy / 120), 0, 0, Math.PI * 2)
