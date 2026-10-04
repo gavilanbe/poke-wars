@@ -1,14 +1,14 @@
 // Pintado, entrada y flujo de la partida.
 import { planRecruit, planUnit } from './ai'
 import {
-  BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, MAP, POWER_COST, PType, RECRUITABLE, TYPE_COLOR, TYPE_NAME,
+  BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, POWER_COST, PType, RECRUITABLE, TYPE_COLOR, TYPE_NAME, VIEW,
   effectiveness,
 } from './data'
 import * as fx from './fx'
 import {
   Building, Game, Pos, Reach, Team, Unit, attack, buildingAt, canCapture, canCounter, canRecruit, canUsePower,
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
-  footprint, stoppable, targetsFrom, terrainAt, unitAt, usePower,
+  canSee, footprint, resolvePath, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
 } from './game'
 import { Place, initCutscenes, playBattle, playCapture } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
@@ -33,7 +33,7 @@ const menuEl = $('#menu'), forecastEl = $('#forecast'), recruitEl = $('#recruit'
 const sceneEl = $('#scene'), bannerEl = $('#banner'), talkEl = $('#talk'), cutinEl = $('#cutin'), selectEl = $('#select')
 const dayEl = $('#day'), cosEl = $('#cos'), infoEl = $('#info')
 const endBtn = $<HTMLButtonElement>('#end'), aiBtn = $<HTMLButtonElement>('#ai'), muteBtn = $<HTMLButtonElement>('#mute')
-const powerBtn = $<HTMLButtonElement>('#power')
+const powerBtn = $<HTMLButtonElement>('#power'), fogBtn = $<HTMLButtonElement>('#fog')
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, AUTO ? Math.min(ms, 8) : ms))
 const nextFrame = () => new Promise<number>(requestAnimationFrame)
@@ -57,11 +57,26 @@ const restart = (el: Element, cls: string) => {
 
 let species: string[] = [] // orden de las hojas de Esmeralda (iconos, frente y espalda)
 let atlas: HTMLImageElement // edificios, árbol, rocas y tiles de suelo
+let grayAtlas: HTMLCanvasElement // lo mismo en gris, para los edificios sin dueño
 let at: Record<string, { x: number; w: number; h: number }> = {}
 let water: HTMLImageElement
 let forestCells: Pos[] = []
 let terrainLayer: HTMLCanvasElement
 let mapFx: Scene // efectos con sprites por encima del mapa
+
+/** Copia en gris (algo aclarada) de una imagen: los edificios que aún no son de nadie. */
+function makeGray(img: HTMLImageElement) {
+  const [c, cx] = makeCanvas(img.width, img.height)
+  cx.drawImage(img, 0, 0)
+  const data = cx.getImageData(0, 0, c.width, c.height)
+  const d = data.data
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]
+    for (let k = 0; k < 3; k++) d[i + k] = Math.min(255, (d[i + k] * 0.12 + lum * 0.88) * 0.92 + 26)
+  }
+  cx.putImageData(data, 0, 0)
+  return c
+}
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement('canvas')
@@ -183,6 +198,29 @@ const unitAnim = new Map<number, { name: Anim; start: number; until: number }>()
 const buildingFlash = new Map<Building, number>()
 const faces: { face: string; timer: number }[] = [{ face: 'Normal', timer: 0 }, { face: 'Normal', timer: 0 }]
 const isAI: [boolean, boolean] = AUTO ? [true, true] : [false, true]
+let fogOn = true
+
+// Cámara: el mapa es más grande que la pantalla. `cam` es la esquina visible en píxeles del mundo.
+const cam = { x: 0, y: 0, tx: 0, ty: 0 }
+const mouse = { x: -1, y: -1, inside: false } // posición en la pantalla del mapa, de 0 a 1
+const keysDown = new Set<string>()
+const worldW = () => g.w * T, worldH = () => g.h * T
+function panTo(x: number, y: number, snap = false) {
+  cam.tx = Math.max(0, Math.min(worldW() - canvas.width, x - canvas.width / 2))
+  cam.ty = Math.max(0, Math.min(worldH() - canvas.height, y - canvas.height / 2))
+  if (snap) (cam.x = cam.tx), (cam.y = cam.ty)
+}
+/** Lleva la cámara a una casilla si queda cerca del borde o fuera de pantalla. */
+function follow(p: Pos, margin = 3) {
+  const x = p.x * T + T / 2, y = p.y * T + T / 2, m = margin * T
+  if (x < cam.tx + m || x > cam.tx + canvas.width - m || y < cam.ty + m || y > cam.ty + canvas.height - m) panTo(x, y)
+}
+
+// Niebla de guerra: se enseña lo que ve el jugador humano (o el que tiene el turno si juegan dos)
+const viewer = (): Team | null => (!g.fog || (isAI[0] && isAI[1]) ? null : isAI[1] ? 0 : isAI[0] ? 1 : g.turn)
+let sight = new Set<number>()
+const shown = (u: Unit) => { const v = viewer(); return v === null || canSee(g, v, u, sight) }
+const unitShownAt = (x: number, y: number) => { const u = unitAt(g, x, y); return u && shown(u) ? u : undefined }
 
 const center = (p: Pos) => [p.x * T + T / 2, p.y * T + T / 2] as const
 const setFx = (u: Unit, patch: UnitFx) => unitFx.set(u.id, { ...unitFx.get(u.id), ...patch })
@@ -211,7 +249,7 @@ function resize() {
 }
 
 function startGame(cos: [string, string], intro = 0) {
-  g = createGame(cos)
+  g = createGame(cos, fogOn)
   terrainLayer = makeTerrainLayer(g)
   fx.clear()
   for (const m of [unitFx, unitDir, unitAnim, animPos]) m.clear()
@@ -219,6 +257,8 @@ function startGame(cos: [string, string], intro = 0) {
   bannerEl.hidden = sceneEl.hidden = talkEl.hidden = selectEl.hidden = true
   reset()
   refreshPanel()
+  const home = g.buildings.find((b) => b.type === 'gym' && b.owner === (viewer() ?? 0))!
+  panTo(home.x * T, home.y * T, true)
   if (!AUTO) {
     g.units.forEach((u, i) => dropIn(u, intro + 200 + i * 130))
     say(0, pick(co(0).quotes.start), 'Happy', intro + 900)
@@ -318,8 +358,8 @@ let arrowLayers: (readonly [HTMLCanvasElement, CanvasRenderingContext2D])[] = []
  */
 function drawPathArrow(path: Pos[], time: number) {
   if (path.length < 2) return
-  if (!arrowLayers.length || arrowLayers[0][0].width !== canvas.width) {
-    arrowLayers = [0, 1, 2].map(() => makeCanvas(canvas.width, canvas.height))
+  if (!arrowLayers.length || arrowLayers[0][0].width !== worldW()) {
+    arrowLayers = [0, 1, 2].map(() => makeCanvas(worldW(), worldH())) // del tamaño del mundo, no de la pantalla
   }
   const [[shape, sx], [work, wx], [body, bx]] = arrowLayers
   const pts = path.map((p) => center(p))
@@ -503,7 +543,7 @@ function drawBuilding(b: Building, time: number) {
   const grow = t < 1 ? Math.sin(t * Math.PI) * 6 : 0
   ctx.fillStyle = 'rgba(16, 40, 32, 0.25)' // sombra en el suelo
   ctx.fillRect(r.x + 4, r.y + r.h - 3, r.w - 4, 5)
-  ctx.drawImage(atlas, r.piece.x, 0, r.w, r.h, r.x - grow / 2, r.y - grow, r.w + grow, r.h + grow)
+  ctx.drawImage(b.owner < 0 ? grayAtlas : atlas, r.piece.x, 0, r.w, r.h, r.x - grow / 2, r.y - grow, r.w + grow, r.h + grow)
 
   // Felpudo de la puerta del color del dueño: ahí es donde se captura y se recluta
   const dx = b.x * T, dy = b.y * T
@@ -548,12 +588,33 @@ function draw(time: number) {
   const [shakeX, shakeY] = fx.update(dt)
   canvas.style.transform = shakeX || shakeY ? `translate(${shakeX * scale}px, ${shakeY * scale}px)` : ''
 
+  // Cámara: bordes de la pantalla, WASD o flechas; sigue suave a su objetivo
+  if (mode !== 'select' && mode !== 'recruit' && sceneEl.hidden) {
+    const edge = 0.045, speed = dt * 0.55
+    const dx = (keysDown.has('a') || keysDown.has('arrowleft') || (mouse.inside && mouse.x < edge) ? -1 : 0) + (keysDown.has('d') || keysDown.has('arrowright') || (mouse.inside && mouse.x > 1 - edge) ? 1 : 0)
+    const dy = (keysDown.has('w') || keysDown.has('arrowup') || (mouse.inside && mouse.y < edge) ? -1 : 0) + (keysDown.has('s') || keysDown.has('arrowdown') || (mouse.inside && mouse.y > 1 - edge) ? 1 : 0)
+    if ((dx || dy) && mode !== 'menu') panTo(cam.tx + canvas.width / 2 + dx * speed, cam.ty + canvas.height / 2 + dy * speed)
+  }
+  cam.x += (cam.tx - cam.x) * Math.min(1, dt * 0.012)
+  cam.y += (cam.ty - cam.y) * Math.min(1, dt * 0.012)
+  if (Math.abs(cam.tx - cam.x) < 0.5) cam.x = cam.tx
+  if (Math.abs(cam.ty - cam.y) < 0.5) cam.y = cam.ty
+  const cx0 = Math.round(cam.x), cy0 = Math.round(cam.y)
+  mapFx.camera.x = cx0
+  mapFx.camera.y = cy0
+  const who = viewer()
+  if (who !== null) sight = visibleCells(g, who)
+
   ctx.imageSmoothingEnabled = false
+  ctx.setTransform(1, 0, 0, 1, -cx0, -cy0)
   ctx.drawImage(terrainLayer, 0, 0)
 
   // Agua animada, y encima lo que sobresale (pinos, rocas)
   const wf = (Math.floor(time / 110) % WATER_FRAMES) * WATER_W
-  for (const q of waterQuarters) ctx.drawImage(water, wf + q.sx, q.sy, 8, 8, q.dx, q.dy, 8, 8)
+  for (const q of waterQuarters) {
+    if (q.dx < cx0 - 8 || q.dy < cy0 - 8 || q.dx > cx0 + canvas.width || q.dy > cy0 + canvas.height) continue
+    ctx.drawImage(water, wf + q.sx, q.sy, 8, 8, q.dx, q.dy, 8, 8)
+  }
   // Flores que se mecen
   const sway = Math.floor(time / 220) % 4
   for (const f of flowerSpots) ctx.drawImage(atlas, at.flowers.x + sway * 16, f.color * 16, 16, 16, f.x, f.y, 16, 16)
@@ -586,18 +647,35 @@ function draw(time: number) {
   const row = (u: Unit) => (animPos.get(u.id)?.y ?? (u === sel && pending ? pending.y : u.y) * T) / T
   const things: [number, () => void][] = [
     ...g.buildings.map((b): [number, () => void] => [b.y - 0.01, () => drawBuilding(b, time)]),
-    ...g.units.map((u): [number, () => void] => [row(u), () => drawUnit(u, time)]),
+    ...g.units.filter(shown).map((u): [number, () => void] => [row(u), () => drawUnit(u, time)]),
   ]
   things.sort((a, b) => a[0] - b[0])
   for (const [, paint] of things) paint()
   fx.draw(ctx)
   if (mode === 'target') for (const t of targets) drawTarget(t, time)
 
+  // Niebla de guerra: se oscurece lo que no alcanza a ver tu equipo, con el borde deshilachado
+  if (who !== null) {
+    const x0 = Math.floor(cx0 / T), y0 = Math.floor(cy0 / T)
+    for (let y = y0; y <= Math.min(g.h - 1, y0 + VIEW.h); y++) {
+      for (let x = x0; x <= Math.min(g.w - 1, x0 + VIEW.w); x++) {
+        if (sight.has(key(x, y))) continue
+        ctx.fillStyle = 'rgba(12, 18, 40, 0.5)'
+        ctx.fillRect(x * T, y * T, T, T)
+        // puntitos claros que flotan, para que la niebla no sea un bloque plano
+        ctx.fillStyle = 'rgba(200, 215, 255, 0.10)'
+        const drift = Math.floor(time / 400 + x * 3 + y * 7) % 4
+        ctx.fillRect(x * T + 4 + drift * 6, y * T + 6 + ((x + y) % 3) * 8, 6, 2)
+        ctx.fillRect(x * T + 20 - drift * 4, y * T + 22 - ((x * y) % 3) * 6, 4, 2)
+      }
+    }
+  }
+
   // Sombras de nubes que cruzan el mapa despacio
   ctx.fillStyle = 'rgba(16, 40, 72, 0.09)'
-  for (let i = 0; i < 4; i++) {
-    const span = canvas.width + 400
-    const x = ((time * 0.012 + i * 310) % span) - 200, y = ((i * 137) % canvas.height) + Math.sin(time / 9000 + i) * 20
+  for (let i = 0; i < 6; i++) {
+    const span = worldW() + 400
+    const x = ((time * 0.012 + i * 310) % span) - 200, y = ((i * 137) % worldH()) + Math.sin(time / 9000 + i) * 20
     ctx.beginPath()
     ctx.ellipse(x, y, 110 + i * 18, 44 + i * 6, 0, 0, Math.PI * 2)
     ctx.ellipse(x + 70, y + 22, 80, 34, 0, 0, Math.PI * 2)
@@ -609,9 +687,11 @@ function draw(time: number) {
     mapFx.add({ img: 'leaf', fps: 7, loop: true, x: tree.x * T + rnd(4, 28), y: tree.y * T - 6, vx: rnd(-0.5, -0.15), vy: rnd(0.25, 0.5), max: rnd(1400, 2200), scale: 0.5 })
   }
   drawCursor(time)
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  if (Math.floor(time / 120) !== Math.floor((time - dt) / 120)) drawMinimap()
 
   if (mode === 'over' && g.winner !== null && Math.random() < 0.5) {
-    fx.burst(Math.random() * canvas.width, -4, { n: 2, colors: [TEAM_HEX[g.winner], TEAM_LIGHT[g.winner], '#ffd84a', '#fff'], speed: 0.8, life: 2600, gravity: 60, size: 5 })
+    fx.burst(cam.x + Math.random() * canvas.width, cam.y - 4, { n: 2, colors: [TEAM_HEX[g.winner], TEAM_LIGHT[g.winner], '#ffd84a', '#fff'], speed: 0.8, life: 2600, gravity: 60, size: 5 })
   }
   // El dinero y el medidor suben contando
   let counting = false
@@ -626,6 +706,50 @@ function draw(time: number) {
   if (counting) refreshStatus()
 }
 
+// ---------- Minimapa ----------
+
+const miniEl = $<HTMLCanvasElement>('#minimap')
+const MINI_COLOR: Record<string, string> = { '.': '#8fd880', '"': '#4aa860', T: '#2c7c50', M: '#8a7060', '~': '#3878d8', s: '#9ab0c0', '=': '#e0d0a0' }
+function drawMinimap() {
+  const k = 6
+  if (miniEl.width !== g.w * k) { miniEl.width = g.w * k; miniEl.height = g.h * k }
+  const mx = miniEl.getContext('2d')!
+  const who = viewer()
+  for (let y = 0; y < g.h; y++) {
+    for (let x = 0; x < g.w; x++) {
+      mx.fillStyle = MINI_COLOR[g.tiles[y][x]] ?? '#8fd880'
+      mx.fillRect(x * k, y * k, k, k)
+    }
+  }
+  for (const b of g.buildings) {
+    mx.fillStyle = '#10141c'
+    for (const c of footprint(b)) mx.fillRect(c.x * k, c.y * k, k, k)
+    mx.fillStyle = b.owner < 0 ? '#c8ccd4' : TEAM_HEX[b.owner]
+    for (const c of footprint(b)) mx.fillRect(c.x * k + 1, c.y * k + 1, k - 1, k - 1)
+  }
+  if (who !== null) {
+    mx.fillStyle = 'rgba(12, 18, 40, 0.5)'
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (!sight.has(key(x, y))) mx.fillRect(x * k, y * k, k, k)
+  }
+  for (const u of g.units) {
+    if (!shown(u)) continue
+    mx.fillStyle = '#fff'
+    mx.fillRect(u.x * k, u.y * k, k, k)
+    mx.fillStyle = TEAM_HEX[u.team]
+    mx.fillRect(u.x * k + 1, u.y * k + 1, k - 2, k - 2)
+  }
+  mx.strokeStyle = '#fff'
+  mx.lineWidth = 2
+  mx.strokeRect((cam.x / T) * k + 1, (cam.y / T) * k + 1, VIEW.w * k - 2, VIEW.h * k - 2)
+}
+const miniPan = (e: MouseEvent) => {
+  if (!g || !(e.buttons & 1)) return
+  const r = miniEl.getBoundingClientRect()
+  panTo(((e.clientX - r.left) / r.width) * worldW(), ((e.clientY - r.top) / r.height) * worldH())
+}
+miniEl.addEventListener('mousedown', miniPan)
+miniEl.addEventListener('mousemove', miniPan)
+
 // ---------- Efectos ----------
 
 /** Texto flotante sobre el mapa (daño, dinero, avisos). */
@@ -635,8 +759,8 @@ function label(p: Pos, text: string, cls = '', delay = 0) {
     const el = document.createElement('div')
     el.className = 'pop ' + cls
     el.textContent = text
-    el.style.left = (p.x * T + T / 2) * scale + 'px'
-    el.style.top = (p.y * T + 6) * scale + 'px'
+    el.style.left = (p.x * T + T / 2 - cam.x) * scale + 'px'
+    el.style.top = (p.y * T + 6 - cam.y) * scale + 'px'
     stage.append(el)
     setTimeout(() => el.remove(), 1200)
   }, delay)
@@ -734,8 +858,9 @@ async function powerFx(team: Team, affected: { unit: Unit; hp: number }[]) {
   const [hx, hy] = center(home)
   const hpLabel = (unit: Unit, hp: number, delay = 0) => { if (hp) label(unit, `${hp > 0 ? '+' : ''}${hp} PS`, hp > 0 ? 'heal' : 'dmg', delay) }
   fx.addShake(8)
-  mapFx.add({ ring: 420, size: 10, color: c.color, x: hx, y: hy, max: 900 })
-  mapFx.add({ ring: 420, size: 4, color: '#fff', x: hx, y: hy, max: 900, delay: 90 })
+  panTo(hx, hy)
+  mapFx.add({ ring: 700, size: 10, color: c.color, x: hx, y: hy, max: 1100 })
+  mapFx.add({ ring: 700, size: 4, color: '#fff', x: hx, y: hy, max: 1100, delay: 90 })
 
   if (g.co[team] === 'pikachu') {
     for (const { unit, hp } of affected) {
@@ -758,8 +883,8 @@ async function powerFx(team: Team, affected: { unit: Unit; hp: number }[]) {
     const lit = new Set<Unit>()
     sfx.shoot()
     await mapFx.tween(950, (t) => {
-      const front = dir > 0 ? t * (canvas.width + 60) - 30 : canvas.width + 30 - t * (canvas.width + 60)
-      for (let i = 0; i < 4; i++) mapFx.add({ img: 'fire', fps: 16, loop: true, x: front + rnd(-14, 14), y: rnd(0, canvas.height), vx: dir * 1.5, vy: -0.6, max: 380, scale: 1, grow: 2 })
+      const front = dir > 0 ? t * (worldW() + 60) - 30 : worldW() + 30 - t * (worldW() + 60)
+      for (let i = 0; i < 4; i++) mapFx.add({ img: 'fire', fps: 16, loop: true, x: front + rnd(-14, 14), y: rnd(0, worldH()), vx: dir * 1.5, vy: -0.6, max: 380, scale: 1, grow: 2 })
       for (const { unit } of affected) {
         const [x, y] = center(unit)
         if (lit.has(unit) || (x - front) * dir > 0) continue
@@ -882,7 +1007,7 @@ function refreshInfo() {
     return
   }
   const { x, y } = hover
-  const terrain = terrainAt(g, x, y), b = buildingOver(x, y), u = unitAt(g, x, y)
+  const terrain = terrainAt(g, x, y), b = buildingOver(x, y), u = unitShownAt(x, y)
   let html = ''
   if (u) {
     const k = KINDS[u.kind]
@@ -1081,6 +1206,7 @@ async function doCapture(u: Unit, b: Building) {
 // ---------- Turno del jugador ----------
 
 function select(u: Unit) {
+  follow(u, 2)
   sel = u
   selTime = performance.now()
   reach = reachable(g, u)
@@ -1093,10 +1219,11 @@ function select(u: Unit) {
 
 function placeNear(el: HTMLElement, p: Pos) {
   el.hidden = false
-  const right = p.x < g.w - 5
-  el.style.left = right ? (p.x + 1) * T * scale + 6 + 'px' : ''
-  el.style.right = right ? '' : (g.w - p.x) * T * scale + 6 + 'px'
-  el.style.top = Math.min(p.y * T * scale, canvas.height * scale - el.offsetHeight - 8) + 'px'
+  const sx = p.x * T - cam.x, sy = p.y * T - cam.y // posición en pantalla
+  const right = sx < canvas.width - 5 * T
+  el.style.left = right ? (sx + T) * scale + 6 + 'px' : ''
+  el.style.right = right ? '' : (canvas.width - sx) * scale + 6 + 'px'
+  el.style.top = Math.max(4, Math.min(sy * scale, canvas.height * scale - el.offsetHeight - 8)) + 'px'
 }
 
 const ICON: Record<string, [string, string]> = { Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
@@ -1195,7 +1322,7 @@ async function click(p: Pos) {
   if (mode === 'busy' || mode === 'over' || mode === 'menu' || mode === 'select') return
   if (mode === 'recruit') return cancel()
   if (mode === 'inspect') reset()
-  const u = unitAt(g, p.x, p.y)
+  const u = unitShownAt(p.x, p.y)
   if (mode === 'idle') {
     const b = buildingOver(p.x, p.y)
     if (u) select(u)
@@ -1204,9 +1331,19 @@ async function click(p: Pos) {
     if (!stops.has(key(p.x, p.y))) return cancel()
     const unit = sel!
     mode = 'busy'
-    await animateMove(unit, pathTo(reach, p.x, p.y))
-    pending = p
+    const { path, ambushed } = resolvePath(g, unit, pathTo(reach, p.x, p.y))
+    await animateMove(unit, path)
     animPos.delete(unit.id)
+    if (ambushed) { // había un rival escondido en la niebla: se queda ahí y pierde el turno
+      const end = path[path.length - 1]
+      moveUnit(g, unit, end.x, end.y)
+      unit.moved = true
+      label(end, '¡Emboscada!', 'dmg')
+      sfx.error()
+      fx.addShake(5)
+      return finish()
+    }
+    pending = p
     openMenu()
   } else if (mode === 'target') {
     if (!u || !targets.includes(u)) return cancel()
@@ -1242,6 +1379,8 @@ async function nextTurn() {
   for (const u of g.units) unitDir.delete(u.id)
   refreshPanel()
   await turnBanner()
+  const mine = g.units.find((u) => u.team === g.turn && shown(u)) ?? g.buildings.find((b) => b.owner === g.turn)
+  if (mine && !isAI[g.turn]) panTo(mine.x * T, mine.y * T)
   turnStartFx(hpBefore)
   if (isAI[g.turn]) return runAI()
   finish()
@@ -1273,17 +1412,32 @@ async function runAI() {
     if (g.winner !== null) break
     if (!g.units.includes(u)) continue
     const plan = planUnit(g, u)
-    await animateMove(u, pathTo(reachable(g, u), plan.to.x, plan.to.y))
-    moveUnit(g, u, plan.to.x, plan.to.y)
+    const { path, ambushed } = resolvePath(g, u, pathTo(reachable(g, u), plan.to.x, plan.to.y))
+    const end = path[path.length - 1]
+    const who = viewer()
+    if (who !== null) sight = visibleCells(g, who)
+    // Con niebla solo se enseña el movimiento si lo ves salir o llegar
+    const visible = shown(u) || who === null || sight.has(key(end.x, end.y))
+    if (visible) {
+      follow(u)
+      follow(end)
+      await animateMove(u, path)
+    }
+    moveUnit(g, u, end.x, end.y)
     animPos.delete(u.id)
-    if (plan.action === 'attack') await battle(u, plan.target!)
-    else {
+    if (ambushed) {
+      u.moved = true
+      if (visible) label(end, '¡Emboscada!', 'dmg')
+    } else if (plan.action === 'attack' && g.units.includes(plan.target!)) {
+      follow(plan.target!)
+      await battle(u, plan.target!)
+    } else {
       if (plan.action === 'capture') {
-        await doCapture(u, buildingAt(g, u.x, u.y)!)
-        await sleep(300)
+        const b = buildingAt(g, u.x, u.y)!
+        if (visible || b.owner === who) { follow(b); await doCapture(u, b); await sleep(300) } else capture(g, u)
       }
       u.moved = true
-      await sleep(140)
+      if (visible) await sleep(140)
     }
     refreshStatus()
   }
@@ -1292,8 +1446,7 @@ async function runAI() {
     const kind = planRecruit(g, b)
     if (!kind) continue
     const u = recruit(g, b, kind)
-    if (!AUTO) dropIn(u)
-    await sleep(380)
+    if (!AUTO && shown(u)) { follow(u); dropIn(u); await sleep(380) }
   }
   if (g.winner !== null) return finish()
   await nextTurn()
@@ -1304,8 +1457,8 @@ async function runAI() {
 function tileFromEvent(e: MouseEvent): Pos {
   const r = canvas.getBoundingClientRect()
   return {
-    x: Math.max(0, Math.min(g.w - 1, Math.floor(((e.clientX - r.left) / r.width) * g.w))),
-    y: Math.max(0, Math.min(g.h - 1, Math.floor(((e.clientY - r.top) / r.height) * g.h))),
+    x: Math.max(0, Math.min(g.w - 1, Math.floor((((e.clientX - r.left) / r.width) * canvas.width + cam.x) / T))),
+    y: Math.max(0, Math.min(g.h - 1, Math.floor((((e.clientY - r.top) / r.height) * canvas.height + cam.y) / T))),
   }
 }
 canvas.addEventListener('mousemove', (e) => {
@@ -1319,6 +1472,15 @@ canvas.addEventListener('mousemove', (e) => {
   showForecast()
 })
 canvas.addEventListener('click', (e) => g && click(tileFromEvent(e)))
+stage.addEventListener('mousemove', (e) => {
+  const r = canvas.getBoundingClientRect()
+  mouse.x = (e.clientX - r.left) / r.width
+  mouse.y = (e.clientY - r.top) / r.height
+  mouse.inside = true
+})
+stage.addEventListener('mouseleave', () => (mouse.inside = false))
+addEventListener('keyup', (e) => keysDown.delete(e.key.toLowerCase()))
+addEventListener('blur', () => keysDown.clear())
 stage.addEventListener('contextmenu', (e) => { e.preventDefault(); if (g) cancel() })
 addEventListener('keydown', (e) => {
   if (!g) return
@@ -1331,6 +1493,7 @@ addEventListener('keydown', (e) => {
     e.preventDefault()
     return
   }
+  keysDown.add(e.key.toLowerCase())
   if (e.key === 'Escape') cancel()
   if (e.key === 'Enter' && !(document.activeElement instanceof HTMLButtonElement)) finishTurn()
   if (e.key === 'p') firePower()
@@ -1345,6 +1508,11 @@ aiBtn.onclick = () => {
   refreshPanel()
   if (isAI[g.turn] && mode === 'idle') runAI()
 }
+fogBtn.onclick = () => {
+  fogOn = !fogOn
+  if (g) g.fog = fogOn
+  fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`
+}
 muteBtn.onclick = () => { toggleMute(); muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`; sfx.confirm() }
 $('#new').onclick = () => { if (mode !== 'busy') newGame() }
 
@@ -1358,11 +1526,12 @@ async function boot() {
   atlas = atlasImg
   at = atlasMeta
   water = waterImg
-  canvas.width = MAP[0].length * T
-  canvas.height = MAP.length * T
+  canvas.width = VIEW.w * T
+  canvas.height = VIEW.h * T
+  grayAtlas = makeGray(atlas)
   mapFx = new Scene(mapFxCanvas, canvas.width, canvas.height)
   mapFx.start()
-  initCutscenes(sceneEl, atlas, at, water)
+  initCutscenes(sceneEl, atlas, at, water, grayAtlas)
   resize()
   aiBtn.textContent = 'Azul: IA'
   powerBtn.textContent = '★ Poder del comandante'
@@ -1377,6 +1546,13 @@ async function boot() {
       capture: playCapture,
       power: (id: string) => { g.co[g.turn] = id; g.meter[g.turn] = 99; firePower() },
       win: (team: Team) => { g.winner = team; finish() },
+      state: () => ({ mode, sel: sel?.kind, cam: [cam.x, cam.y], stops: stops.size }),
+      // Posición en la ventana de una casilla (mueve la cámara si hace falta): la usan tools/shots.mjs y film.mjs
+      screen: (x: number, y: number) => {
+        panTo(x * T, y * T, true)
+        const r = canvas.getBoundingClientRect()
+        return [r.left + ((x * T + T / 2 - cam.x) / canvas.width) * r.width, r.top + ((y * T + T / 2 - cam.y) / canvas.height) * r.height]
+      },
     },
   })
   newGame()

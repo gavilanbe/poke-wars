@@ -75,6 +75,7 @@ export interface UnitKind {
   range: [number, number]
   capture?: boolean
   evolves?: string
+  vision?: number // casillas que ve con niebla de guerra (3 si no se indica)
 }
 
 const melee: [number, number] = [1, 1]
@@ -86,54 +87,97 @@ export const KINDS: Record<string, UnitKind> = {
   poochyena: { name: 'Poochyena', species: 'poochyena', type: 'dark', cost: 2000, mv: 5, move: 'walk', atk: 1.15, def: 1, range: melee },
   machop: { name: 'Machop', species: 'machop', type: 'fighting', cost: 3000, mv: 4, move: 'walk', atk: 1.4, def: 1.1, range: melee },
   geodude: { name: 'Geodude', species: 'geodude', type: 'rock', cost: 3500, mv: 3, move: 'walk', atk: 1.2, def: 1.6, range: melee },
-  taillow: { name: 'Taillow', species: 'taillow', type: 'flying', cost: 3500, mv: 6, move: 'fly', atk: 1.1, def: 0.9, range: melee, evolves: 'swellow' },
+  taillow: { name: 'Taillow', species: 'taillow', type: 'flying', cost: 3500, mv: 6, move: 'fly', atk: 1.1, def: 0.9, range: melee, evolves: 'swellow', vision: 5 },
   pikachu: { name: 'Pikachu', species: 'pikachu', type: 'electric', cost: 4000, mv: 4, move: 'walk', atk: 1.3, def: 0.8, range: [2, 3] },
   ralts: { name: 'Ralts', species: 'ralts', type: 'psychic', cost: 4000, mv: 3, move: 'walk', atk: 1.2, def: 0.8, range: [2, 3], evolves: 'gardevoir' },
   wailmer: { name: 'Wailmer', species: 'wailmer', type: 'water', cost: 5000, mv: 5, move: 'swim', atk: 1.4, def: 1.5, range: melee },
   snorlax: { name: 'Snorlax', species: 'snorlax', type: 'normal', cost: 7000, mv: 3, move: 'walk', atk: 1.6, def: 1.9, range: melee },
   metagross: { name: 'Metagross', species: 'metagross', type: 'steel', cost: 9000, mv: 4, move: 'walk', atk: 1.8, def: 1.8, range: melee },
   salamence: { name: 'Salamence', species: 'salamence', type: 'dragon', cost: 10000, mv: 7, move: 'fly', atk: 1.9, def: 1.4, range: melee },
+  wingull: { name: 'Wingull', species: 'wingull', type: 'flying', cost: 2500, mv: 7, move: 'fly', atk: 0.8, def: 0.8, range: melee, vision: 6 },
+  shroomish: { name: 'Shroomish', species: 'shroomish', type: 'grass', cost: 2000, mv: 3, move: 'walk', atk: 1, def: 1.3, range: melee, evolves: 'breloom' },
+  electrike: { name: 'Electrike', species: 'electrike', type: 'electric', cost: 2500, mv: 6, move: 'walk', atk: 1.15, def: 0.9, range: melee, evolves: 'manectric', vision: 4 },
+  numel: { name: 'Numel', species: 'numel', type: 'fire', cost: 3000, mv: 3, move: 'walk', atk: 1.3, def: 1.3, range: melee, evolves: 'camerupt' },
+  aron: { name: 'Aron', species: 'aron', type: 'steel', cost: 3000, mv: 3, move: 'walk', atk: 1.1, def: 1.7, range: melee, evolves: 'aggron' },
+  carvanha: { name: 'Carvanha', species: 'carvanha', type: 'dark', cost: 3500, mv: 6, move: 'swim', atk: 1.5, def: 0.8, range: melee, evolves: 'sharpedo' },
+  absol: { name: 'Absol', species: 'absol', type: 'dark', cost: 4500, mv: 6, move: 'walk', atk: 1.55, def: 1, range: melee, vision: 4 },
+  bagon: { name: 'Bagon', species: 'bagon', type: 'dragon', cost: 4500, mv: 4, move: 'walk', atk: 1.4, def: 1.2, range: melee, evolves: 'salamence' },
+  beldum: { name: 'Beldum', species: 'beldum', type: 'steel', cost: 5000, mv: 4, move: 'fly', atk: 1.3, def: 1.5, range: melee, evolves: 'metagross' },
+  lucario: { name: 'Lucario', species: 'lucario', type: 'fighting', cost: 6000, mv: 5, move: 'walk', atk: 1.7, def: 1.3, range: [1, 2] },
+  gyarados: { name: 'Gyarados', species: 'gyarados', type: 'water', cost: 8000, mv: 5, move: 'amph', atk: 1.8, def: 1.5, range: melee },
+  tyranitar: { name: 'Tyranitar', species: 'tyranitar', type: 'rock', cost: 8500, mv: 3, move: 'walk', atk: 1.9, def: 1.9, range: melee },
   sceptile: { name: 'Sceptile', species: 'sceptile', type: 'grass', cost: 0, mv: 5, move: 'walk', atk: 1.5, def: 1.3, range: melee, capture: true },
   blaziken: { name: 'Blaziken', species: 'blaziken', type: 'fire', cost: 0, mv: 5, move: 'walk', atk: 1.5, def: 1.3, range: melee, capture: true },
   swampert: { name: 'Swampert', species: 'swampert', type: 'water', cost: 0, mv: 4, move: 'amph', atk: 1.5, def: 1.4, range: melee, capture: true },
   swellow: { name: 'Swellow', species: 'swellow', type: 'flying', cost: 0, mv: 8, move: 'fly', atk: 1.5, def: 1.1, range: melee },
   gardevoir: { name: 'Gardevoir', species: 'gardevoir', type: 'psychic', cost: 0, mv: 4, move: 'walk', atk: 1.5, def: 1, range: [2, 4] },
+  breloom: { name: 'Breloom', species: 'breloom', type: 'grass', cost: 0, mv: 5, move: 'walk', atk: 1.5, def: 1.3, range: melee },
+  manectric: { name: 'Manectric', species: 'manectric', type: 'electric', cost: 0, mv: 7, move: 'walk', atk: 1.55, def: 1.1, range: melee, vision: 4 },
+  camerupt: { name: 'Camerupt', species: 'camerupt', type: 'fire', cost: 0, mv: 4, move: 'walk', atk: 1.7, def: 1.6, range: melee },
+  aggron: { name: 'Aggron', species: 'aggron', type: 'steel', cost: 0, mv: 4, move: 'walk', atk: 1.6, def: 2.1, range: melee },
+  sharpedo: { name: 'Sharpedo', species: 'sharpedo', type: 'dark', cost: 0, mv: 7, move: 'swim', atk: 1.9, def: 1, range: melee },
 }
-export const RECRUITABLE = Object.keys(KINDS).filter((k) => KINDS[k].cost > 0)
+export const RECRUITABLE = Object.keys(KINDS).filter((k) => KINDS[k].cost > 0).sort((a, b) => KINDS[a].cost - KINDS[b].cost)
 
-// Mitad izquierda del terreno (20x13): la derecha es su espejo, así las puertas (que siempre miran abajo)
-// quedan igual de accesibles para los dos equipos.
+// Mitad izquierda del terreno (30x20 casillas en total): la derecha es su espejo, así las puertas (que siempre
+// miran abajo) quedan igual de accesibles para los dos equipos.
 const LEFT = [
-  'TT.....T.~',
-  'T.......T~',
-  '.........s',
-  '...=====.s',
-  '...=..""~~',
-  '...=."""~~',
-  'T..=====ss',
-  '...=..M.~~',
-  '.."=....T~',
-  '...=.....~',
-  '...=====.s',
-  'T.......Ms',
-  'TT.""...T~',
+  'TTT..T....TT.~~',
+  'TT....M...T..~~',
+  'T.....M......~~',
+  '............M.~',
+  '....""".==..T.~',
+  '..==.""..=....~',
+  'T..=TT...=....s',
+  'T..=T....=====s',
+  '"".=..M..=""..~',
+  '"..=.....=...~~',
+  '...=.....=...~~',
+  '..============~',
+  '...=.........=~',
+  '...=...TTM"".=s',
+  '...=......""T.~',
+  '.MM=.......TT.~',
+  '.............~~',
+  'T.....~~~..TT~~',
+  'T.."".~~~..M.ss',
+  'TTT.""~~~....~~',
 ]
 export const MAP = LEFT.map((row) => row + [...row].reverse().join(''))
 
 // Edificios por la casilla de su puerta. owner: -1 neutral.
 export const BUILDINGS: { type: BuildingType; owner: -1 | 0 | 1; x: number; y: number }[] = [
-  { type: 'gym', owner: 0, x: 3, y: 3 }, { type: 'center', owner: 0, x: 6, y: 3 }, { type: 'house', owner: 0, x: 1, y: 5 },
-  { type: 'mart', owner: -1, x: 1, y: 8 }, { type: 'center', owner: -1, x: 6, y: 11 }, { type: 'house', owner: -1, x: 1, y: 11 },
-  { type: 'gym', owner: 1, x: 16, y: 3 }, { type: 'center', owner: 1, x: 13, y: 3 }, { type: 'house', owner: 1, x: 17, y: 5 },
-  { type: 'mart', owner: -1, x: 17, y: 8 }, { type: 'center', owner: -1, x: 13, y: 11 }, { type: 'house', owner: -1, x: 17, y: 11 },
+  { type: 'gym', owner: 0, x: 3, y: 10 },
+  { type: 'center', owner: 0, x: 7, y: 10 },
+  { type: 'house', owner: 0, x: 1, y: 13 },
+  { type: 'house', owner: 0, x: 5, y: 13 },
+  { type: 'house', owner: -1, x: 2, y: 4 },
+  { type: 'mart', owner: -1, x: 8, y: 3 },
+  { type: 'center', owner: -1, x: 11, y: 6 },
+  { type: 'house', owner: -1, x: 3, y: 17 },
+  { type: 'mart', owner: -1, x: 9, y: 16 },
+  { type: 'house', owner: -1, x: 11, y: 10 },
+  { type: 'gym', owner: 1, x: 26, y: 10 },
+  { type: 'center', owner: 1, x: 22, y: 10 },
+  { type: 'house', owner: 1, x: 27, y: 13 },
+  { type: 'house', owner: 1, x: 23, y: 13 },
+  { type: 'house', owner: -1, x: 26, y: 4 },
+  { type: 'mart', owner: -1, x: 20, y: 3 },
+  { type: 'center', owner: -1, x: 18, y: 6 },
+  { type: 'house', owner: -1, x: 25, y: 17 },
+  { type: 'mart', owner: -1, x: 19, y: 16 },
+  { type: 'house', owner: -1, x: 17, y: 10 },
 ]
 
 export const START_UNITS: { kind: string; team: 0 | 1; x: number; y: number }[] = [
-  { kind: 'zigzagoon', team: 0, x: 3, y: 4 },
-  { kind: 'poochyena', team: 0, x: 4, y: 4 },
-  { kind: 'zigzagoon', team: 1, x: 16, y: 4 },
-  { kind: 'poochyena', team: 1, x: 15, y: 4 },
+  { kind: 'zigzagoon', team: 0, x: 3, y: 11 },
+  { kind: 'poochyena', team: 0, x: 4, y: 11 },
+  { kind: 'zigzagoon', team: 1, x: 26, y: 11 },
+  { kind: 'poochyena', team: 1, x: 25, y: 11 },
 ]
+
+// Parte del mapa que cabe en pantalla (en casillas); el resto se recorre con la cámara
+export const VIEW = { w: 20, h: 13 }
 
 export const CAPTURE_POINTS = 20
 

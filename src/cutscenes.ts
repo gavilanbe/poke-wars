@@ -12,12 +12,14 @@ const TEAM_HEX = ['#e8483c', '#3c7ce8']
 let scene: Scene
 let root: HTMLElement
 let water: HTMLImageElement // autotile animado del mapa
+let grayPieces: HTMLCanvasElement // edificios sin dueño
 let pieces: HTMLImageElement
 let pieceAt: Record<string, { x: number; w: number; h: number }>
 
 export function initCutscenes(
-  el: HTMLElement, pieceImg: HTMLImageElement, pieceMeta: Record<string, { x: number; w: number; h: number }>, waterImg: HTMLImageElement,
+  el: HTMLElement, pieceImg: HTMLImageElement, pieceMeta: Record<string, { x: number; w: number; h: number }>, waterImg: HTMLImageElement, grayImg: HTMLCanvasElement,
 ) {
+  grayPieces = grayImg
   root = el
   pieces = pieceImg
   pieceAt = pieceMeta
@@ -85,7 +87,7 @@ function backdrop(ctx: CanvasRenderingContext2D, place: Place, x0: number, w: nu
   if (place.terrain === '"') for (let x = first; x < x0 + w; x += 32) tallGrass(ctx, x, HORIZON - 6)
   if (place.building) { // el edificio real, a tamaño doble, detrás del Pokémon
     const piece = pieceAt[place.building.type]
-    ctx.drawImage(pieces, piece.x, 0, piece.w, piece.h, mid - piece.w, HORIZON + 30 - piece.h * 2, piece.w * 2, piece.h * 2)
+    ctx.drawImage(place.building.owner < 0 ? grayPieces : pieces, piece.x, 0, piece.w, piece.h, mid - piece.w, HORIZON + 30 - piece.h * 2, piece.w * 2, piece.h * 2)
   }
   const shade = ctx.createLinearGradient(0, HORIZON, 0, HORIZON + 44)
   shade.addColorStop(0, 'rgba(8, 24, 40, 0.3)')
@@ -523,7 +525,7 @@ export async function playCapture(c: CaptureData) {
   await open('capture')
   const piece = pieceAt[c.building.type], tree = pieceAt.tree
   const bx = W / 2, base = 150, left = bx - piece.w / 2, roof = base - piece.h + (c.building.type === 'gym' ? 20 : 16)
-  let squash = 0, glow = 0, flag = c.building.owner >= 0 ? 1 : 0, flagTeam = c.building.owner
+  let squash = 0, glow = 0, color = c.building.owner >= 0 ? 1 : 0, flag = c.building.owner >= 0 ? 1 : 0, flagTeam = c.building.owner
   scene.background = (ctx, time) => {
     SKY.forEach((color, i) => { ctx.fillStyle = color; ctx.fillRect(-20, i * 22 - 10, W + 40, 22) })
     ctx.fillStyle = '#ffffffd8'
@@ -548,7 +550,9 @@ export async function playCapture(c: CaptureData) {
     ctx.scale(1 + 0.08 * squash, 1 - 0.12 * squash)
     ctx.fillStyle = 'rgba(8, 24, 40, 0.28)'
     ctx.fillRect(-piece.w / 2 + 3, -3, piece.w - 2, 6)
-    ctx.drawImage(pieces, piece.x, 0, piece.w, piece.h, -piece.w / 2, -piece.h, piece.w, piece.h)
+    // Sin dueño está en gris; al capturarlo el color baja como una cortina
+    ctx.drawImage(grayPieces, piece.x, 0, piece.w, piece.h, -piece.w / 2, -piece.h, piece.w, piece.h)
+    if (color > 0) ctx.drawImage(pieces, piece.x, 0, piece.w, piece.h * color, -piece.w / 2, -piece.h, piece.w, piece.h * color)
     if (glow > 0) { // el edificio se ilumina al cambiar de dueño
       ctx.globalAlpha = glow
       ctx.globalCompositeOperation = 'lighter'
@@ -616,6 +620,7 @@ export async function playCapture(c: CaptureData) {
     sfx.captured()
     say('¡Edificio capturado!')
     void scene.tween(700, (t) => { glow = Math.sin(t * Math.PI) })
+    if (color < 1) void scene.tween(520, (t) => { color = easeOut(t) })
     await scene.tween(300, (t) => { flag = flagTeam >= 0 ? 1 - t : 0 })
     flagTeam = c.team
     void scene.tween(420, (t) => { flag = easeBack(t) })

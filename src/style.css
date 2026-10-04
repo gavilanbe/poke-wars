@@ -480,3 +480,22 @@ kbd { font-family: var(--ui); font-size: 16px; }
 .pop.ko { font-size: 60px; }
 #forecast { font-family: var(--ui); font-size: 22px; text-shadow: none; }
 #forecast b { font-family: var(--display); font-size: 34px; }
+
+/* Mapa grande: minimapa y lista de reclutas con desplazamiento */
+#minimap { width: 100%; image-rendering: pixelated; border: 3px solid #0c1018; box-shadow: 0 4px 0 #0c1018; cursor: pointer; background: #0c1018; }
+#info { min-height: 108px; }
+#recruit .list { max-height: 430px; overflow-y: auto; padding-right: 4px; scrollbar-width: thin; scrollbar-color: #5870a0 transparent; }
+.buttons { grid-template-columns: 1fr 1fr 1fr; }
+
+/* Panel más compacto para que quepan el minimapa y todo lo demás sin desplazar la página */
+#panel { gap: 9px; }
+.help { display: none; }
+.co img { width: 58px; height: 58px; margin: 4px 12px 4px 0; }
+.co .pic { width: 80px; }
+#minimap { width: auto; height: 132px; align-self: center; }
+#info { min-height: 92px; }
+#power, #end { padding: 4px 12px; }
+
+/* El panel no debe cambiar de alto (movería el mapa al pasar el ratón por él) */
+main { align-items: flex-start; }
+#info { height: 96px; min-height: 0; overflow: hidden; }

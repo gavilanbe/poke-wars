@@ -69,6 +69,7 @@ export class Scene {
   background: ((ctx: CanvasRenderingContext2D, time: number) => void) | null = null
   foreground: ((ctx: CanvasRenderingContext2D, time: number) => void) | null = null
   flash: [string, number, number] = ['#fff', 0, 1] // color, opacidad actual, caída por segundo
+  camera = { x: 0, y: 0 } // desplazamiento del mundo (para la capa de efectos del mapa)
   private freeze = 0
   private shake = 0
   private last = 0
@@ -293,6 +294,7 @@ export class Scene {
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, this.w, this.h)
     if (this.shake) ctx.translate(Math.round(rnd(-1, 1) * this.shake), Math.round(rnd(-1, 1) * this.shake))
+    ctx.translate(-Math.round(this.camera.x), -Math.round(this.camera.y))
     this.background?.(ctx, this.time)
     for (const p of this.parts) if (p.behind) this.drawPart(p)
     for (const a of this.actors) {

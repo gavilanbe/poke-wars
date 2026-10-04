@@ -15,10 +15,7 @@ page.on('pageerror', (e) => errors.push(String(e)))
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const shot = (name) => page.screenshot({ path: OUT + name + '.png' })
-const tile = async (x, y) => {
-  const box = await (await page.$('#map')).boundingBox()
-  return [box.x + ((x + 0.5) * box.width) / 20, box.y + ((y + 0.5) * box.height) / 13]
-}
+const tile = (x, y) => page.evaluate(([tx, ty]) => lab.screen(tx, ty), [x, y])
 const click = async (x, y) => page.mouse.click(...(await tile(x, y)))
 const button = async (label) => {
   await page.evaluate((label) => [...document.querySelectorAll('#menu button, #recruit button, .cocard')].find((b) => b.textContent.includes(label)).click(), label)
@@ -32,16 +29,16 @@ await sleep(4200)
 await shot('1-inicio')
 
 // Mover a Zigzagoon y abrir el menú
-await click(3, 4)
+await click(3, 11)
 await sleep(500)
-await page.mouse.move(...(await tile(5, 6)))
+await page.mouse.move(...(await tile(4, 13)))
 await sleep(300)
 await shot('2-mover')
-await click(5, 6)
+await click(4, 13)
 await sleep(1000)
 await shot('3-menu')
 await button('Esperar')
-await click(7, 2)
+await click(8, 9)
 await sleep(400)
 await shot('4-reclutar')
 await button('Treecko')
@@ -60,17 +57,17 @@ await page.evaluate(() => {
   const g = window.game()
   const foe = g.units.find((u) => u.team === 1 && u.kind === 'poochyena')
   foe.x = 6
-  foe.y = 5
+  foe.y = 11
   g.units.find((u) => u.team === 0 && u.kind === 'poochyena').kind = 'treecko'
 })
-await click(4, 4)
-await click(5, 5)
+await click(4, 11)
+await click(5, 11)
 await sleep(1000)
 await button('Atacar')
-await page.mouse.move(...(await tile(6, 5)))
+await page.mouse.move(...(await tile(6, 11)))
 await sleep(200)
 await shot('6-objetivo')
-await click(6, 5)
+await click(6, 11)
 await sleep(2300)
 await shot('7-ataque')
 await sleep(6500)

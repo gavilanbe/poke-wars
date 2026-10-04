@@ -21,14 +21,15 @@ export interface Game {
   co: [string, string] // comandante de cada equipo
   meter: [number, number]
   power: [boolean, boolean] // poder activo hasta el siguiente turno propio
+  fog: boolean // niebla de guerra: solo se ve lo que queda cerca de tus Pokémon y edificios
 }
 export interface Pos { x: number; y: number }
 
-export function createGame(co: [string, string] = ['pikachu', 'charizard']): Game {
+export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog = true): Game {
   const g: Game = {
     w: MAP[0].length, h: MAP.length, tiles: [], units: [], buildings: [],
     turn: 0, day: 1, funds: [0, 0], winner: null, nextId: 1,
-    co, meter: [0, 0], power: [false, false],
+    co, meter: [0, 0], power: [false, false], fog,
   }
   g.tiles = MAP.map((row) => [...row])
   for (const def of BUILDINGS) {
@@ -68,11 +69,56 @@ function addUnit(g: Game, kind: string, team: Team, x: number, y: number): Unit 
 const coMod = (g: Game, team: Team, stat: 'atk' | 'def' | 'mv') => COMMANDERS[g.co[team]][stat][g.power[team] ? 1 : 0]
 export const moveRange = (g: Game, u: Unit) => KINDS[u.kind].mv + coMod(g, u.team, 'mv')
 
+// ---------- Niebla de guerra ----------
+
+const COVER = 'T"' // en bosque y hierba alta solo te ven si están pegados a ti
+const BUILDING_SIGHT = 2
+
+/** Casillas que ve un equipo: alrededor de sus Pokémon (según su vista) y de sus edificios. */
+export function visibleCells(g: Game, team: Team): Set<number> {
+  const seen = new Set<number>()
+  const look = (cx: number, cy: number, range: number) => {
+    for (let dy = -range; dy <= range; dy++) {
+      for (let dx = -(range - Math.abs(dy)); dx <= range - Math.abs(dy); dx++) {
+        const x = cx + dx, y = cy + dy
+        if (x >= 0 && y >= 0 && x < g.w && y < g.h) seen.add(key(x, y))
+      }
+    }
+  }
+  for (const u of g.units) if (u.team === team) look(u.x, u.y, KINDS[u.kind].vision ?? 3)
+  for (const b of g.buildings) if (b.owner === team) look(b.x, b.y, BUILDING_SIGHT)
+  return seen
+}
+
+/** ¿Ve ese equipo a la unidad? Sin niebla, siempre. */
+export function canSee(g: Game, team: Team, u: Unit, cells = visibleCells(g, team)): boolean {
+  if (!g.fog || u.team === team) return true
+  if (!cells.has(key(u.x, u.y))) return false
+  if (!COVER.includes(g.tiles[u.y][u.x])) return true
+  return g.units.some((o) => o.team === team && dist(o, u) <= 1)
+}
+
+/**
+ * Recorre la ruta casilla a casilla: si aparece un rival que no se veía, la unidad se queda en la última casilla
+ * libre y pierde el turno (emboscada).
+ */
+export function resolvePath(g: Game, u: Unit, path: Pos[]): { path: Pos[]; ambushed: boolean } {
+  for (let i = 1; i < path.length; i++) {
+    const other = unitAt(g, path[i].x, path[i].y)
+    if (!other || other.team === u.team) continue
+    let end = i - 1
+    while (end > 0 && unitAt(g, path[end].x, path[end].y)) end--
+    return { path: path.slice(0, end + 1), ambushed: true }
+  }
+  return { path, ambushed: false }
+}
+
 export interface Reach { cost: number; prev: number | null; x: number; y: number }
 
 /** Casillas alcanzables por la unidad (Dijkstra). `budget` permite calcular rutas largas para la IA. */
 export function reachable(g: Game, u: Unit, budget = moveRange(g, u), ignoreUnits = false): Map<number, Reach> {
   const move = KINDS[u.kind].move
+  const cells = g.fog ? visibleCells(g, u.team) : undefined
   const out = new Map<number, Reach>([[key(u.x, u.y), { cost: 0, prev: null, x: u.x, y: u.y }]])
   const open: Reach[] = [out.get(key(u.x, u.y))!]
   while (open.length) {
@@ -84,7 +130,7 @@ export function reachable(g: Game, u: Unit, budget = moveRange(g, u), ignoreUnit
       const cost = cur.cost + terrainAt(g, x, y).cost[move]
       if (cost > budget) continue
       const other = ignoreUnits ? undefined : unitAt(g, x, y)
-      if (other && other.team !== u.team) continue
+      if (other && other.team !== u.team && canSee(g, u.team, other, cells)) continue // a los que no ves no los esquivas
       const k = key(x, y)
       const seen = out.get(k)
       if (seen && seen.cost <= cost) continue
@@ -100,7 +146,7 @@ export function reachable(g: Game, u: Unit, budget = moveRange(g, u), ignoreUnit
 export function stoppable(g: Game, u: Unit, reach: Map<number, Reach>): Reach[] {
   return [...reach.values()].filter((r) => {
     const o = unitAt(g, r.x, r.y)
-    return g.tiles[r.y][r.x] !== '#' && (!o || o === u)
+    return g.tiles[r.y][r.x] !== '#' && (!o || o === u || !canSee(g, u.team, o))
   })
 }
 
@@ -120,7 +166,8 @@ export const isRanged = (u: Unit) => KINDS[u.kind].range[0] > 1
 export function targetsFrom(g: Game, u: Unit, from: Pos): Unit[] {
   if (isRanged(u) && (from.x !== u.x || from.y !== u.y)) return []
   const [min, max] = KINDS[u.kind].range
-  return g.units.filter((e) => e.team !== u.team && dist(from, e) >= min && dist(from, e) <= max)
+  const cells = g.fog ? visibleCells(g, u.team) : undefined
+  return g.units.filter((e) => e.team !== u.team && dist(from, e) >= min && dist(from, e) <= max && canSee(g, u.team, e, cells))
 }
 
 export function damage(g: Game, att: Unit, def: Unit, attHp = att.hp): number {

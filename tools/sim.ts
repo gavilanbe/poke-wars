@@ -2,7 +2,7 @@
 //   pnpm sim
 import { planRecruit, planUnit } from '../src/ai'
 import { KINDS } from '../src/data'
-import { attack, canUsePower, capture, createGame, endTurn, moveUnit, recruit, unitAt, usePower } from '../src/game'
+import { attack, canUsePower, capture, createGame, endTurn, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
 
 for (let n = 0; n < 20; n++) {
   const cos = ['pikachu', 'charizard', 'blastoise', 'gengar']
@@ -13,10 +13,11 @@ for (let n = 0; n < 20; n++) {
     for (const u of g.units.filter((u) => u.team === g.turn)) {
       if (g.winner !== null || !g.units.includes(u)) continue
       const plan = planUnit(g, u)
-      const o = unitAt(g, plan.to.x, plan.to.y)
-      if (o && o !== u) throw new Error('casilla ocupada')
-      moveUnit(g, u, plan.to.x, plan.to.y)
-      if (plan.action === 'attack') attack(g, u, plan.target!)
+      const { path, ambushed } = resolvePath(g, u, pathTo(reachable(g, u), plan.to.x, plan.to.y))
+      const end = path[path.length - 1]
+      moveUnit(g, u, end.x, end.y)
+      if (ambushed) u.moved = true
+      else if (plan.action === 'attack' && g.units.includes(plan.target!)) attack(g, u, plan.target!)
       else if (plan.action === 'capture') capture(g, u)
       else u.moved = true
     }

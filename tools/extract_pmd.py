@@ -21,6 +21,9 @@ UNITS = {
     "geodude": 74, "taillow": 276, "pikachu": 25, "ralts": 280, "wailmer": 320, "snorlax": 143,
     "metagross": 376, "salamence": 373, "sceptile": 254, "blaziken": 257, "swampert": 260,
     "swellow": 277, "gardevoir": 282,
+    "wingull": 278, "electrike": 309, "manectric": 310, "shroomish": 285, "breloom": 286, "numel": 322, "camerupt": 323,
+    "aron": 304, "aggron": 306, "carvanha": 318, "sharpedo": 319, "bagon": 371, "beldum": 374, "gyarados": 130,
+    "tyranitar": 248, "absol": 359, "lucario": 448,
 }
 # Comandantes: solo retratos, con varias caras
 COMMANDERS = {"pikachu": 25, "charizard": 6, "blastoise": 9, "gengar": 94}
@@ -53,7 +56,8 @@ def main():
         anims = {a.findtext("Name"): a for a in tree.getroot().iter("Anim")}
         meta[name] = {}
         for anim in ANIMS:
-            node = anims[anim]
+            # No todas las especies tienen todas las animaciones: se cae a la de ataque o a la de reposo
+            node = anims.get(anim) or anims.get("Attack") or anims["Idle"]
             if node.find("CopyOf") is not None:  # p. ej. Attack copia de Strike
                 node = anims[node.findtext("CopyOf")]
             src = fetch(folder + node.findtext("Name") + "-Anim.png")
