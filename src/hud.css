@@ -193,3 +193,41 @@ main { display: block; }
 /* Iconos de tipo: 19x19 cada uno, apilados */
 #info .ty, .pc .ty { width: 19px; height: 19px; background-size: 19px auto; }
 #recruit[hidden] { display: none; }
+
+/* ---------- Pantalla de título ---------- */
+#stage.titling #hud, #stage.titling .pop { display: none; }
+#title { position: absolute; inset: 0; z-index: 9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; line-height: 1; color: #fff;
+  background: radial-gradient(ellipse at 50% 42%, #0c101840 0 30%, #0c1018d8 78%), linear-gradient(#0c1018a0, transparent 24% 70%, #0c1018c0); }
+#title[hidden] { display: none; }
+.logo2 { font-family: var(--display); text-align: center; filter: drop-shadow(0 1.2vh 0 #0c1018a0); }
+.logo2 span { display: inline-block; }
+/* POKÉ: amarillo con contorno azul, como los logos de la saga */
+.logo2 .poke { font-size: 21vh; letter-spacing: 0.02em; color: #ffcb05;
+  text-shadow: 0.035em 0 #2a5caa, -0.035em 0 #2a5caa, 0 0.035em #2a5caa, 0 -0.035em #2a5caa, 0.03em 0.03em #2a5caa, -0.03em -0.03em #2a5caa, 0.03em -0.03em #2a5caa, -0.03em 0.03em #2a5caa,
+    0.06em 0.07em #1b3f7a, 0.03em 0.09em #1b3f7a; }
+.logo2 .poke .ball { display: inline-block; width: 0.5em; height: 0.5em; margin: 0 0.02em; vertical-align: 0.02em; background: url(/assets/ui/ball.png) center / 100%; image-rendering: pixelated;
+  filter: drop-shadow(0.03em 0 #2a5caa) drop-shadow(-0.03em 0 #2a5caa) drop-shadow(0 0.03em #2a5caa) drop-shadow(0 -0.03em #2a5caa); animation: spin 5s linear infinite; }
+/* WARS: blanco inclinado sobre rojo, más militar */
+.logo2 .wars { font-size: 15vh; letter-spacing: 0.22em; margin: -3.5vh 0 0 0.22em; color: #fff; transform: skewX(-10deg);
+  text-shadow: 0.04em 0 #c8281c, -0.04em 0 #c8281c, 0 0.04em #c8281c, 0 -0.04em #c8281c, 0.035em 0.035em #c8281c, -0.035em -0.035em #c8281c, 0.035em -0.035em #c8281c, -0.035em 0.035em #c8281c,
+    0.07em 0.08em #5c0c08; }
+#title.open .logo2 span { animation: logo-drop 0.55s calc(var(--i) * 0.07s) cubic-bezier(0.2, 1.7, 0.4, 1) backwards, logo-wave 5s calc(1.2s + var(--i) * 0.12s) infinite; }
+@keyframes logo-drop { from { transform: translateY(-60vh) rotate(-14deg); opacity: 0; } }
+@keyframes logo-wave { 4% { transform: translateY(-1.6vh) scale(1.06); } 8%, 100% { transform: none; } }
+#title .tag { font-family: var(--ui); font-size: 2.6vh; letter-spacing: 0.12em; text-transform: uppercase; background: #0c1018d0; padding: 0.6vh 2vh; border-block: 3px solid #ffcb05; }
+#title.open .tag { animation: fade-in 0.5s 0.7s backwards; }
+#title .menu { display: flex; flex-direction: column; align-items: center; gap: 1.4vh; margin-top: 2vh; }
+#title .menu > button { position: relative; width: 414px; height: 78px; padding: 0 0 6px; border: 0; border-radius: 0; box-shadow: none; background: url(/assets/ui/button.png) 0 0 / 414px auto no-repeat; background-color: transparent;
+  color: #fff; text-align: center; text-shadow: 2px 2px 0 #10306c; image-rendering: pixelated; transition: transform 0.12s cubic-bezier(0.2, 1.6, 0.4, 1); }
+#title .menu > button b { display: block; font-family: var(--display); font-size: 36px; letter-spacing: 1px; }
+#title .menu > button small { display: block; font-family: var(--ui); font-size: 19px; opacity: 0.9; }
+#title .menu > button:hover, #title .menu > button:focus { background-position: 0 -78px; background-color: transparent; transform: scale(1.06); }
+#title .menu > button:hover::before, #title .menu > button:focus::before { content: '▶'; position: absolute; left: -34px; top: 22px; font-size: 26px; color: #ffcb05; text-shadow: 2px 2px 0 #10141c; animation: nudge 0.5s steps(2) infinite; }
+#title.open .menu > button { animation: from-below 0.4s 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) backwards; }
+#title.open .menu > button:nth-child(2) { animation-delay: 1s; }
+@keyframes from-below { from { transform: translateY(40vh); opacity: 0; } }
+#title .opts { display: flex; gap: 12px; margin-top: 0.6vh; }
+#title .opts button { font-family: var(--ui); font-size: 19px; padding: 5px 14px; color: #dfe6f4; background: #303848e8; border: 2px solid #10141c; border-radius: 12px; box-shadow: 0 3px 0 #10141c; }
+#title .opts button:hover, #title .opts button:focus { background: #48546c; transform: translateY(-2px); }
+#title.open .opts { animation: fade-in 0.5s 1.2s backwards; }
+#title .foot { position: absolute; bottom: 2vh; font-family: var(--ui); font-size: 17px; color: #a8b4cc; text-shadow: 1px 1px 0 #10141c; }

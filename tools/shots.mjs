@@ -21,8 +21,13 @@ const button = async (label) => {
   await page.evaluate((label) => [...document.querySelectorAll('#menu button, #recruit button, .cocard')].find((b) => b.textContent.includes(label)).click(), label)
 }
 
+const enter = () => page.evaluate(() => document.querySelector('#title [data-go=solo]').click())
+
 await page.goto(URL)
-await sleep(1000)
+await sleep(2600)
+await shot('00-titulo')
+await enter()
+await sleep(700)
 await shot('0-comandantes')
 await button('Pikachu')
 await sleep(4200)
@@ -56,6 +61,8 @@ await shot('5-auto')
 // Combate: se fuerza un duelo desde la consola
 await page.goto(URL)
 await sleep(900)
+await enter()
+await sleep(500)
 await button('Pikachu')
 await sleep(4500)
 await page.evaluate(() => {

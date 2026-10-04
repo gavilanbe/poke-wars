@@ -33,7 +33,8 @@ const SCENES = {
   gengar: [`lab.power('gengar')`, 4600],
   turno: [`document.querySelector('#end').click()`, 2200],
   victoria: [`lab.win(0)`, 2800],
-  inicio: [`[...document.querySelectorAll('.cocard')][1].click()`, 4200, 'early'],
+  inicio: [`document.querySelector('#title [data-go=solo]').click(); setTimeout(() => [...document.querySelectorAll('.cocard')][1].click(), 600)`, 4800, 'early'],
+  titulo: [`0`, 2600, 'early'],
 }
 
 const names = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SCENES)
@@ -47,8 +48,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 for (const name of names) {
   await page.goto(URL)
-  await sleep(900)
+  await sleep(name === 'titulo' ? 60 : 900)
   if (SCENES[name][2] !== 'early') {
+    await page.evaluate(() => document.querySelector('#title [data-go=solo]').click())
+    await sleep(500)
     await page.evaluate(() => [...document.querySelectorAll('.cocard')][0].click())
     await sleep(6500) // deja pasar la presentación y los saludos
   }

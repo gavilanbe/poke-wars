@@ -306,6 +306,8 @@ function resize() {
 }
 
 function startGame(cos: [string, string], intro = 0) {
+  titleOn = false
+  stage.classList.remove('titling')
   g = createGame(cos, fogOn)
   terrainLayer = makeTerrainLayer(g)
   fx.clear()
@@ -651,6 +653,10 @@ function draw(time: number) {
     const dx = (keysDown.has('a') || keysDown.has('arrowleft') || (mouse.inside && mouse.x < edge) ? -1 : 0) + (keysDown.has('d') || keysDown.has('arrowright') || (mouse.inside && mouse.x > 1 - edge) ? 1 : 0)
     const dy = (keysDown.has('w') || keysDown.has('arrowup') || (mouse.inside && mouse.y < edge) ? -1 : 0) + (keysDown.has('s') || keysDown.has('arrowdown') || (mouse.inside && mouse.y > 1 - edge) ? 1 : 0)
     if ((dx || dy) && mode !== 'menu') panTo(cam.tx + canvas.width / 2 + dx * speed, cam.ty + canvas.height / 2 + dy * speed)
+  }
+  if (titleOn) {
+    g.day = 1 + (Math.floor(time / 9000) % 4) // amanece, anochece…
+    panTo(worldW() / 2 + Math.cos(time / 11000) * (worldW() / 2 - canvas.width / 2), worldH() / 2 + Math.sin(time / 7000) * (worldH() / 2 - canvas.height / 2))
   }
   cam.x += (cam.tx - cam.x) * Math.min(1, dt * 0.012)
   cam.y += (cam.ty - cam.y) * Math.min(1, dt * 0.012)
@@ -1169,7 +1175,7 @@ function finish() {
     music.play(lost ? 'defeat' : 'victory')
     if (!lost) sfx.win()
     sfx.cry(g.co[winner], 1, 0.8)
-    victory(winner, g.co[winner], g.day, newGame)
+    victory(winner, g.co[winner], g.day, showTitle)
   }, 900)
 }
 
@@ -1213,10 +1219,79 @@ function chooseCommanders(): Promise<[string, string]> {
   })
 }
 
+// ---------- Pantalla de título ----------
+
+const titleEl = $('#title')
+let titleOn = false
+
+/** Título: el mapa vivo de fondo (la cámara pasea, los Pokémon se mueven, pasa el día) y el menú encima. */
+function showTitle() {
+  hideOverlay()
+  titleOn = true
+  mode = 'select'
+  bannerEl.hidden = talkEl.hidden = sceneEl.hidden = selectEl.hidden = menuEl.hidden = recruitEl.hidden = true
+  // Un campo de batalla de exhibición, sin niebla y con Pokémon de los dos equipos repartidos
+  const demo = createGame(['pikachu', 'charizard'], false)
+  const cast = ['treecko', 'torchic', 'mudkip', 'pikachu', 'taillow', 'snorlax', 'absol', 'lucario', 'wingull', 'ralts', 'machop', 'electrike', 'bagon', 'numel']
+  cast.forEach((kind, i) => {
+    for (let tries = 0; tries < 60; tries++) {
+      const x = Math.floor(Math.random() * demo.w), y = Math.floor(Math.random() * demo.h)
+      if (!'.="'.includes(demo.tiles[y][x]) || unitAt(demo, x, y)) continue
+      demo.units.push({ id: demo.nextId++, kind, team: (i % 2) as Team, x, y, hp: 10, moved: false })
+      break
+    }
+  })
+  g = demo
+  terrainLayer = makeTerrainLayer(g)
+  fx.clear()
+  for (const m of [unitFx, unitDir, unitAnim, animPos]) m.clear()
+  reset()
+  mode = 'select'
+  stage.classList.add('titling')
+  titleEl.hidden = false
+  restart(titleEl, 'open')
+  refreshTitle()
+  music.play('title')
+  music.ambience('')
+  void (async () => { // los Pokémon pasean por el mapa mientras estás en el menú
+    while (titleOn && g === demo) {
+      const u = pick(demo.units)
+      const spots = stoppable(demo, u, reachable(demo, u, 3)).filter((r) => demo.tiles[r.y][r.x] !== 'B')
+      if (spots.length > 1) {
+        const to = pick(spots)
+        await animateMove(u, pathTo(reachable(demo, u, 3), to.x, to.y))
+        if (g !== demo) break
+        moveUnit(demo, u, to.x, to.y)
+        animPos.delete(u.id)
+      }
+      await sleep(500)
+    }
+  })()
+}
+
+function refreshTitle() {
+  titleEl.querySelector('[data-opt=fog]')!.textContent = `Niebla de guerra: ${fogOn ? 'sí' : 'no'}`
+  titleEl.querySelector('[data-opt=sound]')!.textContent = `Sonido: ${muted ? 'no' : 'sí'}`
+}
+
+// El logo se monta letra a letra para animarlas por separado; la O de POKÉ es una Poké Ball
+titleEl.querySelector('.poke')!.innerHTML = ['P', '<i class="ball"></i>', 'K', 'É'].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')
+titleEl.querySelector('.wars')!.innerHTML = [...'WARS'].map((ch, i) => `<span style="--i:${i + 4}">${ch}</span>`).join('')
+for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
+  btn.onmouseenter = () => { sfx.cursor(); btn.focus() }
+  btn.onclick = () => {
+    if (btn.dataset.opt === 'fog') { fogOn = !fogOn; fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`; sfx.confirm(); return refreshTitle() }
+    if (btn.dataset.opt === 'sound') { toggleMute(); music.sync(); sfx.confirm(); return refreshTitle() }
+    isAI[1] = btn.dataset.go === 'solo' // contra la IA o dos personas por turnos
+    sfx.confirm()
+    titleEl.hidden = true
+    newGame()
+  }
+}
+
 async function newGame() {
   hideOverlay()
   bannerEl.hidden = talkEl.hidden = true
-  if (!AUTO) { music.play('title'); music.ambience('') }
   const cos = await chooseCommanders()
   if (AUTO) return startGame(cos)
   // Presentación: los comandantes frente a frente mientras se monta el mapa por debajo
@@ -1239,7 +1314,7 @@ async function animateMove(u: Unit, path: Pos[]) {
   for (let i = 1; i < path.length; i++) {
     const start = performance.now()
     unitDir.set(u.id, dirFrom(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y))
-    if (!AUTO && i % 2 === 1) sfx.step() // un paso sí y otro no, para que no machaque
+    if (!AUTO && !titleOn && i % 2 === 1) sfx.step() // un paso sí y otro no, para que no machaque
     for (;;) {
       const t = Math.min(1, (performance.now() - start) / step)
       animPos.set(u.id, {
@@ -1675,7 +1750,7 @@ addEventListener('keydown', (e) => {
   if (!g) return
   if (mode === 'recruit' && recruitKey && (e.key.startsWith('Arrow') || e.key === 'Enter')) return recruitKey(e)
   if (e.key.startsWith('Arrow') && (mode === 'menu' || mode === 'select')) {
-    const host = mode === 'menu' ? menuEl : selectEl
+    const host = mode === 'menu' ? menuEl : titleOn && !titleEl.hidden ? titleEl : selectEl
     const buttons = [...host.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
     const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
@@ -1704,7 +1779,7 @@ fogBtn.onclick = () => {
   fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`
 }
 muteBtn.onclick = () => { toggleMute(); music.sync(); muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`; sfx.confirm() }
-$('#new').onclick = () => { if (mode !== 'busy') newGame() }
+$('#new').onclick = () => { if (mode !== 'busy') showTitle() }
 
 async function boot() {
   const [atlasImg, waterImg, atlasMeta, names] = await Promise.all([
@@ -1746,6 +1821,7 @@ async function boot() {
       },
     },
   })
-  newGame()
+  if (AUTO) newGame()
+  else showTitle()
 }
 boot()
