@@ -55,7 +55,6 @@ const restart = (el: Element, cls: string) => {
 
 // ---------- Sprites del mapa ----------
 
-let tiles: HTMLImageElement
 let species: string[] = [] // orden de las hojas de Esmeralda (iconos, frente y espalda)
 let atlas: HTMLImageElement // edificios, árbol, rocas y tiles de suelo
 let at: Record<string, { x: number; w: number; h: number }> = {}
@@ -150,7 +149,7 @@ function makeTerrainLayer(g: Game) {
   for (let y = 0; y < g.h; y++) {
     for (let x = 0; x < g.w; x++) {
       const ch = g.tiles[y][x]
-      if (ch === 'T') { forestCells.push({ x, y }); piece('tree', x, y) }
+      if (ch === 'T') { forestCells.push({ x, y }); piece(hash(x * 3 + 1, y * 5 + 2) < 0.5 ? 'oak' : 'tree', x, y) }
       if (ch === 'M') piece('rock', x, y)
       if (ch === 's') piece('stone', x, y)
     }
@@ -1350,12 +1349,11 @@ muteBtn.onclick = () => { toggleMute(); muteBtn.innerHTML = `Sonido: ${muted ? '
 $('#new').onclick = () => { if (mode !== 'busy') newGame() }
 
 async function boot() {
-  const [tileImg, atlasImg, waterImg, atlasMeta, names] = await Promise.all([
-    loadImage('/assets/tiles_general.png'), loadImage('/assets/map/atlas.png'), loadImage('/assets/map/water.png'),
+  const [atlasImg, waterImg, atlasMeta, names] = await Promise.all([
+    loadImage('/assets/map/atlas.png'), loadImage('/assets/map/water.png'),
     fetch('/assets/map/atlas.json').then((r) => r.json()),
     fetch('/assets/species.json').then((r) => r.json()), loadUnits(), loadFx(),
   ])
-  tiles = tileImg
   species = names
   atlas = atlasImg
   at = atlasMeta
@@ -1364,7 +1362,7 @@ async function boot() {
   canvas.height = MAP.length * T
   mapFx = new Scene(mapFxCanvas, canvas.width, canvas.height)
   mapFx.start()
-  initCutscenes(sceneEl, tiles, atlas, at)
+  initCutscenes(sceneEl, atlas, at, water)
   resize()
   aiBtn.textContent = 'Azul: IA'
   powerBtn.textContent = '★ Poder del comandante'

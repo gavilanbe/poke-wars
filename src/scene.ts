@@ -7,14 +7,17 @@ let fxMeta: Record<string, FxMeta> = {}
 const fxImages = new Map<string, HTMLImageElement>()
 
 export async function loadFx() {
-  fxMeta = await fetch('/assets/fx/fx.json').then((r) => r.json())
-  await Promise.all(Object.keys(fxMeta).map((name) => new Promise<void>((resolve, reject) => {
+  const load = (name: string, file: string) => new Promise<void>((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve()
     img.onerror = reject
-    img.src = `/assets/fx/${name}.png`
+    img.src = `/assets/fx/${file}`
     fxImages.set(name, img)
-  })))
+  })
+  // Efectos de Esmeralda (fotogramas apilados) y hojas de la comunidad (en rejilla)
+  const [emerald, sheets] = await Promise.all(['fx.json', 'sheets.json'].map((f) => fetch('/assets/fx/' + f).then((r) => r.json())))
+  fxMeta = { ...emerald, ...sheets }
+  await Promise.all([...Object.keys(emerald).map((n) => load(n, n + '.png')), ...Object.keys(sheets).map((n) => load(n, sheets[n].file))])
 }
 
 /** Añade una hoja de efectos ya cargada (las de la comunidad van en rejilla). */

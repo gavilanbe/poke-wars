@@ -18,13 +18,17 @@ BASE = "https://raw.githubusercontent.com/infinitefusion/infinitefusion-e18/mast
 # nombre -> (columna, fila, columnas, filas) en tiles de 16 px del tileset; `trim` recorta lo transparente
 PIECES = {
     "center": (3, 203, 5, 6), "mart": (0, 232, 5, 5), "house": (0, 237, 5, 5), "gym": (0, 912, 8, 8),
-    "tree": (2, 1076, 2, 3), "rock": (0, 114, 2, 2), "stone": (2, 10, 2, 2),
+    "tree": (2, 1075, 2, 4), "oak": (0, 197, 3, 5), "rock": (0, 114, 2, 2), "stone": (2, 10, 2, 2),
 }
 TILES = {
     "grass": (0, 20, 4, 4), "tall": (4, 103, 1, 1), "tufts": (2, 102, 2, 1),
     "flowers": (0, 107, 4, 3),  # tres colores (filas), cuatro fotogramas cada uno
     "path": (3, 1081, 3, 3), "pathInner": (6, 1081, 2, 2),
 }
+# Hojas de efectos de ataque de la comunidad (celdas de 192x192) que refuerzan el combate
+SHEETS = {"fire": "PRAS- Fire", "water": "PRAS- Water", "thunder": "Thunder2", "crunch": "Crunch", "slash": "PRAS- Slash",
+          "rocksmash": "PRAS- Rock Smash", "punches": "punches", "explosions": "PRAS- Explosions", "ironhead": "PRAS- Iron Head",
+          "airslash": "PRAS- Air Slash"}
 WATER = "Autotiles/ocean-SHORE.png"  # autotile animado de RPG Maker XP: 32 fotogramas de 96x128
 
 
@@ -56,7 +60,15 @@ def main():
         json.dump(meta, f)
     water = Image.open(fetch(WATER)).convert("RGBA")
     water.resize((water.width // 2, water.height // 2), Image.NEAREST).save(os.path.join(OUT, "water.png"))
-    print(meta, water.size)
+    fx = os.path.join(ROOT, "public", "assets", "fx")
+    sheets = {}
+    for short, name in SHEETS.items():
+        im = Image.open(fetch("Animations/" + name + ".png")).convert("RGBA")
+        im.save(os.path.join(fx, "pras-%s.png" % short))
+        sheets["p:" + short] = {"file": "pras-%s.png" % short, "w": 192, "h": 192, "cols": im.width // 192, "n": (im.width // 192) * (im.height // 192)}
+    with open(os.path.join(fx, "sheets.json"), "w") as f:
+        json.dump(sheets, f)
+    print(meta)
 
 
 if __name__ == "__main__":

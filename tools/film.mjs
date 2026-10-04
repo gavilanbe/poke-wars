@@ -12,7 +12,7 @@ const fight = (a, d, extra = {}, terrain = '.') => ({
 })
 // nombre -> [código que arranca la escena, milisegundos a grabar]
 const SCENES = {
-  fuego: [`lab.battle(${JSON.stringify(fight('torchic', 'treecko', { dmg: 8, counter: 1 }))})`, 5200],
+  fuego: [`lab.battle(${JSON.stringify(fight('torchic', 'treecko', { dmg: 8, counter: 1 }, 'T'))})`, 5200],
   planta: [`lab.battle(${JSON.stringify(fight('treecko', 'mudkip', { dmg: 7, counter: 2 }))})`, 3200],
   agua: [`lab.battle(${JSON.stringify(fight('mudkip', 'geodude', { dmg: 10, counter: null }, '~'))})`, 4200],
   rayo: [`lab.battle(${JSON.stringify(fight('pikachu', 'taillow', { dmg: 9, counter: null }, 'M'))})`, 3200],

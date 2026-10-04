@@ -11,17 +11,17 @@ const TEAM_HEX = ['#e8483c', '#3c7ce8']
 
 let scene: Scene
 let root: HTMLElement
-let tiles: HTMLImageElement
+let water: HTMLImageElement // autotile animado del mapa
 let pieces: HTMLImageElement
 let pieceAt: Record<string, { x: number; w: number; h: number }>
 
 export function initCutscenes(
-  el: HTMLElement, tileImg: HTMLImageElement, pieceImg: HTMLImageElement, pieceMeta: Record<string, { x: number; w: number; h: number }>,
+  el: HTMLElement, pieceImg: HTMLImageElement, pieceMeta: Record<string, { x: number; w: number; h: number }>, waterImg: HTMLImageElement,
 ) {
   root = el
-  tiles = tileImg
   pieces = pieceImg
   pieceAt = pieceMeta
+  water = waterImg
   scene = new Scene(el.querySelector('canvas')!, W, H)
 }
 
@@ -31,19 +31,33 @@ export interface Place { terrain: string; building?: { type: string; owner: numb
 
 const SKY = ['#58a8f0', '#70b8f4', '#90ccf8', '#b0dcf8', '#d0ecfc']
 const SUNSET = ['#e88858', '#f0a068', '#f4b880', '#f8d0a0', '#fce4c4']
-const LOOK: Record<string, { sky: string[]; hill: string; ground: number }> = {
-  '.': { sky: SKY, hill: '#58b888', ground: 1 },
-  '"': { sky: SKY, hill: '#58b888', ground: 1 },
-  T: { sky: SKY, hill: '#3c9464', ground: 1 },
-  M: { sky: SUNSET, hill: '#a87858', ground: 113 },
-  '~': { sky: SKY, hill: '#4890d8', ground: 161 },
-  s: { sky: SKY, hill: '#4890d8', ground: 161 },
-  '=': { sky: SKY, hill: '#58b888', ground: 289 },
-  B: { sky: SKY, hill: '#58b888', ground: 289 },
+const LOOK: Record<string, { sky: string[]; hill: string }> = {
+  '.': { sky: SKY, hill: '#58b888' },
+  '"': { sky: SKY, hill: '#58b888' },
+  T: { sky: SKY, hill: '#3c9464' },
+  M: { sky: SUNSET, hill: '#a87858' },
+  '~': { sky: SKY, hill: '#4890d8' },
+  s: { sky: SKY, hill: '#4890d8' },
+  '=': { sky: SKY, hill: '#58b888' },
+  B: { sky: SKY, hill: '#58b888' },
 }
 
-const tile = (ctx: CanvasRenderingContext2D, id: number, x: number, y: number) =>
-  ctx.drawImage(tiles, (id % 32) * 16, Math.floor(id / 32) * 16, 16, 16, x, y, 32, 32)
+/** Un tile de suelo del mapa (16 px) pintado a doble tamaño, según el terreno. */
+function groundTile(ctx: CanvasRenderingContext2D, terrain: string, x: number, y: number, time: number) {
+  if (terrain === '~' || terrain === 's') {
+    ctx.drawImage(water, (Math.floor(time / 110) % 32) * 48 + 16, 32, 16, 16, x, y, 32, 32)
+  } else if (terrain === '=' || terrain === 'B') {
+    ctx.drawImage(pieces, pieceAt.path.x + 16, 16, 16, 16, x, y, 32, 32)
+  } else {
+    ctx.drawImage(pieces, pieceAt.grass.x + (((x >> 5) % 4 + 4) % 4) * 16, ((y >> 5) % 4) * 16, 16, 16, x, y, 32, 32)
+  }
+}
+/** Una pieza del mapa (pino, roca…) a doble tamaño, apoyada en `baseY`. */
+function prop(ctx: CanvasRenderingContext2D, name: string, cx: number, baseY: number) {
+  const p = pieceAt[name]
+  ctx.drawImage(pieces, p.x, 0, p.w, p.h, Math.round(cx - p.w), baseY - p.h * 2, p.w * 2, p.h * 2)
+}
+const tallGrass = (ctx: CanvasRenderingContext2D, x: number, y: number) => ctx.drawImage(pieces, pieceAt.tall.x, 0, 16, 16, x, y, 32, 32)
 
 function backdrop(ctx: CanvasRenderingContext2D, place: Place, x0: number, w: number, time: number) {
   const look = LOOK[place.terrain] ?? LOOK['.']
@@ -61,24 +75,14 @@ function backdrop(ctx: CanvasRenderingContext2D, place: Place, x0: number, w: nu
     ctx.fillRect(x0 + x, HORIZON - h, 2, h)
   }
   const first = Math.floor(x0 / 32) * 32
-  for (let y = HORIZON; y < H; y += 32) for (let x = first; x < x0 + w; x += 32) tile(ctx, look.ground, x, y)
+  for (let y = HORIZON; y < H; y += 32) for (let x = first; x < x0 + w; x += 32) groundTile(ctx, place.terrain, x, y, time)
   // Lo que hay detrás del Pokémon según el terreno
   const mid = x0 + w / 2
   if (place.terrain === 'T') {
-    const tree = pieceAt.tree
-    for (let x = first; x < x0 + w; x += 64) ctx.drawImage(pieces, tree.x, 0, tree.w, tree.h, x, HORIZON - 78, 64, 96)
+    for (let x = first - 16; x < x0 + w + 32; x += 44) prop(ctx, (x / 44) % 2 < 1 ? 'oak' : 'tree', x, HORIZON + 14 + ((x / 44) % 3) * 4)
   }
-  if (place.terrain === 'M') {
-    for (const x of [mid - 70, mid + 14]) { tile(ctx, 104, x, HORIZON - 44); tile(ctx, 106, x + 32, HORIZON - 44); tile(ctx, 120, x, HORIZON - 12); tile(ctx, 122, x + 32, HORIZON - 12) }
-  }
-  if (place.terrain === '"') for (let x = first; x < x0 + w; x += 32) tile(ctx, 13, x, HORIZON - 6)
-  if (place.terrain === '~' || place.terrain === 's') {
-    ctx.fillStyle = '#ffffffc0'
-    for (let i = 0; i < 9; i++) {
-      const phase = Math.floor(time / 240 + i * 3) % 6
-      if (phase < 3) ctx.fillRect(x0 + ((i * 37) % w), HORIZON + 8 + ((i * 23) % 60), 8 - phase * 2, 2)
-    }
-  }
+  if (place.terrain === 'M') for (const x of [mid - 56, mid + 4, mid + 60]) prop(ctx, 'rock', x, HORIZON + 10)
+  if (place.terrain === '"') for (let x = first; x < x0 + w; x += 32) tallGrass(ctx, x, HORIZON - 6)
   if (place.building) { // el edificio real, a tamaño doble, detrás del Pokémon
     const piece = pieceAt[place.building.type]
     ctx.drawImage(pieces, piece.x, 0, piece.w, piece.h, mid - piece.w, HORIZON + 30 - piece.h * 2, piece.w * 2, piece.h * 2)
@@ -202,7 +206,8 @@ const MOVES: Record<PType, Move> = {
       scene.add({ x, y, vx: vx * rnd(0.6, 1), vy: vy - rnd(0, 1.2), max: ms, size: 4, colors: FIRE })
     })
     const [dx] = body(d)
-    for (let i = 0; i < 3; i++) scene.fx('fire_plume', dx + (i - 1) * 14, d.actor.y - 22, { delay: i * 70, fps: 12 })
+    scene.fx('p:fire', dx, d.actor.y - 34, { frame: 6, count: 8, fps: 13, scale: 1.1 }) // columna de fuego
+    scene.fx('p:fire', dx, d.actor.y - 20, { frame: 40, count: 5, fps: 14, scale: 1.2, delay: 60 })
     scene.burst(dx, d.actor.y - 20, 18, { colors: FIRE, speed: 2.4, up: 2, g: 0.05, size: 4, max: 600 })
   },
   water: async (a, d) => {
@@ -211,7 +216,8 @@ const MOVES: Record<PType, Move> = {
       if (Math.random() < 0.15) scene.add({ img: 'bubble', fps: 8, x, y, vx: vx * 0.9, vy: vy - 0.4, max: ms, scale: 2 })
     })
     const [dx, dy] = body(d)
-    scene.fx('splash', dx, dy - 4, { fps: 0, max: 320, scale: 1.4, grow: 1.5 })
+    scene.fx('p:water', dx, dy - 12, { frame: 8, count: 11, fps: 17, scale: 1 }) // tromba
+    scene.fx('p:water', dx, dy, { frame: 28, count: 13, fps: 22, scale: 1.3 })
     scene.fx('water_impact', dx, dy, { fps: 0, max: 260, grow: 1.6 })
     scene.burst(dx, dy, 22, { colors: ['#f0faff', '#88c8ff', '#3880e8'], speed: 3, up: 2.5, g: 0.22, size: 4, max: 700 })
   },
@@ -221,7 +227,7 @@ const MOVES: Record<PType, Move> = {
       scene.add({ x, y, vx, vy, max: ms, size: 4, colors: ['#fff', '#b8a0ff', '#6038e0'], add: true })
     })
     const [dx, dy] = body(d)
-    scene.fx('explosion', dx, dy, { fps: 12, scale: 2.5 })
+    scene.fx('p:explosions', dx, dy, { frame: 0, count: 4, fps: 12, scale: 1.4 })
   },
   grass: async (a, d) => {
     scene.play(a.actor, 'Swing')
@@ -238,7 +244,7 @@ const MOVES: Record<PType, Move> = {
       }))
     }
     await scene.wait(290)
-    scene.fx('cut', dx, dy, { fps: 16, flipX: a.sign < 0 })
+    scene.fx('p:slash', dx, dy, { frame: 5, count: 4, fps: 14, scale: 1.3, flipX: a.sign < 0 })
     for (let i = 0; i < 8; i++) scene.add({ img: 'leaf', fps: 16, loop: true, x: dx, y: dy, vx: rnd(-2.5, 2.5), vy: rnd(-3.5, -1), g: 0.15, max: 700, scale: 1 })
   },
   electric: async (a, d) => {
@@ -255,6 +261,7 @@ const MOVES: Record<PType, Move> = {
     }
     strike()
     void (async () => { for (let i = 0; i < 2; i++) { await scene.wait(110); strike() } })()
+    scene.fx('p:thunder', dx, dy - 8, { frame: 20, count: 6, fps: 15, scale: 1.4 }) // estallido eléctrico
     scene.fx('shock', dx, dy, { fps: 16 })
     scene.burst(dx, dy, 14, { colors: ['#fff', '#f8e050'], speed: 3.5, size: 2, max: 320 })
   },
@@ -284,39 +291,42 @@ const MOVES: Record<PType, Move> = {
     }
     await scene.wait(370)
     for (let i = 0; i < 9; i++) scene.add({ img: 'rocks', frame: 3 + (i % 3), x: dx, y: dy, vx: rnd(-3, 3), vy: rnd(-4, -1), g: 0.25, vr: 0.3, max: 650, scale: 2 })
+    scene.fx('p:rocksmash', dx, dy, { frame: 0, count: 6, fps: 14, scale: 1.2 })
     scene.fx('gray_smoke', dx, d.actor.y - 10, { fps: 10, scale: 2.5 })
   },
   normal: async (a, d) => {
     await dash(a, d)
     const [dx, dy] = body(d)
     scene.fx('slam_hit', dx - a.sign * 6, dy, { fps: 22, flipX: a.sign < 0, scale: 2.5 })
+    scene.fx('p:punches', dx, dy, { frame: 7, count: 1, fps: 0, max: 280, scale: 0.4, grow: 2.6 })
   },
   flying: async (a, d) => {
     await dash(a, d, 30)
     const [dx, dy] = body(d)
-    scene.fx('slash', dx, dy, { fps: 18, flipX: a.sign < 0, scale: 2.5 })
+    scene.fx('p:airslash', dx, dy, { frame: 0, count: 8, fps: 26, scale: 1.3, flipX: a.sign < 0 })
+    scene.fx('p:slash', dx, dy, { frame: 5, count: 4, fps: 16, scale: 1.3, flipX: a.sign < 0 })
     for (let i = 0; i < 7; i++) scene.add({ img: 'white_feather', frame: i % 2, x: dx, y: dy, vx: rnd(-2.5, 2.5), vy: rnd(-3, -0.5), g: 0.07, vr: rnd(-0.1, 0.1), max: 900, scale: 1.5 })
   },
   fighting: async (a, d) => {
     await dash(a, d)
     const [dx, dy] = body(d)
     scene.add({ img: 'red_fist', x: dx - a.sign * 16, y: dy, max: 300, scale: 4, grow: 0.6, flipX: a.sign < 0, fade: false })
-    scene.add({ img: 'punch_impact', x: dx, y: dy, max: 260, scale: 2, grow: 1.8 })
+    scene.fx('p:punches', dx, dy, { frame: 7, count: 1, fps: 0, max: 300, scale: 0.4, grow: 3 })
     scene.hitStop(60)
   },
   dark: async (a, d) => {
     await dash(a, d)
     const [dx, dy] = body(d)
-    const top = scene.add({ img: 'fangs', frame: 0, x: dx, y: dy - 44, max: 320, scale: 2.5, fade: false })
-    const bottom = scene.add({ img: 'fangs', frame: 1, x: dx, y: dy + 44, max: 320, scale: 2.5, fade: false })
-    await scene.tween(110, (t) => { top.y = dy - 44 + 34 * easeIn(t); bottom.y = dy + 44 - 34 * easeIn(t) })
+    scene.flashScreen('#3a1870', 0.45, 2)
+    scene.fx('p:crunch', dx, dy, { frame: 0, count: 12, fps: 30, scale: 0.85 }) // mandíbulas que se cierran
+    await scene.wait(230)
     scene.fx('purple_swipe', dx, dy, { fps: 9, scale: 1.6, flipX: a.sign < 0 })
   },
   steel: async (a, d) => {
     await dash(a, d)
     const [dx, dy] = body(d)
     for (let i = 0; i < 3; i++) scene.fx('claw_slash', dx - 12 + i * 12, dy - 8 + i * 8, { delay: i * 45, fps: 24, flipX: a.sign < 0, scale: 2.5 })
-    scene.fx('sparkle_4', dx, dy - 10, { fps: 14, delay: 100 })
+    scene.fx('p:ironhead', dx, dy, { frame: 0, count: 2, fps: 8, scale: 1.5, delay: 80 })
   },
 }
 
@@ -331,6 +341,7 @@ async function strike(a: Side, d: Side, dmg: number) {
   const [dx, dy] = body(d)
   const hpAfter = Math.max(0, d.hp - dmg)
   scene.hitStop(big ? 170 : 100)
+  scene.canvas.animate([{ transform: `scale(${big ? 1.12 : 1.06})` }, { transform: 'scale(1)' }], { duration: big ? 380 : 260, easing: 'cubic-bezier(0.2, 1.4, 0.4, 1)' })
   scene.addShake(big ? 10 : 5)
   if (big) scene.flashScreen('#fff', 0.85, 7)
   scene.fx('hit', dx, dy, { fps: 20, scale: big ? 3.5 : 2.5 })
@@ -470,7 +481,7 @@ export async function playBattle(b: BattleData) {
   scene.foreground = (ctx) => { // hierba alta por delante de los pies
     for (const [side, x0] of [[b.a, 0], [b.d, 128]] as const) {
       if (side.place.terrain !== '"' || slide > 0.02) continue
-      for (let x = x0; x < x0 + 128; x += 32) tile(ctx, 13, x, FEET - 18)
+      for (let x = x0; x < x0 + 128; x += 32) tallGrass(ctx, x, FEET - 18)
     }
   }
   left.actor.ox = -150
@@ -523,10 +534,13 @@ export async function playCapture(c: CaptureData) {
     }
     ctx.fillStyle = '#58b888'
     for (let x = -20; x < W + 20; x += 2) ctx.fillRect(x, 100 - 12 - Math.sin(x * 0.05) * 7 - Math.sin(x * 0.13) * 3, 2, 30)
-    for (let y = 100; y < H + 16; y += 16) for (let x = -32; x < W + 32; x += 16) ctx.drawImage(tiles, 16, 0, 16, 16, x, y, 16, 16)
+    for (let y = 100; y < H + 16; y += 16) {
+      for (let x = -32; x < W + 32; x += 16) ctx.drawImage(pieces, pieceAt.grass.x + (((x + 64) >> 4) % 4) * 16, ((y >> 4) % 4) * 16, 16, 16, x, y, 16, 16)
+    }
     for (let y = base; y < H + 16; y += 16) { // caminito de tierra hasta la puerta
-      ctx.drawImage(tiles, (288 % 32) * 16, Math.floor(288 / 32) * 16, 16, 16, left + 8, y, 16, 16)
-      ctx.drawImage(tiles, (290 % 32) * 16, Math.floor(290 / 32) * 16, 16, 16, left + 24, y, 16, 16)
+      const mid = Math.round(bx - 16)
+      ctx.drawImage(pieces, pieceAt.path.x, 16, 16, 16, mid, y, 16, 16)
+      ctx.drawImage(pieces, pieceAt.path.x + 32, 16, 16, 16, mid + 16, y, 16, 16)
     }
     for (const x of [-6, 26, 200, 232]) ctx.drawImage(pieces, tree.x, 0, tree.w, tree.h, x, 112 - tree.h + (x % 3) * 4, tree.w, tree.h)
     ctx.save()
