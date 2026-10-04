@@ -220,7 +220,7 @@ export function weatherBonus(g: Game, type: string): number {
 }
 
 /** Veteranía: el nivel 3 da un 10%; un nivel 2 sin evolución, un 15% (lo que ganaría evolucionando). */
-const levelBonus = (u: Unit) => (u.level >= 3 ? 1.1 : 1) * (u.level >= 2 && KINDS[u.kind].evolves === undefined && KINDS[u.kind].cost > 0 ? 1.15 : 1)
+const levelBonus = (u: Unit) => (u.level >= 3 && !KINDS[u.kind].final ? 1.1 : 1) * (u.level >= 2 && KINDS[u.kind].evolves === undefined && KINDS[u.kind].cost > 0 ? 1.15 : 1)
 
 export function damage(g: Game, att: Unit, def: Unit, attHp = att.hp, crit = false): number {
   const a = KINDS[att.kind], d = KINDS[def.kind]
@@ -297,7 +297,7 @@ function gainXp(u: Unit, amount: number): Unit | null {
   while (u.level < 3 && u.xp >= XP_LEVEL[u.level]) {
     u.level++
     const next = KINDS[u.kind].evolves
-    if (u.level === 2 && next) { u.kind = next; evolved = u }
+    if (next) { u.kind = next; evolved = u } // al 2 evoluciona y, si tiene tercera fase, al 3 otra vez
   }
   return evolved
 }

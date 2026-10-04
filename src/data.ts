@@ -1,4 +1,5 @@
 // Datos del juego: terrenos, tipos, roles, comandantes y mapa.
+import finals from './finals.json'
 import rosters from './rosters.json'
 
 export type MoveType = 'walk' | 'fly' | 'swim' | 'amph'
@@ -147,11 +148,12 @@ export interface UnitKind {
   capture?: boolean
   heals?: boolean
   evolves?: string
+  final?: boolean // tercera fase
 }
 
 type Line = [base: string, evolved: string | null, types: string, coverage?: string]
 const ROSTERS = rosters as unknown as Record<string, Record<RoleId, Line>>
-const NAMES: Record<string, string> = { porygon2: 'Porygon2' }
+const NAMES: Record<string, string> = { porygon2: 'Porygon2', porygon_z: 'Porygon-Z' }
 const displayName = (species: string) => NAMES[species] ?? species[0].toUpperCase() + species.slice(1)
 
 /** Todas las unidades del juego, generadas a partir de los roles y de los equipos de cada comandante. */
@@ -172,6 +174,13 @@ for (const [commander, roster] of Object.entries(ROSTERS)) {
     }
   }
 }
+// Terceras fases (src/finals.json): se llega al nivel 3 y mejoran otro poco
+for (const [from, to] of Object.entries(finals as Record<string, string>)) {
+  const mid = KINDS[from]
+  mid.evolves = to
+  KINDS[to] = { ...mid, name: displayName(to), species: to, evolves: undefined, final: true, atk: Math.round(mid.atk * 110) / 100, def: Math.round(mid.def * 110) / 100 }
+}
+
 /** Lo que puede reclutar un comandante: su Pokémon de cada rol, por orden de rol. */
 export const rosterOf = (commander: string): string[] => ROLE_ORDER.map((role) => ROSTERS[commander][role][0])
 export const MAX_UNITS = 16 // tope de Pokémon en el campo por equipo

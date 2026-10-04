@@ -25,6 +25,8 @@ with open(os.path.join(CACHE, "tracker.json")) as f:
     _norm = lambda name: re.sub(r"[^a-z0-9]", "", name.lower())
     DEX = {_norm(v["name"]): int(k) for k, v in json.load(f).items() if int(k) > 0}
 UNITS = {sp: DEX[_norm(sp)] for roster in ROSTERS.values() for line in roster.values() for sp in line[:2] if sp}
+with open(os.path.join(ROOT, "src", "finals.json")) as f:  # terceras fases
+    UNITS.update({sp: DEX[_norm(sp)] for sp in json.load(f).values()})
 # Comandantes: solo retratos, con varias caras
 COMMANDERS = {name: DEX[_norm(name)] for name in ROSTERS}
 ANIMS = ["Idle", "Walk", "Attack", "Hurt", "Charge", "Shoot", "Swing", "Hop", "Rotate"]
