@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Poké Wars</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/ui.css" />
+  </head>
+  <body>
+    <main>
+      <div id="stage">
+        <canvas id="map"></canvas>
+        <canvas id="mapfx"></canvas>
+        <div id="menu" class="box" hidden></div>
+        <div id="forecast" class="box" hidden></div>
+        <div id="recruit" class="box" hidden></div>
+        <div id="scene" hidden>
+          <canvas></canvas>
+          <div class="plate left"><img alt=""><div><b class="name"></b><span class="type"></span>
+            <div class="hp"><u></u><i></i></div></div><small class="hpnum"></small></div>
+          <div class="plate right"><img alt=""><div><b class="name"></b><span class="type"></span>
+            <div class="hp"><u></u><i></i></div></div><small class="hpnum"></small></div>
+          <div class="counter"></div>
+          <div class="msg box"></div>
+        </div>
+        <div id="talk" hidden></div>
+        <div id="banner" hidden></div>
+        <div id="cutin" hidden></div>
+        <div id="select" hidden></div>
+        <div id="overlay" hidden></div>
+        <div id="wipe" hidden></div>
+      </div>
+      <aside id="panel">
+        <header><div class="logo">POKÉ<b>WARS</b></div><div id="day"></div></header>
+        <div id="cos"></div>
+        <button id="power"></button>
+        <div id="info" class="box"></div>
+        <div class="buttons">
+          <button id="end">Fin del turno <kbd>Enter</kbd></button>
+          <button id="ai"></button>
+          <button id="mute"></button>
+          <button id="new">Nueva partida</button>
+        </div>
+        <p class="help">
+          Clic en un Pokémon para moverlo; después elige acción. Clic derecho o <kbd>Esc</kbd> cancela.
+          Clic en tu Centro Pokémon vacío para reclutar. El medidor del comandante se llena al dar y recibir golpes: cuando esté lleno, suelta su poder.
+          Captura el gimnasio rival o derrota a todo su equipo.
+        </p>
+      </aside>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
