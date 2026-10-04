@@ -1120,7 +1120,7 @@ function refreshInfo() {
     const k = KINDS[u.kind]
     infoEl.className = `t${u.team}`
     infoEl.innerHTML = `<img class="mug" src="${facePath(k.species)}">
-      <div class="who"><b>${k.name}</b><i class="ty" style="background-position:0 -${TYPE_ICON[k.type] * 28}px" title="${TYPE_NAME[k.type]}"></i></div>
+      <div class="who"><b>${k.name}</b><i class="ty" style="background-position:0 -${TYPE_ICON[k.type] * 19}px" title="${TYPE_NAME[k.type]}"></i></div>
       <div class="hpline"><div class="hpbar"><i style="width:${u.hp * 9.6}px;background-position:0 -${u.hp > 5 ? 0 : u.hp > 2 ? 8 : 16}px"></i></div>${u.hp}/10</div>
       <div class="line"><span>ATQ ${miniBar(k.atk, 2)}</span><span>DEF ${miniBar(k.def, 2)}</span><span>MOV ${moveRange(g, u)}</span><span>${stars}</span></div>`
     infoEl.title = [MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.evolves ? `evoluciona a ${KINDS[k.evolves].name}` : '',
@@ -1389,51 +1389,105 @@ function openMenu() {
   menuEl.querySelector('button')!.focus()
 }
 
-/** Tienda del Centro Pokémon: lista a la izquierda y ficha animada del Pokémon a la derecha. */
+// Teclas de la caja de reclutar mientras está abierta (flechas, Enter)
+let recruitKey: ((e: KeyboardEvent) => void) | null = null
+
+/**
+ * Caja del Centro Pokémon, hecha como el PC de almacenamiento: una cuadrícula de Pokémon animados sobre el fondo
+ * de caja, la mano que señala, y a la izquierda el sprite grande con sus datos. Un solo cursor para ratón y teclado.
+ */
 function openRecruit(b: Building) {
   mode = 'recruit'
   sfx.select()
-  recruitEl.innerHTML = `<h3>Centro Pokémon <span>${g.funds[g.turn]}₽</span></h3>
-    <div class="list"></div>
-    <div class="detail"><canvas width="96" height="72"></canvas><div class="text"></div></div>`
-  const text = recruitEl.querySelector<HTMLElement>('.text')!
-  const preview = recruitEl.querySelector('canvas')!.getContext('2d')!
-  let shown = ''
-  const show = (kind: string) => {
-    if (shown === kind) return
-    shown = kind
-    const k = KINDS[kind]
-    const tags = [MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.range[1] > 1 ? `ataca a distancia (${k.range.join('-')})` : '',
-      k.evolves ? `evoluciona a ${KINDS[k.evolves].name}` : ''].filter(Boolean).join(' · ')
-    text.innerHTML = `<h4>${k.name} ${pill(k.type)}</h4>
-      ${statBar('Ataque', k.atk, 2)}${statBar('Defensa', k.def, 2)}${statBar('Movim.', k.mv, 8)}
-      <p>${tags}</p><p>Fuerte contra ${matchups(k.type, true)}</p><p>Flojo contra ${matchups(k.type, false)}</p>`
-    restart(text, 'swap')
-  }
-  const rows = RECRUITABLE.map((kind, i) => {
-    const k = KINDS[kind]
-    const btn = document.createElement('button')
-    btn.disabled = !canRecruit(g, b, kind)
-    btn.style.animationDelay = i * 18 + 'ms'
-    btn.innerHTML = `<img class="mug" src="${facePath(k.species)}"><b>${k.name}</b><span>${k.cost}₽</span>`
-    btn.onmouseenter = btn.onfocus = () => { if (shown !== kind) sfx.cursor(); show(kind) }
-    btn.onclick = () => { dropIn(recruit(g, b, kind)); finish() }
-    return btn
+  const COLS = 6
+  const k = Math.max(1, Math.min(2, Math.floor(Math.min((innerWidth - 40) / 512, (innerHeight - 40) / 384) * 2) / 2))
+  recruitEl.innerHTML = `<div class="pc" style="transform:translate(-50%, -50%) scale(${k})">
+      <div class="ttl"></div>
+      <canvas class="spr" width="158" height="162"></canvas>
+      <div class="row r1"></div><div class="row r2"></div><div class="row r3"></div><div class="row r4"></div>
+      <div class="hdr">CENTRO POKÉMON</div>
+      <div class="grid"></div>
+      <i class="hand"></i>
+      <button class="go"></button><button class="out">SALIR</button>
+    </div>`
+  const q = <E extends HTMLElement>(sel: string) => recruitEl.querySelector(sel) as E
+  const grid = q('.grid'), hand = q('.hand'), go = q<HTMLButtonElement>('.go')
+  const big = q<HTMLCanvasElement>('.spr').getContext('2d')!
+  const funds = g.funds[g.turn]
+  const cells = RECRUITABLE.map((kind) => {
+    const cell = document.createElement('button')
+    cell.className = 'cell' + (KINDS[kind].cost > funds ? ' locked' : '')
+    cell.innerHTML = '<canvas width="50" height="44"></canvas>'
+    grid.append(cell)
+    return { kind, cell, cx: cell.querySelector('canvas')!.getContext('2d')! }
   })
-  recruitEl.querySelector('.list')!.append(...rows)
+  let current = -1
+  const pickUp = (i: number) => {
+    const kind = RECRUITABLE[i], k2 = KINDS[kind]
+    if (k2.cost > funds || unitAt(g, b.x, b.y)) { // no llega el dinero: la caja dice que no
+      sfx.error()
+      restart(recruitEl.firstElementChild!, 'nope')
+      return
+    }
+    // La mano agarra al Pokémon y se lo lleva
+    hand.className = 'hand grab'
+    sfx.confirm()
+    setTimeout(() => { dropIn(recruit(g, b, kind)); finish() }, 260)
+  }
+  const show = (i: number) => {
+    if (i === current || i < 0 || i >= cells.length) return
+    if (current >= 0) cells[current].cell.classList.remove('on')
+    current = i
+    const { kind, cell } = cells[i], k2 = KINDS[kind]
+    cell.classList.add('on')
+    hand.style.left = cell.offsetLeft + grid.offsetLeft + 14 + 'px'
+    hand.style.top = cell.offsetTop + grid.offsetTop - 26 + 'px'
+    sfx.cursor()
+    const can = k2.cost <= funds
+    q('.ttl').textContent = k2.name
+    q('.r1').innerHTML = `<span>Coste</span><b class="${can ? '' : 'bad'}">${k2.cost}₽</b>`
+    q('.r2').innerHTML = `<i class="ty" style="background-position:0 -${TYPE_ICON[k2.type] * 19}px"></i><span>${TYPE_NAME[k2.type]}</span><b>${MOVE_LABEL[k2.move]}</b>`
+    q('.r3').innerHTML = `<span>ATQ ${miniBar(k2.atk, 2)}</span><span>DEF ${miniBar(k2.def, 2)}</span>`
+    q('.r4').innerHTML = `<span>MOV ${k2.mv}</span><span>${k2.capture ? 'Captura' : k2.range[1] > 1 ? `Alcance ${k2.range.join('-')}` : k2.evolves ? `→ ${KINDS[k2.evolves].name}` : ''}</span>`
+    go.innerHTML = can ? `RECLUTAR <b>${k2.cost}₽</b>` : `FALTAN ${k2.cost - funds}₽`
+    go.classList.toggle('bad', !can)
+    restart(q('.spr'), 'swap')
+  }
+  cells.forEach(({ cell }, i) => {
+    cell.onmouseenter = () => show(i)
+    cell.onclick = () => { show(i); pickUp(i) }
+  })
+  go.onclick = () => pickUp(current)
+  q('.out').onclick = cancel
+  recruitKey = (e) => {
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -COLS, ArrowDown: COLS }[e.key]
+    if (step !== undefined) show(Math.max(0, Math.min(cells.length - 1, current + step)))
+    else if (e.key === 'Enter') pickUp(current)
+    else return
+    e.preventDefault()
+  }
   recruitEl.hidden = false
   restart(recruitEl, 'open')
-  show(RECRUITABLE[0])
-  rows.find((r) => !r.disabled)?.focus()
+  show(Math.max(0, cells.findIndex((c) => !c.cell.classList.contains('locked'))))
+
   const loop = (time: number) => {
-    if (recruitEl.hidden || !shown) return
-    preview.imageSmoothingEnabled = false
-    preview.clearRect(0, 0, 96, 72)
-    preview.fillStyle = 'rgba(40, 48, 60, 0.18)'
-    preview.beginPath()
-    preview.ellipse(48, 56, 26, 8, 0, 0, Math.PI * 2)
-    preview.fill()
-    drawSprite(preview, KINDS[shown].species, 'Walk', (Math.floor(time / 900) * 2) % 8, time, 48, 38, { sx: 2, sy: 2 })
+    if (recruitEl.hidden || mode !== 'recruit') return void (recruitKey = null)
+    for (const [i, { kind, cx }] of cells.entries()) { // cada casilla, su Pokémon en reposo (o dando saltitos si es el elegido)
+      cx.imageSmoothingEnabled = false
+      cx.clearRect(0, 0, 50, 44)
+      const hop = i === current ? Math.abs(Math.sin(time / 170)) * 4 : 0
+      drawSprite(cx, KINDS[kind].species, i === current ? 'Walk' : 'Idle', DIR.down, time + i * 190, 25, 20 - hop, { dim: KINDS[kind].cost > funds })
+    }
+    if (current >= 0) {
+      big.imageSmoothingEnabled = false
+      big.clearRect(0, 0, 158, 162)
+      big.fillStyle = 'rgba(40, 48, 60, 0.16)'
+      big.beginPath()
+      big.ellipse(79, 122, 44, 12, 0, 0, Math.PI * 2)
+      big.fill()
+      drawSprite(big, KINDS[RECRUITABLE[current]].species, 'Walk', (Math.floor(time / 1100) * 2) % 8, time, 79, 84, { sx: 3, sy: 3 })
+    }
+    hand.dataset.f = String(Math.floor(time / 320) % 2)
     requestAnimationFrame(loop)
   }
   requestAnimationFrame(loop)
@@ -1619,8 +1673,9 @@ addEventListener('blur', () => keysDown.clear())
 stage.addEventListener('contextmenu', (e) => { e.preventDefault(); if (g) cancel() })
 addEventListener('keydown', (e) => {
   if (!g) return
-  if (e.key.startsWith('Arrow') && (mode === 'menu' || mode === 'recruit' || mode === 'select')) {
-    const host = mode === 'menu' ? menuEl : mode === 'recruit' ? recruitEl : selectEl
+  if (mode === 'recruit' && recruitKey && (e.key.startsWith('Arrow') || e.key === 'Enter')) return recruitKey(e)
+  if (e.key.startsWith('Arrow') && (mode === 'menu' || mode === 'select')) {
+    const host = mode === 'menu' ? menuEl : selectEl
     const buttons = [...host.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
     const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement)

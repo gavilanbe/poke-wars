@@ -41,7 +41,12 @@ await button('Esperar')
 await click(8, 9)
 await sleep(400)
 await shot('4-reclutar')
-await button('Treecko')
+await page.keyboard.press('ArrowRight')
+await page.keyboard.press('ArrowDown')
+await sleep(300)
+await shot('4b-reclutar-teclado')
+await page.evaluate(() => document.querySelector('.pc .cell').click())
+await sleep(700)
 
 // Partida IA contra IA un rato, para ver un mapa avanzado
 await page.goto(URL + '?auto')

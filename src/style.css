@@ -65,17 +65,9 @@ kbd { float: right; font: inherit; font-family: var(--ui); font-size: 19px; opac
 
 #menu, #forecast { position: absolute; z-index: 5; }
 #menu { display: flex; flex-direction: column; gap: 4px; padding: 6px; min-width: 120px; }
-#menu button, #recruit button { box-shadow: none; border-color: transparent; padding: 3px 8px; }
-#menu button:hover, #recruit button:hover:not(:disabled) { border-color: var(--ink); }
+#menu button { box-shadow: none; border-color: transparent; padding: 3px 8px; }
+#menu button:hover { border-color: var(--ink); }
 #forecast { pointer-events: none; font-family: var(--ui); font-size: 20px; white-space: nowrap; padding: 4px 8px; }
-
-#recruit {
-  position: absolute; z-index: 6; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: 420px; max-height: 92%; overflow: auto; padding: 8px;
-}
-#recruit h3 { margin: 2px 6px 6px; }
-#recruit button { display: grid; grid-template-columns: 36px 1fr auto auto; gap: 8px; align-items: center; width: 100%; }
-#recruit .stats { font-family: var(--ui); font-size: 19px; color: #6a7488; }
 .icon { width: 32px; height: 32px; background-image: url(/assets/icons.png); }
 
 
@@ -113,13 +105,12 @@ kbd { float: right; font: inherit; font-family: var(--ui); font-size: 19px; opac
 }
 
 #menu.open, #forecast { animation: box-in 0.16s cubic-bezier(0.2, 1.6, 0.4, 1); transform-origin: left top; }
-#menu.open button, #recruit.open button { animation: item-in 0.2s backwards; }
-#recruit.open { animation: sheet-in 0.22s cubic-bezier(0.2, 1.4, 0.4, 1); }
+#menu.open button { animation: item-in 0.2s backwards; }
 @keyframes box-in { from { transform: scale(0.5); opacity: 0; } }
 @keyframes item-in { from { transform: translateX(-14px); opacity: 0; } }
 @keyframes sheet-in { from { transform: translate(-50%, -44%) scale(0.9); opacity: 0; } }
-#menu button:hover, #recruit button:hover:not(:disabled) { transform: translateX(4px); background: #ffe9a0; }
-#menu button, #recruit button { transition: transform 0.08s; }
+#menu button:hover { transform: translateX(4px); background: #ffe9a0; }
+#menu button { transition: transform 0.08s; }
 #menu button::before { content: '▶ '; opacity: 0; }
 #menu button:hover::before { opacity: 1; }
 
@@ -169,8 +160,6 @@ button:hover:not(:disabled) { transform: translateY(-2px); }
 #info .mug { float: right; width: 60px; height: 60px; margin-left: 6px; }
 #info .mug.t0 { border-color: var(--red); }
 #info .mug.t1 { border-color: var(--blue); }
-#recruit button { grid-template-columns: 44px 1fr auto auto; }
-#recruit button:disabled .mug { filter: grayscale(1); }
 
 /* Bocadillo del comandante */
 #talk { position: absolute; z-index: 6; bottom: 10px; left: 10px; display: flex; align-items: flex-end; gap: 10px; line-height: 1.1; pointer-events: none; max-width: 70%; }
@@ -251,7 +240,7 @@ main { align-items: center; }
 @media (max-height: 860px) { .help { display: none; } .co img { width: 64px; height: 64px; } }
 
 /* ---------- Marcos de ventana de Esmeralda ---------- */
-.box, #menu, #recruit, .cocard, .counter {
+.box, #menu, .cocard, .counter {
   background: none; box-shadow: none; border-radius: 0; padding: 2px 6px;
   border: 16px solid transparent; border-image: url(/assets/ui/frame-1.png) 8 fill / 16px round; image-rendering: pixelated;
 }
@@ -266,21 +255,6 @@ button:focus { outline: none; }
 #menu button:hover, #menu button:focus { background: none; transform: translateX(4px); }
 #menu button:hover::before, #menu button:focus::before { opacity: 1; animation: nudge 0.5s steps(2) infinite; }
 @keyframes nudge { 50% { transform: translateX(-3px); } }
-
-/* Tienda de reclutamiento */
-#recruit { width: 660px; max-height: none; overflow: visible; display: grid; grid-template-columns: 250px 1fr; gap: 4px 14px; padding: 4px 8px 8px; filter: drop-shadow(6px 6px 0 #0006); line-height: 1.05; }
-#recruit h3 { grid-column: 1 / -1; margin: 0 0 4px; font-size: 24px; display: flex; justify-content: space-between; border-bottom: 2px dotted #b8c0d0; }
-#recruit h3 span { color: #b07800; }
-#recruit .list { display: flex; flex-direction: column; }
-#recruit .list button { display: grid; grid-template-columns: 32px 1fr auto; gap: 8px; align-items: center; width: 100%; padding: 1px 6px; background: none; border: 0; border-radius: 0; font-size: 24px; }
-#recruit .list .mug { width: 30px; height: 30px; }
-#recruit .list button:hover:not(:disabled), #recruit .list button:focus { background: #28303c; color: #fff; transform: translateX(4px); }
-#recruit .list button:focus span, #recruit .list button:hover:not(:disabled) span { color: #ffd84a; }
-#recruit .detail { background: #e8ecf0; border: 2px solid var(--ink); padding: 8px 10px; }
-#recruit .detail canvas { display: block; width: 288px; height: 216px; margin: 0 auto; image-rendering: pixelated; background: linear-gradient(#b8e0f8 0 62%, #88c890 62%); border: 2px solid var(--ink); }
-#recruit .detail h4 { margin: 8px 0 4px; font-size: 32px; }
-#recruit .detail p { margin: 5px 0 0; font-family: var(--ui); font-size: 21px; }
-#recruit .text.swap { animation: swap 0.18s; }
 @keyframes swap { from { transform: translateX(12px); opacity: 0; } }
 .stat { display: flex; align-items: center; gap: 8px; font-family: var(--ui); font-size: 21px; }
 .stat span { width: 62px; }
@@ -348,7 +322,7 @@ button:focus { outline: none; }
   100% { transform: translate(-50%, -90%) scale(1) rotate(-4deg); opacity: 0; }
 }
 
-#menu[hidden], #recruit[hidden], #scene[hidden], #banner[hidden], #forecast[hidden] { display: none; }
+#menu[hidden], #scene[hidden], #banner[hidden], #forecast[hidden] { display: none; }
 #scene.capture .msg { left: 14px; right: auto; top: 14px; bottom: auto; width: 56%; min-height: 0; }
 
 #cutin .title small { font-size: 32px; }
@@ -436,18 +410,14 @@ button:focus { outline: none; }
 #scene, #scene.leave { animation: none; }
 
 /* ---------- Texto estilo Pokémon: gris oscuro con sombra clara sobre las ventanas ---------- */
-.box, #menu, #recruit, .cocard, .counter, #forecast { color: #484848; text-shadow: 0.0625em 0.0625em 0 #d0d0c8; line-height: 1.08; }
-.box .pill, #recruit .pill, .cocard .pill, .plate .pill { text-shadow: 1px 1px 0 #0006; font-family: var(--ui); font-size: 18px; padding: 0 7px 1px; border-radius: 3px; letter-spacing: 0.5px; }
+.box, #menu, .cocard, .counter, #forecast { color: #484848; text-shadow: 0.0625em 0.0625em 0 #d0d0c8; line-height: 1.08; }
+.box .pill, .cocard .pill, .plate .pill { text-shadow: 1px 1px 0 #0006; font-family: var(--ui); font-size: 18px; padding: 0 7px 1px; border-radius: 3px; letter-spacing: 0.5px; }
 .pill { font-family: var(--ui); }
 h1, h2, h3, h4, b, strong { font-weight: 400; }
-#info h3, #recruit h3, #recruit .detail h4, .cocard b, .co .nm, #talk b, .plate .name { font-family: var(--display); letter-spacing: 0.5px; text-shadow: none; }
+#info h3, .cocard b, .co .nm, #talk b, .plate .name { font-family: var(--display); letter-spacing: 0.5px; text-shadow: none; }
 #info h3 { font-size: 28px; }
 #info { font-size: 24px; }
 #info .muted, .stat { font-family: var(--ui); font-size: 20px; text-shadow: none; }
-#recruit h3 { font-size: 30px; }
-#recruit .list button { font-family: var(--ui); font-size: 24px; text-shadow: none; }
-#recruit .detail h4 { font-size: 36px; }
-#recruit .detail p { font-size: 20px; text-shadow: none; }
 #menu button { font-family: var(--ui); font-size: 28px; text-shadow: none; }
 .cocard b { font-size: 36px; }
 .cocard i, .cocard p { font-family: var(--ui); font-size: 20px; text-shadow: none; line-height: 1; }
@@ -484,7 +454,6 @@ kbd { font-family: var(--ui); font-size: 16px; }
 /* Mapa grande: minimapa y lista de reclutas con desplazamiento */
 #minimap { width: 100%; image-rendering: pixelated; border: 3px solid #0c1018; box-shadow: 0 4px 0 #0c1018; cursor: pointer; background: #0c1018; }
 #info { min-height: 108px; }
-#recruit .list { max-height: 430px; overflow-y: auto; padding-right: 4px; scrollbar-width: thin; scrollbar-color: #5870a0 transparent; }
 .buttons { grid-template-columns: 1fr 1fr 1fr; }
 
 /* Panel más compacto para que quepan el minimapa y todo lo demás sin desplazar la página */

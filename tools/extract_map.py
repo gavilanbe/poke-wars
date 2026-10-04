@@ -35,6 +35,9 @@ UI = {
     "panel_rect.png": "Party/panel_rect.png", "hp.png": "Party/overlay_hp.png", "hp_back.png": "Party/overlay_hp_back.png",
     "ball.png": "Battle/icon_ball.png", "ball_empty.png": "Battle/icon_ball_empty.png",
     "button.png": "Pokegear/icon_button.png", "types_small.png": "Battle/typesSmall.png",
+    # PC de almacenamiento, para la caja de reclutar
+    "pc_bg.png": "Storage/bg.png", "pc_overlay.png": "Storage/overlay_main.png", "pc_box.png": "box12.png",
+    "hand1.png": "boxpoint1.PNG", "hand2.png": "boxpoint2.PNG", "hand_grab.png": "boxgrab.PNG", "hand_fist.png": "boxfist.PNG",
 }
 WATER = "Autotiles/ocean-SHORE.png"  # autotile animado de RPG Maker XP: 32 fotogramas de 96x128
 

@@ -143,3 +143,53 @@ main { display: block; }
 #clock .sky.w-rain i { background: #88c8ff; box-shadow: 0 0 0 2px #10141c; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
 #clock .sky.w-sun i { animation: glow-pip 0.6s infinite alternate; }
 #dock { bottom: 18px; }
+
+/* ---------- Caja del Centro Pokémon: el PC de almacenamiento ---------- */
+#recruit { position: absolute; inset: 0; z-index: 6; width: auto; max-height: none; display: block; padding: 0; border: 0; border-image: none; background: #0c1018b0; filter: none; transform: none; text-shadow: none; left: 0; top: 0; }
+#recruit.open { animation: fade-in 0.2s; }
+.pc { position: absolute; left: 50%; top: 50%; width: 512px; height: 384px; transform-origin: center; image-rendering: pixelated;
+  background: url(/assets/ui/pc_overlay.png), url(/assets/ui/pc_box.png) 184px 18px no-repeat, url(/assets/ui/pc_bg.png);
+  box-shadow: 0 0 0 4px #10141c, 0 10px 0 4px #0008; font-family: var(--text); font-size: 16px; color: #484848; text-shadow: 1px 1px 0 #d0d0c8; line-height: 1; }
+#recruit.open .pc { animation: pc-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1); }
+@keyframes pc-in { from { margin-top: 60px; opacity: 0; } }
+.pc.nope { animation: pc-nope 0.3s; }
+@keyframes pc-nope { 20% { margin-left: -8px; } 50% { margin-left: 7px; } 80% { margin-left: -4px; } }
+.pc > * { position: absolute; }
+.pc .ttl { left: 8px; top: 13px; width: 162px; text-align: center; font-size: 16px; }
+.pc .spr { left: 10px; top: 52px; width: 158px; height: 162px; image-rendering: pixelated; }
+.pc .spr.swap { animation: spr-in 0.2s cubic-bezier(0.2, 1.5, 0.4, 1); }
+@keyframes spr-in { from { transform: scale(0.7); opacity: 0.3; } }
+.pc .row { left: 10px; width: 152px; height: 30px; display: flex; align-items: center; justify-content: space-between; gap: 6px; white-space: nowrap; }
+.pc .r1 { top: 232px; } .pc .r2 { top: 269px; } .pc .r3 { top: 305px; } .pc .r4 { top: 341px; }
+.pc .row b { font-weight: 400; color: #2c6c38; text-shadow: 1px 1px 0 #c8e8c8; }
+.pc .row b.bad { color: #c03028; text-shadow: 1px 1px 0 #f0c8c0; }
+.pc .ty { width: 19px; height: 28px; background: url(/assets/ui/types_small.png); flex: none; }
+.pc .pips i { width: 5px; height: 8px; background: #b8c0d0; border: 0; }
+.pc .pips i.on { background: #f0a020; box-shadow: none; }
+.pc .hdr { left: 232px; top: 31px; width: 226px; text-align: center; color: #fff; text-shadow: 1px 1px 0 #a04830, 1px 0 0 #a04830, 0 1px 0 #a04830; letter-spacing: 1px; }
+.pc .grid { left: 194px; top: 80px; width: 300px; display: grid; grid-template-columns: repeat(6, 50px); }
+.pc .cell { width: 50px; height: 44px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; cursor: pointer; transition: none; }
+.pc .cell:hover:not(:disabled) { transform: none; background: none; }
+.pc .cell canvas { display: block; width: 50px; height: 44px; image-rendering: pixelated; }
+.pc .cell.on { background: radial-gradient(ellipse at 50% 80%, #ffffffb0 0 30%, transparent 62%); }
+.pc .cell.locked { opacity: 0.75; }
+.pc .hand { width: 32px; height: 32px; background: url(/assets/ui/hand1.png) center / 32px; pointer-events: none; z-index: 2; transition: left 0.09s, top 0.09s; animation: hand-bob 0.6s steps(2) infinite; }
+.pc .hand[data-f='1'] { background-image: url(/assets/ui/hand2.png); }
+.pc .hand.grab { background-image: url(/assets/ui/hand_fist.png); animation: hand-grab 0.26s forwards; }
+@keyframes hand-bob { 50% { transform: translateY(-3px); } }
+@keyframes hand-grab { 40% { transform: translateY(14px); } 100% { transform: translateY(-30px); } }
+.pc .go, .pc .out { top: 325px; height: 32px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font-family: var(--text); font-size: 16px; color: #484848; text-shadow: 1px 1px 0 #d0d0c8; text-align: center; }
+.pc .go { left: 192px; width: 157px; }
+.pc .out { left: 390px; width: 111px; }
+.pc .go b { font-weight: 400; color: #2c6c38; }
+.pc .go.bad { color: #c03028; }
+.pc .go:hover, .pc .out:hover { background: #ffe9a080; transform: none; }
+
+/* Iconos de tipo: en la hoja van de 19x14, uno debajo de otro; se pintan al doble */
+#info .ty, .pc .ty { width: 38px; height: 28px; background-size: 38px auto; }
+.pc button { display: block; }
+.pc .go, .pc .out { line-height: 32px; white-space: nowrap; }
+
+/* Iconos de tipo: 19x19 cada uno, apilados */
+#info .ty, .pc .ty { width: 19px; height: 19px; background-size: 19px auto; }
+#recruit[hidden] { display: none; }
