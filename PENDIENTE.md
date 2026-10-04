@@ -2,14 +2,16 @@
 
 Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 
-## Identidad propia (hecho el 4 de octubre; queda afinar)
-Tipos fuertes con doble tipo y dos ataques, terreno que reacciona (fuego quema, hielo congela, agua y planta se curan
-en lo suyo), estados, experiencia con tres niveles, debilitados que se recuperan a mitad de precio y salvajes.
+## Identidad propia (hecho; queda afinar)
 - La IA no usa «Congelar» y no busca quemar bosque a propósito.
-- Los salvajes se atrapan con solo pisar su hierba con un capturador; falta debilitarlos antes, como en los juegos.
-- El nivel 3 es solo un 10% de bonificación: falta una tercera fase evolutiva de verdad.
-- Los ataques de cobertura usan la animación del tipo, pero no tienen nombre propio por Pokémon.
+- Los salvajes se atrapan con solo pisar su hierba con un capturador; falta debilitarlos antes.
+- Solo 19 líneas tienen tercera fase (`src/finals.json`); el resto se queda en veterano al nivel 3.
 - Objetos en el mapa (bayas, cajas con dinero).
+
+## Hecho en la pasada larga del 4 de octubre
+Tercera fase, guardar y continuar, ayuda (H), Tab al siguiente Pokémon, pantalla de pasar el ordenador, bocadillos
+letra a letra, Poké Ball al atrapar, efectos y sonidos de estado y de nivel, luz del combate según la hora, IA que
+defiende el gimnasio, tema de selección y ambiente de día.
 
 ## Roles y comandantes (hecho el 4 de octubre; queda afinar)
 - Equilibrio: sumando 7 ligas (588 partidas por comandante) todos quedan entre el 47% y el 53%, dentro del ruido.
@@ -21,12 +23,10 @@ en lo suyo), estados, experiencia con tres niveles, debilitados que se recuperan
 
 ## Estructura de partida
 - Varios mapas y un selector.
-- Guardar la partida (se pierde al recargar).
 - Una IA con plan: hoy cada unidad decide sola, no defiende su gimnasio ni se coordina.
 - Equilibrio: los números siguen a ojo.
 
 ## Juice
-- Textos que se escriben letra a letra con su sonido.
 - Cámara con intención: zoom al atacar o capturar.
 - Vida en el mapa: Pokémon que miran al cursor, humo en chimeneas, ventanas encendidas de noche.
 - Revisar la captura y los carteles a pantalla completa con el HUD nuevo.

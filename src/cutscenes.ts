@@ -653,7 +653,7 @@ export async function playCapture(c: CaptureData) {
   for (let i = 1; i <= stomps; i++) {
     const last = i === stomps && c.done
     scene.play(act, 'Hop')
-    await scene.tween(last ? 380 : 240, (t) => { act.oy = -Math.sin(t * Math.PI) * (last ? 34 : 18); act.sy = 1 + 0.15 * Math.sin(t * Math.PI) })
+    await scene.tween(last ? 380 : 240, (t) => { act.oy = -Math.sin(t * Math.PI) * Math.min(last ? 34 : 18, roof - 34); act.sy = 1 + 0.15 * Math.sin(t * Math.PI) })
     act.oy = 0
     // Pisotón: el edificio se aplasta y rebota
     showCount(Math.round(c.capBefore + ((c.capAfter - c.capBefore) * i) / stomps))
