@@ -57,6 +57,8 @@ falta algún archivo, usa un sonido sintetizado.
 
 ## Dónde tocar
 
+- `src/rosters.json`: el equipo de cada comandante (un Pokémon por rol, con su evolución y su tipo). Tras cambiarlo:
+  `.venv/bin/python tools/extract_pmd.py` (sprites y retratos) y `node tools/make_audio.mjs` (gritos).
 - `src/data.ts`: terrenos, tabla de tipos, unidades (coste, movimiento, ataque…), el mapa en ASCII (mitad izquierda; se
   refleja) y la lista de edificios por la casilla de su puerta.
 - `src/game.ts`: reglas (movimiento, daño, captura, turnos). Sin DOM.

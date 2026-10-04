@@ -64,6 +64,12 @@ const SFX = {
   mv_flying: [`big wing flap gust then fast air slash, game sound effect, no music`, 1, 0.5],
   mv_fighting: [`martial arts punch: quick whoosh and hard smack, game sound effect, no music`, 0.7, 0.5],
   mv_normal: [`body tackle: fast rush and solid bump, game sound effect, no music`, 0.7, 0.5],
+  mv_poison: [`toxic sludge splat: wet bubbling splash, game sound effect, no music`, 1.1, 0.5],
+  mv_ground: [`earthquake rumble with cracking ground impact, game sound effect, no music`, 1.4, 0.5],
+  mv_bug: [`insect slash: fast buzzing wings then sharp scissor snip, game sound effect, no music`, 0.9, 0.5],
+  mv_ghost: [`ghostly dark energy ball: eerie whoosh and hollow impact, game sound effect, no music`, 1.3, 0.5],
+  mv_ice: [`ice beam: freezing crystalline shimmer and sharp ice crack, game sound effect, no music`, 1.3, 0.5],
+  mv_fairy: [`magical sparkle burst: bright twinkling chimes and soft shimmer, game sound effect, no music`, 1.2, 0.5],
   // Ambiente (en bucle)
   amb_rain: [`steady rain falling on grass and leaves, calm ambient loop, no thunder, no music`, 10, 0.5, true],
   amb_night: [`quiet night ambience with soft crickets, calm ambient loop, no music`, 10, 0.5, true],
@@ -128,6 +134,30 @@ const MUSIC = {
     ['[Theme B] {organ chords, wobbling theremin-like lead}', 20, ['ghostly waltz feeling']],
     ['[Theme A] {melody returns with xylophone bones and brass stabs}', 22, ['mischievous, fuller']],
   ]) },
+  co_venusaur: { loop: 5, plan: plan(['132 BPM', 'G major', 'lush, warm, pastoral forest march', 'patient and confident'], [
+    ['[Intro] {flute trill and marimba pickup}', 5, ['gentle opening']],
+    ['[Theme A] {flute and oboe melody over pizzicato strings and marimba}', 22, ['earthy, swaying']],
+    ['[Theme B] {french horn melody, soft snare}', 20, ['broad and sunny']],
+    ['[Theme A] {trumpet joins the flute melody}', 22, ['fuller, blooming']],
+  ]) },
+  co_tyranitar: { loop: 5, plan: plan(['100 BPM', 'D minor', 'heavy, stomping, unstoppable mountain theme', 'menacing and proud'], [
+    ['[Intro] {low brass growl and timpani hits}', 5, ['ominous opening']],
+    ['[Theme A] {tuba and trombone riff, pounding toms}', 22, ['slow heavy march, grinding bass']],
+    ['[Theme B] {trumpet melody rises over the riff}', 20, ['proud, defiant']],
+    ['[Theme A] {full brass with crashing cymbals}', 22, ['crushing weight']],
+  ]) },
+  co_gardevoir: { loop: 6, plan: plan(['126 BPM', 'E-flat major', 'graceful, elegant, mysterious theme', 'calm foresight'], [
+    ['[Intro] {harp glissando and celesta}', 6, ['delicate opening']],
+    ['[Theme A] {celesta and flute melody over flowing string arpeggios}', 22, ['light, dancing']],
+    ['[Theme B] {solo violin melody, harp}', 20, ['wistful, floating']],
+    ['[Theme A] {melody returns with soft trumpet and glockenspiel}', 22, ['radiant']],
+  ]) },
+  co_lucario: { loop: 5, plan: plan(['162 BPM', 'B minor', 'disciplined, focused martial arts theme', 'honourable and driven'], [
+    ['[Intro] {taiko hits and a breathy bamboo flute call}', 5, ['sharp opening']],
+    ['[Theme A] {bamboo flute melody over driving taiko and slap bass}', 22, ['fast, precise']],
+    ['[Theme B] {trumpet answers in a heroic major lift}', 20, ['soaring resolve']],
+    ['[Theme A] {flute and trumpet in unison}', 22, ['full intensity']],
+  ]) },
   battle: { loop: 6, plan: plan(['178 BPM', 'A minor', 'intense fast-paced duel music', 'urgent, heroic, relentless'], [
     ['[Intro] {fast descending chromatic riff, cymbal crash}', 6, ['dramatic opening sting']],
     ['[Theme A] {racing bass ostinato, urgent trumpet melody, sixteenth-note hi-hats}', 20, ['driving drums']],
@@ -181,15 +211,13 @@ async function music(name) {
 }
 
 // Gritos originales de cada Pokémon (PokeAPI/cries, versión clásica), pasados a mp3
-const CRIES = {
-  treecko: 252, torchic: 255, mudkip: 258, zigzagoon: 263, poochyena: 261, machop: 66, geodude: 74, taillow: 276, pikachu: 25,
-  ralts: 280, wailmer: 320, snorlax: 143, metagross: 376, salamence: 373, sceptile: 254, blaziken: 257, swampert: 260, swellow: 277,
-  gardevoir: 282, wingull: 278, electrike: 309, manectric: 310, shroomish: 285, breloom: 286, numel: 322, camerupt: 323, aron: 304,
-  aggron: 306, carvanha: 318, sharpedo: 319, bagon: 371, beldum: 374, gyarados: 130, tyranitar: 248, absol: 359, lucario: 448,
-  charizard: 6, blastoise: 9, gengar: 94,
-}
+// (la lista sale de public/assets/pmd/dex.json, que escribe tools/extract_pmd.py)
+const CRIES = JSON.parse(fs.readFileSync(path.join(ROOT, 'public', 'assets', 'pmd', 'dex.json'), 'utf8'))
 async function cry(name) {
-  const res = await fetch(`https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/legacy/${CRIES[name]}.ogg`)
+  // El grito clásico existe hasta la 5ª generación; para los posteriores, el moderno
+  const url = (kind) => `https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/${kind}/${CRIES[name]}.ogg`
+  let res = await fetch(url('legacy'))
+  if (!res.ok) res = await fetch(url('latest'))
   if (!res.ok) throw new Error(String(res.status))
   const ogg = path.join(OUT, `cry_${name}.ogg`)
   fs.writeFileSync(ogg, Buffer.from(await res.arrayBuffer()))

@@ -67,10 +67,9 @@ await button('Pikachu')
 await sleep(4500)
 await page.evaluate(() => {
   const g = window.game()
-  const foe = g.units.find((u) => u.team === 1 && u.kind === 'poochyena')
+  const foe = g.units.find((u) => u.team === 1)
   foe.x = 6
   foe.y = 11
-  g.units.find((u) => u.team === 0 && u.kind === 'poochyena').kind = 'treecko'
 })
 await click(4, 11)
 await click(5, 11)

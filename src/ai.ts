@@ -1,5 +1,5 @@
 // IA sencilla (voraz): cada unidad elige la mejor jugada inmediata.
-import { KINDS, RECRUITABLE } from './data'
+import { KINDS, RoleId, rosterOf } from './data'
 import {
   Building, Game, Pos, Unit, buildingAt, canCapture, canCounter, canRecruit, damage, dist, key,
   reachable, stoppable, targetsFrom, unitAt,
@@ -54,6 +54,11 @@ export function planUnit(g: Game, u: Unit): Plan {
 
 function goalsFor(g: Game, u: Unit): Pos[] {
   const goals: Pos[] = []
+  if (KINDS[u.kind].heals) { // el de apoyo sigue a los suyos, primero a los heridos
+    const allies = g.units.filter((o) => o.team === u.team && !KINDS[o.kind].heals)
+    const hurt = allies.filter((o) => o.hp < 8)
+    if (allies.length) return hurt.length ? hurt : allies
+  }
   if (KINDS[u.kind].capture) {
     for (const b of g.buildings) {
       const o = unitAt(g, b.x, b.y)
@@ -64,16 +69,25 @@ function goalsFor(g: Game, u: Unit): Pos[] {
   return goals
 }
 
+// Composición que busca la IA: cuántos quiere de cada rol antes de repetir
+const WANT: [RoleId, number][] = [
+  ['capturador', 3], ['luchador', 3], ['explorador', 1], ['tirador', 2], ['asaltante', 1], ['volador', 1], ['apoyo', 1],
+  ['coloso', 2], ['artillero', 1], ['bombardero', 1],
+]
+
+/** Recluta por roles: primero capturadores, luego lo que le falte de su composición y pueda pagar. */
 export function planRecruit(g: Game, b: Building): string | null {
   const mine = g.units.filter((u) => u.team === g.turn)
-  const capturers = mine.filter((u) => KINDS[u.kind].capture).length
-  const options = RECRUITABLE.filter((k) => canRecruit(g, b, k) && KINDS[k].move !== 'swim')
-  if (!options.length) return null
-  if (capturers < 3) {
-    const cheap = options.filter((k) => KINDS[k].capture)
-    if (cheap.length) return cheap[Math.floor(Math.random() * cheap.length)]
+  const count = (role: RoleId) => mine.filter((u) => KINDS[u.kind].role === role).length
+  const roster = rosterOf(g.co[g.turn])
+  const affordable = (role: RoleId) => {
+    const kind = roster.find((k) => KINDS[k].role === role)!
+    return canRecruit(g, b, kind) ? kind : null
   }
-  // Prefiere lo más caro que pueda pagar, con algo de variedad
-  options.sort((a, c) => KINDS[c].cost - KINDS[a].cost)
-  return options[Math.floor(Math.random() * Math.min(3, options.length))]
+  if (count('capturador') < 2) return affordable('capturador')
+  const missing = WANT.filter(([role, n]) => count(role) < n).map(([role]) => affordable(role)).filter((k): k is string => !!k)
+  if (!missing.length) return null
+  // Entre lo que falta, prefiere lo más caro que pueda pagar, con algo de variedad
+  missing.sort((a, c) => KINDS[c].cost - KINDS[a].cost)
+  return missing[Math.floor(Math.random() * Math.min(2, missing.length))]
 }

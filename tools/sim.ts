@@ -1,12 +1,21 @@
 // IA contra IA sin gráficos, para comprobar que las reglas aguantan una partida entera.
 //   pnpm sim
 import { planRecruit, planUnit } from '../src/ai'
-import { KINDS } from '../src/data'
 import { attack, canUsePower, capture, createGame, endTurn, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
 
-for (let n = 0; n < 20; n++) {
-  const cos = ['pikachu', 'charizard', 'blastoise', 'gengar']
-  const g = createGame([cos[n % 4], cos[(n >> 2) % 4]])
+import { COMMANDERS } from '../src/data'
+
+declare const process: { argv: string[] }
+
+// Todos los comandantes contra todos, con cada uno jugando de rojo y de azul
+const ids = Object.keys(COMMANDERS)
+const wins: Record<string, number> = Object.fromEntries(ids.map((id) => [id, 0]))
+const games: Record<string, number> = Object.fromEntries(ids.map((id) => [id, 0]))
+let first = 0, total = 0, unfinished = 0
+const ROUNDS = Number(process.argv[2] ?? 2)
+for (let round = 0; round < ROUNDS; round++) for (const red of ids) for (const blue of ids) {
+  if (red === blue) continue
+  const g = createGame([red, blue])
   let turns = 0
   while (g.winner === null && turns < 400) {
     if (canUsePower(g)) usePower(g)
@@ -29,6 +38,14 @@ for (let n = 0; n < 20; n++) {
     if (g.winner === null) endTurn(g)
     turns++
   }
-  const army = (t: number) => g.units.filter((u) => u.team === t).map((u) => KINDS[u.kind].name).join(',')
-  console.log(`partida ${n} (${g.co.join(' vs ')}): gana ${g.winner === null ? 'nadie' : 'J' + (g.winner + 1)} en el día ${g.day} | J1: ${army(0)} | J2: ${army(1)}`)
+  total++
+  games[red]++
+  games[blue]++
+  if (g.winner === null) unfinished++
+  else {
+    wins[g.winner === 0 ? red : blue]++
+    if (g.winner === 0) first++
+  }
 }
+console.log(`${total} partidas · gana el rojo ${first} · sin terminar ${unfinished}`)
+for (const id of ids.sort((a, b) => wins[b] / games[b] - wins[a] / games[a])) console.log(`gana ${id.padEnd(10)} ${Math.round((wins[id] / games[id]) * 100)}%`)

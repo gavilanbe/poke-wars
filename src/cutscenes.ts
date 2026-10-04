@@ -201,7 +201,7 @@ async function dash(a: Side, d: Side, arc = 0) {
 }
 
 const FIRE = ['#fff8c0', '#ffd040', '#ff8020', '#d03010']
-const MOVES: Record<PType, Move> = {
+const BASE_MOVES: Partial<Record<PType, Move>> = {
   fire: async (a, d) => {
     await stream(a, d, (x, y, vx, vy, ms) => {
       scene.add({ img: 'fire', fps: 16, loop: true, x, y, vx, vy, max: ms + 70, scale: 0.8, grow: 2.6 })
@@ -331,6 +331,38 @@ const MOVES: Record<PType, Move> = {
     scene.fx('p:ironhead', dx, dy, { frame: 0, count: 2, fps: 8, scale: 1.5, delay: 80 })
   },
 }
+
+/** Chorro de partículas de un color: sirve para veneno y hielo. */
+const spray = (colors: string[], burst: string): Move => async (a, d) => {
+  await stream(a, d, (x, y, vx, vy, ms) => {
+    scene.add({ x, y, vx, vy, max: ms + 40, size: 6, colors })
+    scene.add({ x, y, vx: vx * rnd(0.7, 1), vy: vy + rnd(-1, 1), max: ms, size: 4, colors, add: true })
+  })
+  const [dx, dy] = body(d)
+  scene.fx(burst, dx, dy, { frame: 0, count: 4, fps: 12, scale: 1.3 })
+  scene.burst(dx, dy, 22, { colors, speed: 3, up: 2, g: 0.15, size: 4, max: 700 })
+}
+// Los seis tipos nuevos reutilizan los gestos de los anteriores con sus propios colores y efectos
+const MOVES = {
+  ...BASE_MOVES,
+  poison: spray(['#e8c0f0', '#a040a0', '#582870'], 'p:explosions'),
+  ice: spray(['#ffffff', '#b8f0f8', '#58b8e0'], 'p:explosions'),
+  ground: BASE_MOVES.rock,
+  bug: BASE_MOVES.steel,
+  ghost: async (a: Side, d: Side) => { // bola sombra: un proyectil lento con estela
+    scene.play(a.actor, 'Shoot')
+    const [ax, ay] = body(a), [dx, dy] = body(d)
+    const ball = scene.add({ img: 'shadow_ball', x: ax, y: ay, max: 460, scale: 2, vr: 0.3, fade: false })
+    scene.flashScreen('#3a1870', 0.4, 1.2)
+    await scene.tween(440, (t) => {
+      ball.x = ax + (dx - ax) * t
+      ball.y = ay + (dy - ay) * t - Math.sin(t * Math.PI) * 14
+      scene.add({ img: 'purple_flame', fps: 14, x: ball.x, y: ball.y, max: 240, scale: 1 })
+    })
+    scene.fx('p:explosions', dx, dy, { frame: 0, count: 4, fps: 12, scale: 1.4 })
+  },
+  fairy: BASE_MOVES.psychic,
+} as Record<PType, Move>
 
 async function strike(a: Side, d: Side, dmg: number, crit = false) {
   const type = KINDS[a.kind].type

@@ -1,6 +1,7 @@
 // Estado y reglas, sin nada de DOM (se puede simular desde node: tools/sim.ts).
 import {
-  BUILDINGS, BUILDING_INFO, BuildingType, CAPTURE_POINTS, COMMANDERS, KINDS, MAP, POWER_COST, START_UNITS, TERRAIN, Terrain,
+  BUILDINGS, BUILDING_INFO, BuildingType, CAPTURE_POINTS, COMMANDERS, KINDS, MAP, MAX_UNITS, POWER_COST, ROLE_ORDER, START_UNITS,
+  TERRAIN, Terrain, rosterOf,
   effectiveness,
 } from './data'
 
@@ -46,11 +47,13 @@ export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog 
     g.tiles[def.y][def.x] = 'B'
     g.buildings.push(building)
   }
-  for (const u of START_UNITS) addUnit(g, u.kind, u.team, u.x, u.y).moved = false
+  for (const u of START_UNITS) addUnit(g, rosterOf(co[u.team])[ROLE_ORDER.indexOf(u.role)], u.team, u.x, u.y).moved = false
   g.funds[0] += income(g, 0)
+  g.funds[1] += SECOND_PLAYER_BONUS // quien mueve segundo empieza con algo más de dinero para compensar
   return g
 }
 
+export const SECOND_PLAYER_BONUS = 3000
 export const key = (x: number, y: number) => y * 100 + x
 export const terrainAt = (g: Game, x: number, y: number): Terrain => TERRAIN[g.tiles[y][x]]
 export const unitAt = (g: Game, x: number, y: number) => g.units.find((u) => u.x === x && u.y === y)
@@ -94,7 +97,7 @@ export function visibleCells(g: Game, team: Team): Set<number> {
     }
   }
   const penalty = sightPenalty(g)
-  for (const u of g.units) if (u.team === team) look(u.x, u.y, Math.max(1, (KINDS[u.kind].vision ?? 3) - penalty))
+  for (const u of g.units) if (u.team === team) look(u.x, u.y, Math.max(1, KINDS[u.kind].vision - penalty))
   for (const b of g.buildings) if (b.owner === team) look(b.x, b.y, BUILDING_SIGHT)
   return seen
 }
@@ -274,8 +277,10 @@ export function capture(g: Game, u: Unit): boolean {
   return true
 }
 
+/** Solo se reclutan los Pokémon del comandante propio, con dinero, la puerta libre y sin pasar del tope de unidades. */
 export function canRecruit(g: Game, b: Building, kind: string): boolean {
-  return b.type === 'center' && b.owner === g.turn && !unitAt(g, b.x, b.y) && g.funds[g.turn] >= KINDS[kind].cost
+  return b.type === 'center' && b.owner === g.turn && !unitAt(g, b.x, b.y) && g.funds[g.turn] >= KINDS[kind].cost &&
+    KINDS[kind].commander === g.co[g.turn] && KINDS[kind].cost > 0 && g.units.filter((u) => u.team === g.turn).length < MAX_UNITS
 }
 
 export function recruit(g: Game, b: Building, kind: string): Unit {
@@ -304,6 +309,9 @@ export function usePower(g: Game): { unit: Unit; hp: number }[] {
     case 'pikachu': return change(mine, 3)
     case 'blastoise': return change(mine, 1)
     case 'gengar': return change(foes, -2)
+    case 'venusaur': return change(mine, 2)
+    case 'tyranitar': return change(foes, -1)
+    case 'gardevoir': return change(mine, 1)
     default: return change(mine, 0)
   }
 }
@@ -318,5 +326,10 @@ export function endTurn(g: Game) {
   for (const u of g.units) {
     u.moved = false
     if (u.team === g.turn && buildingAt(g, u.x, u.y)?.owner === u.team) u.hp = Math.min(10, u.hp + 2)
+  }
+  // Los de apoyo curan 2 PS a cada aliado que tengan pegado (una vez por aliado)
+  const healers = g.units.filter((u) => u.team === g.turn && KINDS[u.kind].heals)
+  for (const u of g.units) {
+    if (u.team === g.turn && !KINDS[u.kind].heals && healers.some((h) => dist(h, u) === 1)) u.hp = Math.min(10, u.hp + 2)
   }
 }

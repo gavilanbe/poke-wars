@@ -1,7 +1,7 @@
 // Pintado, entrada y flujo de la partida.
 import { planRecruit, planUnit } from './ai'
 import {
-  BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, POWER_COST, PType, RECRUITABLE, TYPE_COLOR, TYPE_NAME,
+  BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, MAX_UNITS, POWER_COST, PType, ROLES, TYPE_COLOR, TYPE_NAME, rosterOf,
   effectiveness,
 } from './data'
 import * as fx from './fx'
@@ -1027,6 +1027,24 @@ async function powerFx(team: Team, affected: { unit: Unit; hp: number }[]) {
       await sleep(170)
     }
     await sleep(450)
+  } else {
+    // Los demás: estallido del color del comandante en cada Pokémon afectado, con su toque propio
+    const id = g.co[team]
+    sfx.cast()
+    if (id === 'tyranitar') mapFx.flashScreen('#b89858', 0.6, 0.5) // tormenta de arena
+    for (const { unit, hp } of affected) {
+      const [x, y] = center(unit)
+      mapFx.add({ ring: 30, size: 5, color: c.color, x, y, max: 450 })
+      fx.burst(x, y, { n: 18, colors: [c.color, '#fff'], speed: 2.4, life: 700, size: 4, up: 1 })
+      if (id === 'venusaur') for (let i = 0; i < 5; i++) mapFx.add({ img: 'leaf', fps: 14, loop: true, x, y, vx: rnd(-2, 2), vy: rnd(-3, -1), g: 0.12, max: 800, scale: 1 })
+      if (id === 'gardevoir') mapFx.fx('sparkle_1', x, y - 8, { scale: 1, fps: 10 })
+      if (id === 'lucario') mapFx.add({ ring: 46, size: 3, color: '#a8d0ff', x, y, max: 600, delay: 120 })
+      if (hp < 0 && g.units.includes(unit)) hurt(unit, 400)
+      else setFx(unit, { pop: performance.now() })
+      hpLabel(unit, hp)
+      ;(hp < 0 ? sfx.hit : sfx.heal)()
+      await sleep(110)
+    }
   }
   await sleep(650)
 }
@@ -1107,7 +1125,10 @@ function refreshPanel() {
   refreshInfo()
 }
 
-const TYPE_ICON: Record<PType, number> = { normal: 0, fighting: 1, flying: 2, rock: 5, steel: 8, fire: 10, water: 11, grass: 12, electric: 13, psychic: 14, dragon: 16, dark: 17 }
+const TYPE_ICON: Record<PType, number> = {
+  normal: 0, fighting: 1, flying: 2, poison: 3, ground: 4, rock: 5, bug: 6, ghost: 7, steel: 8, fire: 10, water: 11, grass: 12, electric: 13,
+  psychic: 14, ice: 15, dragon: 16, dark: 17, fairy: 18,
+}
 const miniBar = (value: number, max: number) => {
   const n = Math.max(1, Math.round((value / max) * 6))
   return `<span class="pips">${'<i class="on"></i>'.repeat(n)}${'<i></i>'.repeat(6 - n)}</span>`
@@ -1126,9 +1147,9 @@ function refreshInfo() {
     const k = KINDS[u.kind]
     infoEl.className = `t${u.team}`
     infoEl.innerHTML = `<img class="mug" src="${facePath(k.species)}">
-      <div class="who"><b>${k.name}</b><i class="ty" style="background-position:0 -${TYPE_ICON[k.type] * 19}px" title="${TYPE_NAME[k.type]}"></i></div>
+      <div class="who" title="${ROLES[k.role].name}: ${ROLES[k.role].help}"><b>${k.name}</b><i class="ty" style="background-position:0 -${TYPE_ICON[k.type] * 19}px" title="${TYPE_NAME[k.type]}"></i></div>
       <div class="hpline"><div class="hpbar"><i style="width:${u.hp * 9.6}px;background-position:0 -${u.hp > 5 ? 0 : u.hp > 2 ? 8 : 16}px"></i></div>${u.hp}/10</div>
-      <div class="line"><span>ATQ ${miniBar(k.atk, 2)}</span><span>DEF ${miniBar(k.def, 2)}</span><span>MOV ${moveRange(g, u)}</span><span>${stars}</span></div>`
+      <div class="line"><span>ATQ ${miniBar(k.atk, 2)}</span><span>DEF ${miniBar(k.def, 2)}</span><span>MOV ${moveRange(g, u)}</span><span>${ROLES[k.role].name}</span></div>`
     infoEl.title = [MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.evolves ? `evoluciona a ${KINDS[k.evolves].name}` : '',
       isRanged(u) ? 'no puede moverse y atacar en el mismo turno' : ''].filter(Boolean).join(' · ')
   } else if (b) {
@@ -1195,9 +1216,11 @@ function chooseCommanders(): Promise<[string, string]> {
         btn.className = 'cocard'
         btn.style.setProperty('--c', c.color)
         btn.style.animationDelay = i * 70 + 'ms'
+        const squad = rosterOf(id).map((k) => `<img class="mini" src="${facePath(KINDS[k].species)}" title="${ROLES[KINDS[k].role].name}: ${KINDS[k].name}">`).join('')
         btn.innerHTML = `<img src="${facePath(id)}"><b>${c.name}</b><i>${c.title}</i>
+          <div class="team">${squad}</div>
           <p>${c.passive}</p><p><strong>★ ${c.power}</strong><br>${c.powerHelp}</p>`
-        btn.onmouseenter = () => { sfx.cursor(); btn.querySelector('img')!.src = facePath(id, 'Happy') }
+        btn.onmouseenter = () => { sfx.cursor(); btn.querySelector('img')!.src = facePath(id, 'Happy'); sfx.cry(id, 1, 0.3) }
         btn.onmouseleave = () => (btn.querySelector('img')!.src = facePath(id))
         btn.onclick = () => {
           sfx.confirm()
@@ -1232,7 +1255,7 @@ function showTitle() {
   bannerEl.hidden = talkEl.hidden = sceneEl.hidden = selectEl.hidden = menuEl.hidden = recruitEl.hidden = true
   // Un campo de batalla de exhibición, sin niebla y con Pokémon de los dos equipos repartidos
   const demo = createGame(['pikachu', 'charizard'], false)
-  const cast = ['treecko', 'torchic', 'mudkip', 'pikachu', 'taillow', 'snorlax', 'absol', 'lucario', 'wingull', 'ralts', 'machop', 'electrike', 'bagon', 'numel']
+  const cast = Object.keys(COMMANDERS).flatMap((id) => [pick(rosterOf(id)), pick(rosterOf(id))]).filter((k) => KINDS[k].move !== 'swim')
   cast.forEach((kind, i) => {
     for (let tries = 0; tries < 60; tries++) {
       const x = Math.floor(Math.random() * demo.w), y = Math.floor(Math.random() * demo.h)
@@ -1489,7 +1512,9 @@ function openRecruit(b: Building) {
   const grid = q('.grid'), hand = q('.hand'), go = q<HTMLButtonElement>('.go')
   const big = q<HTMLCanvasElement>('.spr').getContext('2d')!
   const funds = g.funds[g.turn]
-  const cells = RECRUITABLE.map((kind) => {
+  const RECRUITABLE = rosterOf(g.co[g.turn]) // el Pokémon de cada rol de tu comandante
+  const full = g.units.filter((u) => u.team === g.turn).length >= MAX_UNITS
+  const cells = RECRUITABLE.map((kind: string) => {
     const cell = document.createElement('button')
     cell.className = 'cell' + (KINDS[kind].cost > funds ? ' locked' : '')
     cell.innerHTML = '<canvas width="50" height="44"></canvas>'
@@ -1499,7 +1524,7 @@ function openRecruit(b: Building) {
   let current = -1
   const pickUp = (i: number) => {
     const kind = RECRUITABLE[i], k2 = KINDS[kind]
-    if (k2.cost > funds || unitAt(g, b.x, b.y)) { // no llega el dinero: la caja dice que no
+    if (k2.cost > funds || full || unitAt(g, b.x, b.y)) { // no llega el dinero o el equipo está completo: la caja dice que no
       sfx.error()
       restart(recruitEl.firstElementChild!, 'nope')
       return
@@ -1519,13 +1544,14 @@ function openRecruit(b: Building) {
     hand.style.top = cell.offsetTop + grid.offsetTop - 26 + 'px'
     sfx.cursor()
     const can = k2.cost <= funds
-    q('.ttl').textContent = k2.name
+    q('.ttl').textContent = `${k2.name} · ${ROLES[k2.role].name}`
     q('.r1').innerHTML = `<span>Coste</span><b class="${can ? '' : 'bad'}">${k2.cost}₽</b>`
     q('.r2').innerHTML = `<i class="ty" style="background-position:0 -${TYPE_ICON[k2.type] * 19}px"></i><span>${TYPE_NAME[k2.type]}</span><b>${MOVE_LABEL[k2.move]}</b>`
     q('.r3').innerHTML = `<span>ATQ ${miniBar(k2.atk, 2)}</span><span>DEF ${miniBar(k2.def, 2)}</span>`
-    q('.r4').innerHTML = `<span>MOV ${k2.mv}</span><span>${k2.capture ? 'Captura' : k2.range[1] > 1 ? `Alcance ${k2.range.join('-')}` : k2.evolves ? `→ ${KINDS[k2.evolves].name}` : ''}</span>`
-    go.innerHTML = can ? `RECLUTAR <b>${k2.cost}₽</b>` : `FALTAN ${k2.cost - funds}₽`
-    go.classList.toggle('bad', !can)
+    q('.r4').innerHTML = `<span>MOV ${k2.mv}</span><span>${k2.capture ? 'Captura' : k2.heals ? 'Cura' : k2.range[1] > 1 ? `Alcance ${k2.range.join('-')}` : k2.evolves ? `→ ${KINDS[k2.evolves].name}` : ''}</span>`
+    q('.hdr').textContent = ROLES[k2.role].help
+    go.innerHTML = full ? 'EQUIPO COMPLETO' : can ? `RECLUTAR <b>${k2.cost}₽</b>` : `FALTAN ${k2.cost - funds}₽`
+    go.classList.toggle('bad', !can || full)
     restart(q('.spr'), 'swap')
   }
   cells.forEach(({ cell }, i) => {

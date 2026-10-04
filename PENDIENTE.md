@@ -9,6 +9,14 @@ Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 - Pokémon salvajes en la hierba alta que se pueden capturar para el equipo.
 - Experiencia: ahora se evoluciona con un solo K.O.; subir de nivel poco a poco.
 
+## Roles y comandantes (hecho el 4 de octubre; queda afinar)
+- Equilibrio fino entre los ocho comandantes: en simulación van del 45% al 60% de victorias (Tyranitar el más fuerte).
+- Los poderes de Venusaur, Tyranitar, Gardevoir y Lucario usan un espectáculo genérico con un detalle propio; merecen
+  uno a medida como los cuatro primeros.
+- Los seis tipos nuevos reutilizan las animaciones de ataque de otros (Tierra la de Roca, Bicho la de Acero, Hada la de
+  Psíquico); solo Fantasma, Veneno y Hielo tienen la suya.
+- Una tercera fase evolutiva para las líneas que la tienen.
+
 ## Estructura de partida
 - Varios mapas y un selector.
 - Guardar la partida (se pierde al recargar).

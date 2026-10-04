@@ -231,3 +231,16 @@ main { display: block; }
 #title .opts button:hover, #title .opts button:focus { background: #48546c; transform: translateY(-2px); }
 #title.open .opts { animation: fade-in 0.5s 1.2s backwards; }
 #title .foot { position: absolute; bottom: 2vh; font-family: var(--ui); font-size: 17px; color: #a8b4cc; text-shadow: 1px 1px 0 #10141c; }
+
+/* Elección de comandante con ocho tarjetas y el equipo de cada uno */
+#select { gap: 12px; }
+#select h2 { font-size: 38px; }
+#select .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.cocard { width: 250px; padding: 4px 6px 6px; gap: 2px; border-top-width: 16px; }
+.cocard > img { width: 76px; height: 76px; }
+.cocard b { font-size: 28px; }
+.cocard i, .cocard p { font-size: 17px; line-height: 1; }
+.cocard p { margin: 2px 0 0; }
+.cocard .team { display: flex; gap: 1px; margin: 3px 0; }
+.cocard .mini { width: 20px; height: 20px; border: 1px solid var(--ink); border-radius: 2px; image-rendering: pixelated; background: #fff; }
+.cocard:hover > img { animation: talk-bob 0.3s infinite steps(2); }

@@ -15,18 +15,18 @@ CACHE = os.path.join(ROOT, "vendor", "pmd")
 OUT = os.path.join(ROOT, "public", "assets", "pmd")
 BASE = "https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master/"
 
-# Unidades del juego: especie -> número de la Pokédex
-UNITS = {
-    "treecko": 252, "torchic": 255, "mudkip": 258, "zigzagoon": 263, "poochyena": 261, "machop": 66,
-    "geodude": 74, "taillow": 276, "pikachu": 25, "ralts": 280, "wailmer": 320, "snorlax": 143,
-    "metagross": 376, "salamence": 373, "sceptile": 254, "blaziken": 257, "swampert": 260,
-    "swellow": 277, "gardevoir": 282,
-    "wingull": 278, "electrike": 309, "manectric": 310, "shroomish": 285, "breloom": 286, "numel": 322, "camerupt": 323,
-    "aron": 304, "aggron": 306, "carvanha": 318, "sharpedo": 319, "bagon": 371, "beldum": 374, "gyarados": 130,
-    "tyranitar": 248, "absol": 359, "lucario": 448,
-}
+# Las unidades salen de los equipos de cada comandante (src/rosters.json); el número de la Pokédex se resuelve
+# con el índice de SpriteCollab (vendor/pmd/tracker.json).
+import re
+
+with open(os.path.join(ROOT, "src", "rosters.json")) as f:
+    ROSTERS = json.load(f)
+with open(os.path.join(CACHE, "tracker.json")) as f:
+    _norm = lambda name: re.sub(r"[^a-z0-9]", "", name.lower())
+    DEX = {_norm(v["name"]): int(k) for k, v in json.load(f).items() if int(k) > 0}
+UNITS = {sp: DEX[_norm(sp)] for roster in ROSTERS.values() for line in roster.values() for sp in line[:2] if sp}
 # Comandantes: solo retratos, con varias caras
-COMMANDERS = {"pikachu": 25, "charizard": 6, "blastoise": 9, "gengar": 94}
+COMMANDERS = {name: DEX[_norm(name)] for name in ROSTERS}
 ANIMS = ["Idle", "Walk", "Attack", "Hurt", "Charge", "Shoot", "Swing", "Hop", "Rotate"]
 FACES = ["Normal", "Happy", "Pain", "Determined", "Angry"]
 
@@ -77,6 +77,8 @@ def main():
         print("comandante", name, "ok")
     with open(os.path.join(OUT, "anims.json"), "w") as f:
         json.dump(meta, f)
+    with open(os.path.join(OUT, "dex.json"), "w") as f:  # lo usa tools/make_audio.mjs para los gritos
+        json.dump({**UNITS, **COMMANDERS}, f)
 
 
 if __name__ == "__main__":
