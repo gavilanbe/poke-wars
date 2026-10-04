@@ -29,6 +29,13 @@ TILES = {
 SHEETS = {"fire": "PRAS- Fire", "water": "PRAS- Water", "thunder": "Thunder2", "crunch": "Crunch", "slash": "PRAS- Slash",
           "rocksmash": "PRAS- Rock Smash", "punches": "punches", "explosions": "PRAS- Explosions", "ironhead": "PRAS- Iron Head",
           "airslash": "PRAS- Air Slash"}
+# Piezas de interfaz de 4ª generación para el HUD: archivo de destino -> ruta en Graphics/Pictures
+UI = {
+    "panel_round.png": "Party/panel_round.png", "panel_round_sel.png": "Party/panel_round_sel.png",
+    "panel_rect.png": "Party/panel_rect.png", "hp.png": "Party/overlay_hp.png", "hp_back.png": "Party/overlay_hp_back.png",
+    "ball.png": "Battle/icon_ball.png", "ball_empty.png": "Battle/icon_ball_empty.png",
+    "button.png": "Pokegear/icon_button.png", "types_small.png": "Battle/typesSmall.png",
+}
 WATER = "Autotiles/ocean-SHORE.png"  # autotile animado de RPG Maker XP: 32 fotogramas de 96x128
 
 
@@ -60,6 +67,9 @@ def main():
         json.dump(meta, f)
     water = Image.open(fetch(WATER)).convert("RGBA")
     water.resize((water.width // 2, water.height // 2), Image.NEAREST).save(os.path.join(OUT, "water.png"))
+    ui = os.path.join(ROOT, "public", "assets", "ui")
+    for dst, rel in UI.items():
+        Image.open(fetch("Pictures/" + rel)).convert("RGBA").save(os.path.join(ui, dst))
     fx = os.path.join(ROOT, "public", "assets", "fx")
     sheets = {}
     for short, name in SHEETS.items():

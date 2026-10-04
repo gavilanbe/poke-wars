@@ -1,0 +1,135 @@
+/* HUD a pantalla completa, con piezas de interfaz de 4ª generación (paneles de equipo, barras de PS, Poké Balls y
+   botones del Pokégear). Todo va superpuesto al mapa, que ocupa la ventana entera. */
+body { display: block; overflow: hidden; }
+main { display: block; }
+#stage { position: fixed; inset: 0; border: 0; border-radius: 0; background: #10141c; }
+#map, #mapfx { position: absolute; left: 0; top: 0; }
+#hud { position: absolute; inset: 0; z-index: 4; pointer-events: none; line-height: 1; color: #fff; font-family: var(--ui); }
+#hud > * { pointer-events: auto; }
+#hud img, #hud i, #hud canvas { image-rendering: pixelated; }
+
+/* ---------- Placas de comandante: paneles de equipo de Pokémon ---------- */
+#cos { pointer-events: none; }
+.cop { position: absolute; top: 12px; width: 256px; height: 98px; transition: transform 0.35s cubic-bezier(0.2, 1.5, 0.4, 1), filter 0.3s; }
+.cop.t0 { left: 12px; transform-origin: left top; }
+.cop.t1 { right: 12px; transform-origin: right top; }
+.cop::before { content: ''; position: absolute; inset: 0; background: url(/assets/ui/panel_round.png); filter: hue-rotate(var(--hue)) saturate(1.25); }
+.cop.t0 { --hue: 222deg; --team: #e8483c; }
+.cop.t1 { --hue: 78deg; --team: #3c7ce8; }
+.cop.t1::before { transform: scaleX(-1); }
+.cop.active::before { background-image: url(/assets/ui/panel_round_sel.png); }
+.cop.idle { transform: scale(0.82); filter: brightness(0.78) saturate(0.7); }
+.cop.active { animation: cop-in 0.5s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes cop-in { 0% { transform: scale(0.82); } 55% { transform: scale(1.08) rotate(-1deg); } }
+.cop > * { position: relative; }
+.cop .face { position: absolute; left: 12px; top: 13px; width: 72px; height: 72px; border-radius: 50%; overflow: hidden; border: 3px solid #fff; box-shadow: 0 0 0 3px #10141c, 0 3px 0 3px #0006; background: #c8d8e8; }
+.cop.t1 .face { left: auto; right: 12px; }
+.cop .face img { width: 80px; height: 80px; margin: -4px; display: block; }
+.cop.active .face img { animation: nod 1.2s steps(2) infinite; }
+.cop .txt { position: absolute; left: 96px; right: 14px; top: 8px; text-shadow: 2px 2px 0 #10141c80; }
+.cop.t1 .txt { left: 14px; right: 96px; text-align: right; }
+.cop b { font-family: var(--display); font-size: 28px; letter-spacing: 0.5px; }
+.cop em { font-style: normal; font-size: 15px; background: #10141c; padding: 1px 6px; margin: 0 6px; vertical-align: 4px; border-radius: 3px; text-shadow: none; }
+.cop .money { font-size: 25px; display: flex; align-items: center; gap: 5px; margin-top: 1px; }
+.cop.t1 .money, .cop.t1 .balls, .cop.t1 .charge { flex-direction: row-reverse; }
+.cop .money small { font-size: 16px; color: #d8ffd0; }
+.coin { width: 15px; height: 15px; border-radius: 50%; background: #ffd84a; border: 2px solid #8a5c00; box-shadow: inset -2px -2px 0 #e0a020; flex: none; }
+.cop.gain .coin { animation: coin 0.5s steps(4) 2; }
+@keyframes coin { 50% { transform: scaleX(0.1); } }
+.cop .charge { display: flex; align-items: center; gap: 3px; margin-top: 3px; }
+.cop .charge i { position: relative; width: 18px; height: 10px; background: #10141c90; border: 2px solid #10141c; transform: skewX(-18deg); overflow: hidden; }
+.cop .charge i::before { content: ''; position: absolute; inset: 0; width: calc(var(--f) * 100%); background: linear-gradient(#fff6c0, #f0a020); }
+.cop .charge u { text-decoration: none; font-size: 19px; color: #10141c90; margin: 0 3px; text-shadow: none; }
+.cop.full .charge u, .cop.on .charge u { color: #ffd84a; text-shadow: 0 0 6px #fff; animation: star 0.5s infinite alternate; }
+.cop.full .charge i::before, .cop.on .charge i::before { background: linear-gradient(#fff, #ffe870); animation: glow-pip 0.5s infinite alternate; }
+.cop.on { filter: drop-shadow(0 0 10px #ffd84a); }
+.cop .balls { display: flex; gap: 1px; margin-top: 3px; height: 15px; }
+.cop .balls i { width: 15px; height: 15px; background: url(/assets/ui/ball.png) center / 15px; }
+.cop .balls i.done { background-image: url(/assets/ui/ball_empty.png); }
+
+/* ---------- Reloj: día y turno ---------- */
+#clock { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 4px 16px 4px 8px;
+  background: #10141ce0; border: 3px solid #fff; border-radius: 22px; box-shadow: 0 0 0 3px #10141c, 0 4px 0 3px #0006; font-size: 20px; pointer-events: none; }
+#clock .pb { width: 26px; height: 26px; background: url(/assets/ui/ball.png) center / 26px; animation: spin 6s linear infinite; }
+#clock b { font-family: var(--display); font-size: 30px; color: #ffd84a; }
+#clock small { font-size: 17px; letter-spacing: 1px; color: #a8b4cc; }
+#clock .turn { padding: 2px 10px; border-radius: 10px; font-size: 18px; }
+#clock .turn.t0 { background: var(--red); color: #fff; }
+#clock .turn.t1 { background: var(--blue); color: #fff; }
+#clock.tick { animation: clock-tick 0.5s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes clock-tick { 0% { transform: translateX(-50%) scale(1.25); } }
+
+/* ---------- Minimapa en un marco de Pokégear ---------- */
+#mini { position: absolute; left: 12px; bottom: 12px; }
+#minimap { display: block; width: auto; height: 120px; border: 3px solid #fff; box-shadow: 0 0 0 3px #1848c8, 0 0 0 6px #10141c, 0 5px 0 6px #0006; cursor: pointer; background: #10141c; }
+#mini::before, #mini::after { content: ''; position: absolute; width: 12px; height: 12px; border: 4px solid #e8483c; z-index: 1; pointer-events: none; }
+#mini::before { left: -7px; top: -7px; border-right: 0; border-bottom: 0; }
+#mini::after { right: -7px; top: 113px; border-left: 0; border-top: 0; }
+.sys { display: flex; gap: 6px; margin-top: 12px; }
+.sys button { font-family: var(--ui); font-size: 16px; padding: 3px 8px; color: #dfe6f4; background: #303848e8; border: 2px solid #10141c; border-radius: 10px; box-shadow: 0 3px 0 #10141c; }
+.sys button:hover { background: #48546c; }
+
+/* ---------- Tarjeta de información y botones ---------- */
+#dock { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; }
+#dock > * { pointer-events: auto; }
+#info { position: relative; width: 256px; height: 98px; min-height: 0; padding: 0; border: 0; background: none; overflow: visible; color: #fff; text-shadow: 2px 2px 0 #10141c80; font-family: var(--ui); font-size: 19px;
+  transition: transform 0.25s cubic-bezier(0.2, 1.5, 0.4, 1), opacity 0.2s; }
+#info.empty { transform: translateY(30px); opacity: 0; }
+#info::before { content: ''; position: absolute; inset: 0; background: url(/assets/ui/panel_rect.png); filter: hue-rotate(var(--hue, 0deg)) saturate(var(--sat, 0.25)) brightness(var(--lum, 0.8)); }
+#info.t0 { --hue: 222deg; --sat: 1.25; --lum: 1; }
+#info.t1 { --hue: 78deg; --sat: 1.25; --lum: 1; }
+#info > * { position: relative; }
+#info .mug { position: absolute; left: 10px; top: 10px; width: 56px; height: 56px; border: 3px solid #fff; border-radius: 6px; box-shadow: 0 0 0 2px #10141c; float: none; margin: 0; }
+#info .who { position: absolute; left: 78px; top: 7px; right: 10px; display: flex; align-items: center; gap: 6px; }
+#info b { font-family: var(--display); font-size: 26px; letter-spacing: 0.5px; }
+#info .ty { width: 19px; height: 28px; background: url(/assets/ui/types_small.png); flex: none; }
+#info .hpline { position: absolute; left: 78px; top: 37px; display: flex; align-items: center; gap: 8px; font-size: 20px; }
+.hpbar { position: relative; width: 138px; height: 14px; background: url(/assets/ui/hp_back.png); }
+.hpbar i { position: absolute; left: 32px; top: 2px; height: 8px; max-width: 96px; background: url(/assets/ui/hp.png); transition: width 0.3s; }
+#info .line { position: absolute; left: 12px; right: 10px; top: 70px; display: flex; justify-content: space-between; font-size: 18px; white-space: nowrap; }
+#info .line.two { top: 52px; }
+#info .big { position: absolute; left: 14px; top: 10px; font-family: var(--display); font-size: 28px; }
+#info .tile { position: absolute; right: 12px; top: 10px; width: 48px; height: 48px; border: 3px solid #fff; box-shadow: 0 0 0 2px #10141c; }
+#info .stars { color: #ffd84a; letter-spacing: 1px; }
+#info .pips { display: inline-flex; gap: 1px; vertical-align: -1px; }
+#info .pips i { width: 6px; height: 9px; background: #10141c90; border: 0; box-shadow: none; }
+#info .pips i.on { background: #ffd84a; box-shadow: none; }
+
+.cmd { display: flex; gap: 10px; }
+.cmd button { position: relative; width: 184px; height: 52px; padding: 0 0 4px; border: 0; border-radius: 0; box-shadow: none; background: url(/assets/ui/button.png) 0 0 / 184px 69px no-repeat; background-size: 184px auto;
+  color: #fff; font-family: var(--display); font-size: 25px; letter-spacing: 0.5px; text-align: center; text-shadow: 2px 2px 0 #10306c; image-rendering: pixelated; transition: transform 0.1s, filter 0.2s; height: 35px; }
+.cmd button small { display: none; }
+.cmd button kbd { position: absolute; right: 8px; top: -9px; float: none; font-size: 14px; background: #10141c; color: #fff; padding: 1px 6px; border-radius: 8px; opacity: 1; text-shadow: none; }
+.cmd button:hover:not(:disabled) { background-position: 0 -35px; transform: translateY(-2px); background-color: transparent; }
+.cmd button:active:not(:disabled) { transform: translateY(2px) scale(0.97); }
+.cmd button:disabled { filter: grayscale(1) brightness(0.75); opacity: 1; }
+#end { filter: hue-rotate(-85deg) saturate(1.1); text-shadow: 2px 2px 0 #0c4a1c; }
+#end.ready { animation: ready 0.7s infinite; filter: hue-rotate(-170deg) saturate(1.6) brightness(1.15); }
+#power { filter: grayscale(1) brightness(0.75); }
+#power.ready { filter: hue-rotate(-175deg) saturate(2) brightness(1.2); animation: ready 0.6s infinite; text-shadow: 2px 2px 0 #7a3c00; }
+#power, #end { border: 0; box-shadow: none; padding: 0 0 4px; overflow: visible; font-size: 25px; background-color: transparent; }
+#end:hover:not(:disabled), #power:hover:not(:disabled) { background-color: transparent; }
+#end:disabled { background-color: transparent; }
+
+/* Escenas: caja centrada con su proporción; fuera de ella, negro */
+#scene { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); height: 100%; aspect-ratio: 256 / 176; max-width: 100%; box-shadow: 0 0 0 100vmax #10141c; }
+#talk { bottom: 150px; }
+#talk.t1 { bottom: 190px; }
+
+/* Colores de equipo de verdad (las piezas se recolorean al arrancar: ver setupHud) */
+.cop, .cop.t0, .cop.t1, .cop b, .cop .money { color: #fff; }
+.cop::before { filter: none; }
+.cop.t0::before { background-image: var(--cop0); }
+.cop.t1::before { background-image: var(--cop1); }
+.cop.t0.active::before { background-image: var(--cop0s); }
+.cop.t1.active::before { background-image: var(--cop1s); }
+#info, #info.t0, #info.t1 { color: #fff; }
+#info::before { filter: none; background-image: var(--infoN); }
+#info.t0::before { background-image: var(--info0); }
+#info.t1::before { background-image: var(--info1); }
+#end, #end.ready { filter: none; background-image: var(--btn-end); animation: none; }
+#end.ready { animation: ready 0.7s infinite; filter: brightness(1.2); }
+#end:disabled { background-image: var(--btn-off); filter: brightness(0.8); }
+#power { filter: brightness(0.85); background-image: var(--btn-off); color: #c8d0e0; text-shadow: 2px 2px 0 #10141c; }
+#power.ready { filter: none; background-image: var(--btn-power); color: #fff; }
+.cmd button:disabled { filter: brightness(0.8); }

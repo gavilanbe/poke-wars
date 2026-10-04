@@ -1,7 +1,7 @@
 // Pintado, entrada y flujo de la partida.
 import { planRecruit, planUnit } from './ai'
 import {
-  BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, POWER_COST, PType, RECRUITABLE, TYPE_COLOR, TYPE_NAME, VIEW,
+  BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, POWER_COST, PType, RECRUITABLE, TYPE_COLOR, TYPE_NAME,
   effectiveness,
 } from './data'
 import * as fx from './fx'
@@ -31,7 +31,7 @@ const mapFxCanvas = $<HTMLCanvasElement>('#mapfx')
 const stage = $('#stage')
 const menuEl = $('#menu'), forecastEl = $('#forecast'), recruitEl = $('#recruit')
 const sceneEl = $('#scene'), bannerEl = $('#banner'), talkEl = $('#talk'), cutinEl = $('#cutin'), selectEl = $('#select')
-const dayEl = $('#day'), cosEl = $('#cos'), infoEl = $('#info')
+const dayEl = $('#clock'), cosEl = $('#cos'), infoEl = $('#info')
 const endBtn = $<HTMLButtonElement>('#end'), aiBtn = $<HTMLButtonElement>('#ai'), muteBtn = $<HTMLButtonElement>('#mute')
 const powerBtn = $<HTMLButtonElement>('#power'), fogBtn = $<HTMLButtonElement>('#fog')
 
@@ -63,6 +63,49 @@ let water: HTMLImageElement
 let forestCells: Pos[] = []
 let terrainLayer: HTMLCanvasElement
 let mapFx: Scene // efectos con sprites por encima del mapa
+
+/**
+ * Recolorea una pieza de interfaz cambiando el tono de verdad (en HSL), no con filtros: `hue` en grados, o null
+ * para dejarla gris. El borde rojo de las piezas «seleccionadas» pasa a dorado.
+ */
+function recolor(img: HTMLImageElement, hue: number | null): string {
+  const [c, cx] = makeCanvas(img.width, img.height)
+  cx.drawImage(img, 0, 0)
+  const data = cx.getImageData(0, 0, c.width, c.height)
+  const d = data.data
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2
+    const delta = max - min
+    let sat = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1))
+    let h = 0
+    if (delta) h = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4
+    h = (h * 60 + 360) % 360
+    const border = sat > 0.5 && (h < 20 || h > 340) // el marco rojo de selección
+    const target = border ? 46 : hue
+    if (target === null) sat = 0
+    const q = (1 - Math.abs(2 * l - 1)) * sat, hp = (target ?? 0) / 60, x = q * (1 - Math.abs((hp % 2) - 1)), m = l - q / 2
+    const [r1, g1, b1] = hp < 1 ? [q, x, 0] : hp < 2 ? [x, q, 0] : hp < 3 ? [0, q, x] : hp < 4 ? [0, x, q] : hp < 5 ? [x, 0, q] : [q, 0, x]
+    d[i] = (r1 + m) * 255
+    d[i + 1] = (g1 + m) * 255
+    d[i + 2] = (b1 + m) * 255
+  }
+  cx.putImageData(data, 0, 0)
+  return `url(${c.toDataURL()})`
+}
+
+/** Prepara las piezas del HUD en los colores de cada equipo y las deja como variables de CSS. */
+async function setupHud() {
+  const [round, roundSel, rect, button] = await Promise.all(
+    ['panel_round', 'panel_round_sel', 'panel_rect', 'button'].map((n) => loadImage(`/assets/ui/${n}.png`)))
+  const RED = 4, BLUE = 216
+  const vars: Record<string, string> = {
+    '--cop0': recolor(round, RED), '--cop0s': recolor(roundSel, RED), '--cop1': recolor(round, BLUE), '--cop1s': recolor(roundSel, BLUE),
+    '--info0': recolor(rect, RED), '--info1': recolor(rect, BLUE), '--infoN': recolor(rect, null),
+    '--btn-end': recolor(button, 132), '--btn-power': recolor(button, 40), '--btn-off': recolor(button, null),
+  }
+  for (const [name, value] of Object.entries(vars)) stage.style.setProperty(name, value)
+}
 
 /** Copia en gris (algo aclarada) de una imagen: los edificios que aún no son de nadie. */
 function makeGray(img: HTMLImageElement) {
@@ -206,8 +249,9 @@ const mouse = { x: -1, y: -1, inside: false } // posición en la pantalla del ma
 const keysDown = new Set<string>()
 const worldW = () => g.w * T, worldH = () => g.h * T
 function panTo(x: number, y: number, snap = false) {
-  cam.tx = Math.max(0, Math.min(worldW() - canvas.width, x - canvas.width / 2))
-  cam.ty = Math.max(0, Math.min(worldH() - canvas.height, y - canvas.height / 2))
+  // Si la ventana es mayor que el mundo, se centra
+  cam.tx = worldW() <= canvas.width ? (worldW() - canvas.width) / 2 : Math.max(0, Math.min(worldW() - canvas.width, x - canvas.width / 2))
+  cam.ty = worldH() <= canvas.height ? (worldH() - canvas.height) / 2 : Math.max(0, Math.min(worldH() - canvas.height, y - canvas.height / 2))
   if (snap) (cam.x = cam.tx), (cam.y = cam.ty)
 }
 /** Lleva la cámara a una casilla si queda cerca del borde o fuera de pantalla. */
@@ -238,14 +282,18 @@ function hurt(u: Unit, ms = 380) {
   playAnim(u, 'Hurt', ms)
 }
 
+/** El mapa ocupa toda la ventana: se elige la escala y el lienzo coge los píxeles que quepan. */
 function resize() {
-  const fit = Math.min((innerWidth - 350) / canvas.width, (innerHeight - 30) / canvas.height)
-  scale = Math.max(1, Math.min(3, Math.floor(fit * 2) / 2))
+  scale = Math.max(1.5, Math.min(3, Math.round((innerWidth / 720) * 2) / 2))
+  canvas.width = Math.ceil(innerWidth / scale)
+  canvas.height = Math.ceil(innerHeight / scale)
+  mapFx?.resize(canvas.width, canvas.height)
   for (const c of [canvas, mapFxCanvas]) {
     c.style.width = canvas.width * scale + 'px'
     c.style.height = canvas.height * scale + 'px'
   }
-  fitOverlays(canvas.height * scale)
+  fitOverlays(innerHeight)
+  if (g) panTo(cam.tx + canvas.width / 2, cam.ty + canvas.height / 2, true)
 }
 
 function startGame(cos: [string, string], intro = 0) {
@@ -606,6 +654,9 @@ function draw(time: number) {
   if (who !== null) sight = visibleCells(g, who)
 
   ctx.imageSmoothingEnabled = false
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = '#10141c'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.setTransform(1, 0, 0, 1, -cx0, -cy0)
   ctx.drawImage(terrainLayer, 0, 0)
 
@@ -657,8 +708,8 @@ function draw(time: number) {
   // Niebla de guerra: se oscurece lo que no alcanza a ver tu equipo, con el borde deshilachado
   if (who !== null) {
     const x0 = Math.floor(cx0 / T), y0 = Math.floor(cy0 / T)
-    for (let y = y0; y <= Math.min(g.h - 1, y0 + VIEW.h); y++) {
-      for (let x = x0; x <= Math.min(g.w - 1, x0 + VIEW.w); x++) {
+    for (let y = y0; y <= Math.min(g.h - 1, y0 + Math.ceil(canvas.height / T)); y++) {
+      for (let x = x0; x <= Math.min(g.w - 1, x0 + Math.ceil(canvas.width / T)); x++) {
         if (sight.has(key(x, y))) continue
         ctx.fillStyle = 'rgba(12, 18, 40, 0.5)'
         ctx.fillRect(x * T, y * T, T, T)
@@ -740,7 +791,7 @@ function drawMinimap() {
   }
   mx.strokeStyle = '#fff'
   mx.lineWidth = 2
-  mx.strokeRect((cam.x / T) * k + 1, (cam.y / T) * k + 1, VIEW.w * k - 2, VIEW.h * k - 2)
+  mx.strokeRect((cam.x / T) * k + 1, (cam.y / T) * k + 1, (canvas.width / T) * k - 2, (canvas.height / T) * k - 2)
 }
 const miniPan = (e: MouseEvent) => {
   if (!g || !(e.buttons & 1)) return
@@ -969,18 +1020,25 @@ function statBar(name: string, value: number, max: number) {
   return `<div class="stat"><span>${name}</span><div class="pips">${'<i class="on"></i>'.repeat(n)}${'<i></i>'.repeat(8 - n)}</div></div>`
 }
 
+let lastTurnShown = -1
 function refreshStatus() {
-  dayEl.innerHTML = `<small>DÍA</small><b>${g.day}</b>`
-  stage.dataset.turn = String(g.turn)
+  const turnKey = g.day * 2 + g.turn
+  dayEl.innerHTML = `<i class="pb"></i><small>DÍA</small><b>${g.day}</b><span class="turn t${g.turn}">${isAI[g.turn] ? 'Turno rival' : 'Tu turno'}</span>`
+  if (turnKey !== lastTurnShown) { lastTurnShown = turnKey; restart(dayEl, 'tick') }
   cosEl.innerHTML = [0, 1].map((t) => {
     const filled = (shownMeter[t] / POWER_COST) * 6
     const pips = Array.from({ length: 6 }, (_, i) => `<i style="--f:${g.power[t] ? 1 : clamp01(filled - i)}"></i>`).join('')
     const state = g.power[t] ? 'on' : g.meter[t] >= POWER_COST ? 'full' : ''
-    return `<div class="co t${t} ${t === g.turn ? 'active' : ''} ${state}">
-      <div class="pic"><img src="${facePath(g.co[t], faces[t].face)}"></div>
-      <div class="body"><div class="nm">${co(t).name}<em>${isAI[t] ? 'IA' : 'TÚ'}</em></div>
+    // Una Poké Ball por Pokémon del equipo; apagada si ya ha actuado este turno
+    const who = viewer()
+    const team = g.units.filter((u) => u.team === t)
+    const balls = who !== null && who !== t ? '' : team.slice(0, 10).map((u) => `<i class="${u.moved && t === g.turn ? 'done' : ''}"></i>`).join('')
+    return `<div class="cop t${t} ${t === g.turn ? 'active' : 'idle'} ${state} ${shownFunds[t] !== g.funds[t] ? 'gain' : ''}">
+      <div class="face"><img src="${facePath(g.co[t], faces[t].face)}"></div>
+      <div class="txt"><b>${co(t).name}</b><em>${isAI[t] ? 'IA' : 'TÚ'}</em>
         <div class="money"><i class="coin"></i>${shownFunds[t]}<small>+${income(g, t as Team)}</small></div>
-        <div class="charge" title="${co(t).power}: ${co(t).powerHelp}">${pips}<b>★</b></div>
+        <div class="charge" title="${co(t).power}: ${co(t).powerHelp}">${pips}<u>★</u></div>
+        <div class="balls">${balls}</div>
       </div></div>`
   }).join('')
 }
@@ -993,37 +1051,52 @@ function refreshPanel() {
   powerBtn.disabled = !(mine && canUsePower(g))
   powerBtn.classList.toggle('ready', !powerBtn.disabled)
   const charge = Math.floor((g.meter[g.turn] / POWER_COST) * 100)
-  powerBtn.innerHTML = `<b>★ ${co(g.turn).power}</b> <kbd>P</kbd><small>${powerBtn.disabled ? (g.power[g.turn] ? 'Poder activo' : `Cargando… ${charge}%`) : co(g.turn).powerHelp}</small>`
-  const idle = g.units.filter((u) => u.team === g.turn && !u.moved).length
-  endBtn.innerHTML = `Fin del turno <kbd>Enter</kbd><small>${idle ? `${idle} sin mover` : 'Todos han actuado'}</small>`
+  powerBtn.innerHTML = `★ ${powerBtn.disabled && !g.power[g.turn] ? `${charge}%` : co(g.turn).power} <kbd>P</kbd>`
+  powerBtn.title = `${co(g.turn).power}: ${co(g.turn).powerHelp}`
+  endBtn.innerHTML = `Fin del turno <kbd>Enter</kbd>`
   aiBtn.textContent = `Azul: ${isAI[1] ? 'IA' : 'humano'}`
   muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`
   refreshInfo()
 }
 
+const TYPE_ICON: Record<PType, number> = { normal: 0, fighting: 1, flying: 2, rock: 5, steel: 8, fire: 10, water: 11, grass: 12, electric: 13, psychic: 14, dragon: 16, dark: 17 }
+const miniBar = (value: number, max: number) => {
+  const n = Math.max(1, Math.round((value / max) * 6))
+  return `<span class="pips">${'<i class="on"></i>'.repeat(n)}${'<i></i>'.repeat(6 - n)}</span>`
+}
+
+/** Tarjeta de lo que hay bajo el cursor: Pokémon (con su barra de PS), edificio o terreno. */
 function refreshInfo() {
   if (!hover || !g) {
-    infoEl.innerHTML = '<span class="muted">Pasa el ratón por el mapa para ver información.</span>'
+    infoEl.className = 'empty'
     return
   }
   const { x, y } = hover
   const terrain = terrainAt(g, x, y), b = buildingOver(x, y), u = unitShownAt(x, y)
-  let html = ''
+  const stars = `<span class="stars">${'★'.repeat(terrain.def)}${'☆'.repeat(4 - terrain.def)}</span>`
   if (u) {
     const k = KINDS[u.kind]
-    html += `<img class="mug t${u.team}" src="${facePath(k.species)}"><h3 class="t${u.team}">${k.name}</h3>${typePill(u.kind)} PS ${u.hp}/10
-      ${statBar('Ataque', k.atk, 2)}${statBar('Defensa', k.def, 2)}${statBar('Movim.', moveRange(g, u), 8)}
-      <div>${MOVE_LABEL[k.move]} · alcance ${k.range[0] === k.range[1] ? k.range[0] : k.range.join('-')}</div>
-      <div class="muted">${[k.capture ? 'Captura edificios' : '', k.evolves ? `Evoluciona a ${KINDS[k.evolves].name} al debilitar a un rival` : '',
-        isRanged(u) ? 'No puede moverse y atacar en el mismo turno' : ''].filter(Boolean).join('. ')}</div><hr>`
-  }
-  if (b) {
+    infoEl.className = `t${u.team}`
+    infoEl.innerHTML = `<img class="mug" src="${facePath(k.species)}">
+      <div class="who"><b>${k.name}</b><i class="ty" style="background-position:0 -${TYPE_ICON[k.type] * 28}px" title="${TYPE_NAME[k.type]}"></i></div>
+      <div class="hpline"><div class="hpbar"><i style="width:${u.hp * 9.6}px;background-position:0 -${u.hp > 5 ? 0 : u.hp > 2 ? 8 : 16}px"></i></div>${u.hp}/10</div>
+      <div class="line"><span>ATQ ${miniBar(k.atk, 2)}</span><span>DEF ${miniBar(k.def, 2)}</span><span>MOV ${moveRange(g, u)}</span><span>${stars}</span></div>`
+    infoEl.title = [MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.evolves ? `evoluciona a ${KINDS[k.evolves].name}` : '',
+      isRanged(u) ? 'no puede moverse y atacar en el mismo turno' : ''].filter(Boolean).join(' · ')
+  } else if (b) {
     const info = BUILDING_INFO[b.type]
-    html += `<h3>${info.name}</h3><div class="${b.owner < 0 ? 'muted' : 't' + b.owner}">${b.owner < 0 ? 'Neutral' : 'Equipo ' + TEAM_NAME[b.owner]}</div>
-      <div>${info.help}</div>${b.cap < CAPTURE_POINTS ? `<div>Captura: quedan ${b.cap}/${CAPTURE_POINTS}</div>` : ''}`
-  } else html += `<h3>${terrain.name}</h3>`
-  html += `<div class="muted">Defensa ${'★'.repeat(terrain.def)}${'☆'.repeat(4 - terrain.def)}</div>`
-  infoEl.innerHTML = html
+    infoEl.className = b.owner < 0 ? '' : `t${b.owner}`
+    infoEl.innerHTML = `<span class="big">${info.name}</span>
+      <div class="line two"><span>${b.owner < 0 ? 'Sin dueño' : 'Equipo ' + TEAM_NAME[b.owner]}</span><span>${b.cap < CAPTURE_POINTS ? `Captura ${b.cap}/${CAPTURE_POINTS}` : ''}</span></div>
+      <div class="line"><span>${info.help}</span></div>`
+    infoEl.title = ''
+  } else {
+    infoEl.className = ''
+    infoEl.innerHTML = `<span class="big">${terrain.name}</span>
+      <div class="line two"><span>Defensa ${stars}</span></div>
+      <div class="line"><span>${sight.size && viewer() !== null && !sight.has(key(x, y)) ? 'Oculto por la niebla' : terrain.cost.walk > 9 ? 'No se puede cruzar a pie' : `Cuesta ${terrain.cost.walk} de movimiento`}</span></div>`
+    infoEl.title = ''
+  }
 }
 
 function showBanner(html: string, cls: string) {
@@ -1526,8 +1599,8 @@ async function boot() {
   atlas = atlasImg
   at = atlasMeta
   water = waterImg
-  canvas.width = VIEW.w * T
-  canvas.height = VIEW.h * T
+  resize()
+  await setupHud()
   grayAtlas = makeGray(atlas)
   mapFx = new Scene(mapFxCanvas, canvas.width, canvas.height)
   mapFx.start()
