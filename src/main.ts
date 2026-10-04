@@ -1,7 +1,7 @@
 // Pintado, entrada y flujo de la partida.
 import { planRecruit, planUnit } from './ai'
 import {
-  ATTACK_NAME, BUILDING_INFO, CAPTURE_POINTS, COMMANDERS, KINDS, MAX_UNITS, POWER_COST, PType, ROLES, TYPE_COLOR, TYPE_NAME, bestMove, moveMult, passiveText, rosterOf,
+  ATTACK_NAME, BUILDING_INFO, CAPTURE_POINTS, MAPS, COMMANDERS, KINDS, MAX_UNITS, POWER_COST, PType, ROLES, TYPE_COLOR, TYPE_NAME, bestMove, moveMult, passiveText, rosterOf,
   effectiveness,
 } from './data'
 import * as fx from './fx'
@@ -9,7 +9,7 @@ import {
   Building, Game, Pos, Reach, Team, Unit, attack, buildingAt, canCapture, canCounter, canRecruit, canUsePower,
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
   PHASES, STATUS_NAME, Status, WEATHER_NAME, canSee, flankers, footprint, freezable, freeze, isRecovery, phaseOf, recruitCost, resolvePath,
-  weatherBonus, wildAt, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
+  BERRY_HEAL, COIN_VALUE, weatherBonus, wildAt, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
 } from './game'
 import { Place, initCutscenes, playBattle, playCapture, setSceneLight } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
@@ -251,6 +251,8 @@ const buildingFlash = new Map<Building, number>()
 const faces: { face: string; timer: number }[] = [{ face: 'Normal', timer: 0 }, { face: 'Normal', timer: 0 }]
 const isAI: [boolean, boolean] = AUTO ? [true, true] : [false, true]
 let weatherShown = 'clear'
+let mapChoice = Number(localStorage.getItem('pokewars-map') ?? 0) % MAPS.length
+let zoom = Number(localStorage.getItem('pokewars-zoom') ?? 0) // pasos de medio punto sobre la escala automática
 let paintedVersion = 0, paintedGame: Game | null = null
 let fogOn = true
 const dayLight = [255, 255, 255, 0] // tinte actual del día (se acerca poco a poco al de la fase)
@@ -303,7 +305,7 @@ function hurt(u: Unit, ms = 380) {
 
 /** El mapa ocupa toda la ventana: se elige la escala y el lienzo coge los píxeles que quepan. */
 function resize() {
-  scale = Math.max(1.5, Math.min(3, Math.round((innerWidth / 720) * 2) / 2))
+  scale = Math.max(1.5, Math.min(4, Math.round((innerWidth / 640) * 2) / 2 + zoom * 0.5))
   canvas.width = Math.ceil(innerWidth / scale)
   canvas.height = Math.ceil(innerHeight / scale)
   mapFx?.resize(canvas.width, canvas.height)
@@ -324,14 +326,14 @@ function saveGame() {
 function loadSave(): { g: Game; isAI: [boolean, boolean]; fogOn: boolean } | null {
   try {
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY) ?? 'null')
-    return saved && saved.g.units.every((u: Unit) => KINDS[u.kind]) ? saved : null // por si cambian los equipos entre versiones
+    return saved && saved.g.items && saved.g.units.every((u: Unit) => KINDS[u.kind]) ? saved : null // por si cambian los equipos entre versiones
   } catch { return null }
 }
 
 function startGame(cos: [string, string], intro = 0, saved?: Game) {
   titleOn = false
   stage.classList.remove('titling')
-  g = saved ?? createGame(cos, fogOn)
+  g = saved ?? createGame(cos, fogOn, mapChoice)
   terrainLayer = makeTerrainLayer(g)
   fx.clear()
   for (const m of [unitFx, unitDir, unitAnim, animPos]) m.clear()
@@ -726,6 +728,25 @@ function draw(time: number) {
   const sway = Math.floor(time / 220) % 4
   for (const f of flowerSpots) ctx.drawImage(atlas, at.flowers.x + sway * 16, f.color * 16, 16, 16, f.x, f.y, 16, 16)
   ctx.drawImage(overlayLayer, 0, 0)
+  // Objetos: una baya o una moneda que flotan y brillan (iconos sencillos hechos a píxel)
+  for (const it of g.items) {
+    if (who !== null && !sight.has(key(it.x, it.y))) continue
+    const bx = it.x * T + 16, by = it.y * T + 15 + Math.round(Math.sin(time / 300 + it.x) * 2)
+    ctx.fillStyle = 'rgba(16, 40, 24, 0.3)'
+    ctx.fillRect(bx - 6, it.y * T + 25, 12, 3)
+    if (it.type === 'coin') {
+      ctx.fillStyle = '#8a5c00'; ctx.fillRect(bx - 6, by - 7, 12, 14); ctx.fillRect(bx - 7, by - 5, 14, 10)
+      ctx.fillStyle = '#ffd84a'; ctx.fillRect(bx - 5, by - 6, 10, 12); ctx.fillRect(bx - 6, by - 4, 12, 8)
+      ctx.fillStyle = '#fff6c0'; ctx.fillRect(bx - 3, by - 5, 3, 8)
+      ctx.fillStyle = '#e0a020'; ctx.fillRect(bx + 1, by - 3, 2, 7)
+    } else {
+      ctx.fillStyle = '#10141c'; ctx.fillRect(bx - 6, by - 4, 12, 11); ctx.fillRect(bx - 4, by - 6, 8, 14)
+      ctx.fillStyle = '#4a78e8'; ctx.fillRect(bx - 5, by - 3, 10, 9); ctx.fillRect(bx - 3, by - 5, 6, 12)
+      ctx.fillStyle = '#a8c8ff'; ctx.fillRect(bx - 3, by - 3, 3, 3)
+      ctx.fillStyle = '#3c9c48'; ctx.fillRect(bx - 1, by - 9, 5, 3); ctx.fillRect(bx - 1, by - 8, 2, 4)
+    }
+    if (Math.floor(time / 500 + it.x) % 4 === 0) { ctx.fillStyle = '#fff'; ctx.fillRect(bx + 5, by - 8, 2, 2) }
+  }
   // Hierba que se agita: ahí se esconde un Pokémon salvaje
   for (const w of g.wild) {
     if (who !== null && !sight.has(key(w.x, w.y))) continue
@@ -733,6 +754,10 @@ function draw(time: number) {
     const dx = jig === 0 ? -1 : jig === 2 ? 1 : 0
     for (const [ox, oy] of [[0, 0], [16, 0], [0, 16], [16, 16]]) ctx.drawImage(atlas, at.tall.x, 0, 16, 16, w.x * T + ox + dx, w.y * T + oy - (jig < 3 ? 1 : 0), 16, 16)
     if (Math.random() < 0.03) mapFx.fx('tall_grass', w.x * T + 16 + rnd(-6, 6), w.y * T + 16, { scale: 1, fps: 12 })
+    if (w.weak && Math.floor(time / 300) % 2) { // debilitado: listo para atraparlo
+      ctx.fillStyle = '#10141c'; ctx.fillRect(w.x * T + 12, w.y * T - 2, 8, 12)
+      ctx.fillStyle = '#ffd84a'; ctx.fillRect(w.x * T + 14, w.y * T, 4, 5); ctx.fillRect(w.x * T + 14, w.y * T + 6, 4, 2)
+    }
   }
 
   // Casillas alcanzables: se abren como una onda desde la unidad y las recorre un brillo en diagonal
@@ -851,11 +876,21 @@ function draw(time: number) {
   if (counting) refreshStatus()
 }
 
-/** Mueve y, si atrapa a un salvaje por el camino, lo celebra. */
+/** Mueve y enseña lo que pase en la casilla: objeto recogido, salvaje debilitado, atrapado o escapado. */
 function moveCatch(game: Game, u: Unit, x: number, y: number) {
-  const caught = moveUnit(game, u, x, y)
-  if (!caught || titleOn) return
-  if (!shown(caught)) return
+  const ev = moveUnit(game, u, x, y)
+  if (!ev || titleOn || !shown(u)) return
+  const at = { x, y }
+  if (ev.item === 'coin') { label(at, `+${COIN_VALUE}₽`, 'gold'); sfx.coin(); sfx.coin(0.08) }
+  if (ev.item === 'berry') {
+    label(at, `+${BERRY_HEAL} PS`, 'heal')
+    fx.burst(x * T + 16, y * T + 16, { n: 10, colors: ['#70f088', '#d0ffd8'], speed: 1, life: 700, size: 3, up: 1.2 })
+    sfx.heal()
+  }
+  if (ev.wild === 'weak') { label(at, '¡Salvaje debilitado!', 'gold'); fx.addShake(3); sfx.hit() }
+  if (ev.wild === 'escaped') { label(at, '¡Se ha escapado de la Ball!', 'dmg'); sfx.error() }
+  const caught = ev.caught
+  if (!caught) return
   // La Poké Ball cae sobre la hierba, se menea y se abre
   const ball = document.createElement('i')
   ball.className = 'ballfx'
@@ -866,8 +901,8 @@ function moveCatch(game: Game, u: Unit, x: number, y: number) {
   sfx.ball()
   dropIn(caught, 900)
   setTimeout(() => {
-    const [x, y] = center(caught)
-    for (let i = 0; i < 10; i++) mapFx.add({ img: 'gold_stars', x, y, vx: Math.cos(i) * 2.2, vy: Math.sin(i) * 2.2 - 1, drag: 0.94, max: 700, scale: 1 })
+    const [cx, cy] = center(caught)
+    for (let i = 0; i < 10; i++) mapFx.add({ img: 'gold_stars', x: cx, y: cy, vx: Math.cos(i) * 2.2, vy: Math.sin(i) * 2.2 - 1, drag: 0.94, max: 700, scale: 1 })
     sfx.caught()
   }, 900)
   label(caught, `¡${KINDS[caught.kind].name} salvaje atrapado!`, 'gold', 950)
@@ -878,7 +913,7 @@ const STATUS_COLOR: Record<Status, string> = { burn: '#f0803c', poison: '#a040a0
 // ---------- Minimapa ----------
 
 const miniEl = $<HTMLCanvasElement>('#minimap')
-const MINI_COLOR: Record<string, string> = { '.': '#8fd880', '"': '#4aa860', T: '#2c7c50', M: '#8a7060', '~': '#3878d8', s: '#9ab0c0', '=': '#e0d0a0' }
+const MINI_COLOR: Record<string, string> = { '.': '#8fd880', '"': '#4aa860', T: '#2c7c50', M: '#8a7060', '~': '#3878d8', s: '#9ab0c0', '=': '#e0d0a0', i: '#d6f0ff' }
 function drawMinimap() {
   const k = 6
   if (miniEl.width !== g.w * k) { miniEl.width = g.w * k; miniEl.height = g.h * k }
@@ -1554,7 +1589,7 @@ function showTitle() {
   mode = 'select'
   bannerEl.hidden = talkEl.hidden = sceneEl.hidden = selectEl.hidden = menuEl.hidden = recruitEl.hidden = true
   // Un campo de batalla de exhibición, sin niebla y con Pokémon de los dos equipos repartidos
-  const demo = createGame(['pikachu', 'charizard'], false)
+  const demo = createGame(['pikachu', 'charizard'], false, mapChoice)
   const cast = Object.keys(COMMANDERS).flatMap((id) => [pick(rosterOf(id)), pick(rosterOf(id))]).filter((k) => KINDS[k].move !== 'swim')
   cast.forEach((kind, i) => {
     for (let tries = 0; tries < 60; tries++) {
@@ -1594,6 +1629,8 @@ function showTitle() {
 }
 
 function refreshTitle() {
+  titleEl.querySelector('[data-opt=map]')!.innerHTML = `Mapa: <b>${MAPS[mapChoice].name}</b>`
+  titleEl.querySelector('.blurb')!.textContent = MAPS[mapChoice].blurb
   titleEl.querySelector('[data-opt=fog]')!.textContent = `Niebla de guerra: ${fogOn ? 'sí' : 'no'}`
   titleEl.querySelector('[data-opt=sound]')!.textContent = `Sonido: ${muted ? 'no' : 'sí'}`
 }
@@ -1604,6 +1641,12 @@ titleEl.querySelector('.wars')!.innerHTML = [...'WARS'].map((ch, i) => `<span st
 for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
   btn.onmouseenter = () => { sfx.cursor(); btn.focus() }
   btn.onclick = () => {
+    if (btn.dataset.opt === 'map') { // cambia de mapa y lo enseña de fondo
+      mapChoice = (mapChoice + 1) % MAPS.length
+      localStorage.setItem('pokewars-map', String(mapChoice))
+      sfx.confirm()
+      return showTitle()
+    }
     if (btn.dataset.opt === 'fog') { fogOn = !fogOn; fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`; sfx.confirm(); return refreshTitle() }
     if (btn.dataset.opt === 'sound') { toggleMute(); music.sync(); sfx.confirm(); return refreshTitle() }
     const saved = btn.dataset.go === 'continue' ? loadSave() : null
@@ -2106,6 +2149,10 @@ async function runAI() {
       follow(plan.target!)
       await battle(u, plan.target!)
     } else {
+      if (plan.action === 'freeze') {
+        const cells = freeze(g, u)
+        if (visible && cells.length) { label(end, '¡Río congelado!', 'heal'); sfx.status('freeze') }
+      }
       if (plan.action === 'capture') {
         const b = buildingAt(g, u.x, u.y)!
         if (visible || b.owner === who) { follow(b); await doCapture(u, b); await sleep(300) } else capture(g, u)
@@ -2168,6 +2215,8 @@ addEventListener('keydown', (e) => {
     return
   }
   keysDown.add(e.key.toLowerCase())
+  if (e.key === '+' || e.key === '=') return setZoom(1)
+  if (e.key === '-') return setZoom(-1)
   if (e.key === 'Tab') { e.preventDefault(); return nextUnit() }
   if (e.key === 'h' && !titleOn) helpEl.hidden = !helpEl.hidden
   if (e.key === 'Escape') cancel()
@@ -2176,6 +2225,17 @@ addEventListener('keydown', (e) => {
   if (e.key === 'm') muteBtn.click()
 })
 addEventListener('resize', resize)
+/** Acerca o aleja el mapa (teclas + y −, o la rueda con Ctrl). */
+function setZoom(step: number) {
+  const before = scale
+  zoom = Math.max(-2, Math.min(4, zoom + step))
+  const centre = [cam.tx + canvas.width / 2, cam.ty + canvas.height / 2]
+  resize()
+  if (scale === before) zoom -= step
+  localStorage.setItem('pokewars-zoom', String(zoom))
+  if (g) panTo(centre[0], centre[1], true)
+}
+stage.addEventListener('wheel', (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(e.deltaY < 0 ? 1 : -1) } }, { passive: false })
 endBtn.onclick = finishTurn
 powerBtn.onclick = firePower
 aiBtn.onclick = () => {

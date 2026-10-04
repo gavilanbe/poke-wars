@@ -1,11 +1,11 @@
 // IA sencilla (voraz): cada unidad elige la mejor jugada inmediata.
-import { KINDS, RoleId, rosterOf } from './data'
+import { KINDS, RoleId, bestMove, rosterOf } from './data'
 import {
   Building, Game, Pos, Unit, buildingAt, canCapture, canCounter, canRecruit, damage, dist, key,
-  reachable, stoppable, targetsFrom, unitAt, wildAt,
+  freezable, reachable, stoppable, targetsFrom, unitAt, wildAt,
 } from './game'
 
-export interface Plan { to: Pos; action: 'attack' | 'capture' | 'wait'; target?: Unit }
+export interface Plan { to: Pos; action: 'attack' | 'capture' | 'freeze' | 'wait'; target?: Unit }
 
 export function planUnit(g: Game, u: Unit): Plan {
   const reach = reachable(g, u)
@@ -41,7 +41,12 @@ export function planUnit(g: Game, u: Unit): Plan {
       if (score > bestScore) { bestScore = score; best = plan }
     }
     // Un salvaje en la hierba: quien captura va a por él
-    consider(base + (k.capture && wildAt(g, spot.x, spot.y) ? 30 : 0), { to: spot, action: 'wait' })
+    const wild = wildAt(g, spot.x, spot.y)
+    const item = g.items.some((i) => i.x === spot.x && i.y === spot.y)
+    // Salvajes: quien captura va a atraparlos y quien no, a debilitarlos; y nadie deja un objeto en el suelo
+    consider(base + (wild ? (k.capture ? 30 : wild.weak ? 0 : 6) : 0) + (item ? 10 : 0), { to: spot, action: 'wait' })
+    // Congelar el río cuando su objetivo está al otro lado y no hay nada mejor que hacer
+    if (freezable(g, u, spot).length && goalDist(spot) > 6) consider(base + 5, { to: spot, action: 'freeze' })
     if (canCapture(g, u, spot)) {
       const b = buildingAt(g, spot.x, spot.y)!
       consider(base + 40 + (b.type === 'gym' ? 100 : 0) + (b.cap - u.hp <= 0 ? 30 : 0), { to: spot, action: 'capture' })
@@ -51,6 +56,7 @@ export function planUnit(g: Game, u: Unit): Plan {
       const dmg = damage(g, here, target)
       const value = (KINDS[target.kind].cost || 6000) / 1000
       let score = base + dmg * value * 2 + (dmg >= target.hp ? 25 : 0)
+      if (bestMove(u.kind, target.kind) === 'fire' && 'T"'.includes(g.tiles[target.y][target.x])) score += 6 // le quema la cobertura
       if (k.heals) score = target.status ? -Infinity : base + value * 3 // el de apoyo duerme al rival más valioso que esté despierto
       if (dmg < target.hp && canCounter(here, target)) {
         const back = damage(g, { ...target, hp: target.hp - dmg }, here)
@@ -90,7 +96,7 @@ function goalsFor(g: Game, u: Unit): Pos[] {
 // Composición que busca la IA: cuántos quiere de cada rol antes de repetir
 const WANT: [RoleId, number][] = [
   ['capturador', 3], ['luchador', 3], ['explorador', 1], ['tirador', 2], ['asaltante', 1], ['volador', 1], ['apoyo', 1],
-  ['coloso', 2], ['artillero', 1], ['bombardero', 1],
+  ['coloso', 2], ['artillero', 1], ['bombardero', 1], ['nadador', 1],
 ]
 
 /** Recluta por roles: primero capturadores, luego lo que le falte de su composición y pueda pagar. */

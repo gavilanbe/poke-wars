@@ -416,3 +416,5 @@ main { display: block; }
 #power::after { content: ''; position: absolute; left: 10px; bottom: 5px; height: 4px; width: calc((100% - 20px) * var(--p, 0) / 100); background: linear-gradient(90deg, #f0a020, #ffe870); box-shadow: 0 0 0 1px #10141c; transition: width 0.3s; }
 #power.ready::after { display: none; }
 #title .menu > button[hidden] { display: none; }
+#title .blurb { font-family: var(--ui); font-size: 18px; color: #dfe6f4; text-shadow: 1px 1px 0 #10141c; min-height: 20px; }
+#title .opts b { color: #ffd84a; font-weight: 400; }

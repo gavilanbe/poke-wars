@@ -1,6 +1,6 @@
 // Estado y reglas, sin nada de DOM (se puede simular desde node: tools/sim.ts).
 import {
-  BUILDINGS, BUILDING_INFO, BuildingType, CAPTURE_POINTS, COMMANDERS, KINDS, MAP, MAX_UNITS, POWER_COST, ROLE_ORDER, START_UNITS, TUNE,
+  BUILDING_INFO, BuildingType, CAPTURE_POINTS, COMMANDERS, KINDS, MAPS, MAX_UNITS, POWER_COST, ROLE_ORDER, TUNE,
   PType, ROLES, TERRAIN, Terrain, bestMove, moveMult, rosterOf,
 } from './data'
 
@@ -32,10 +32,14 @@ export interface Game {
   fog: boolean // niebla de guerra: solo se ve lo que queda cerca de tus Pokémon y edificios
   weather: Weather
   fainted: [Fainted[], Fainted[]]
-  wild: { x: number; y: number; kind: string }[] // Pokémon salvajes escondidos en la hierba alta
+  wild: { x: number; y: number; kind: string; weak?: boolean }[] // salvajes escondidos en la hierba alta; debilitados se atrapan seguro
+  items: { x: number; y: number; type: ItemType }[] // bayas y monedas por el mapa
+  map: number
   terrainVersion: number // sube cuando cambia el terreno (bosque quemado, río congelado) para repintar el mapa
 }
 
+export type ItemType = 'berry' | 'coin'
+export const COIN_VALUE = 1500, BERRY_HEAL = 4, CATCH_CHANCE = 0.5
 export type Weather = 'clear' | 'rain' | 'sun'
 export const WEATHER_NAME: Record<Weather, string> = { clear: 'Despejado', rain: 'Lluvia', sun: 'Sol abrasador' }
 export const PHASES = ['Mañana', 'Mediodía', 'Atardecer', 'Noche']
@@ -44,26 +48,35 @@ export const phaseOf = (g: Game) => (g.day - 1) % 4
 const sightPenalty = (g: Game) => (phaseOf(g) === 3 ? 1 : 0) + (g.weather === 'rain' ? 1 : 0)
 export interface Pos { x: number; y: number }
 
-export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog = true): Game {
+export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog = true, map = 0): Game {
+  const def = MAPS[map], MAP = def.rows
   const g: Game = {
-    w: MAP[0].length, h: MAP.length, tiles: [], units: [], buildings: [],
+    w: MAP[0].length, h: MAP.length, tiles: [], units: [], buildings: [], items: [], map,
     turn: 0, day: 1, funds: [0, 0], winner: null, nextId: 1,
     co, meter: [0, 0], power: [false, false], fog, weather: 'clear', fainted: [[], []], wild: [], terrainVersion: 0,
   }
   g.tiles = MAP.map((row) => [...row])
-  for (const def of BUILDINGS) {
-    const building: Building = { ...def, cap: CAPTURE_POINTS }
+  for (const b of def.buildings) {
+    const building: Building = { ...b, cap: CAPTURE_POINTS }
     for (const cell of footprint(building)) g.tiles[cell.y][cell.x] = '#'
-    g.tiles[def.y][def.x] = 'B'
+    g.tiles[b.y][b.x] = 'B'
     g.buildings.push(building)
   }
-  for (const u of START_UNITS) addUnit(g, rosterOf(co[u.team])[ROLE_ORDER.indexOf(u.role)], u.team, u.x, u.y).moved = false
+  for (const u of def.starts) addUnit(g, rosterOf(co[u.team])[ROLE_ORDER.indexOf(u.role)], u.team, u.x, u.y).moved = false
   // Salvajes: tres en la mitad izquierda y sus espejos en la derecha
   const grass: Pos[] = []
   for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w / 2; x++) if (g.tiles[y][x] === '"') grass.push({ x, y })
   for (let i = 0; i < 3 && grass.length; i++) {
     const [p] = grass.splice(Math.floor(Math.random() * grass.length), 1)
     g.wild.push({ ...p, kind: randomWild() }, { x: g.w - 1 - p.x, y: p.y, kind: randomWild() })
+  }
+  // Objetos: tres en la mitad izquierda y sus espejos
+  const open: Pos[] = []
+  for (let y = 0; y < g.h; y++) for (let x = 2; x < g.w / 2 - 1; x++) if (g.tiles[y][x] === '.' && !unitAt(g, x, y)) open.push({ x, y })
+  for (let i = 0; i < 3 && open.length; i++) {
+    const [p] = open.splice(Math.floor(Math.random() * open.length), 1)
+    const type: ItemType = i === 0 ? 'coin' : 'berry'
+    g.items.push({ ...p, type }, { x: g.w - 1 - p.x, y: p.y, type })
   }
   g.funds[0] += income(g, 0)
   g.funds[1] += SECOND_PLAYER_BONUS // quien mueve segundo empieza con algo más de dinero para compensar
@@ -316,25 +329,47 @@ function checkRout(g: Game) {
   }
 }
 
+export interface MoveEvent {
+  caught?: Unit // salvaje atrapado
+  wild?: 'weak' | 'escaped' // debilitado por un Pokémon que no captura, o se escapó de la Ball
+  item?: ItemType // objeto recogido
+}
+
 /**
- * Mueve la unidad. Si es de las que capturan y entra en hierba alta donde se escondía un salvaje, lo atrapa: el
- * salvaje se une al equipo en una casilla de al lado. Devuelve el Pokémon atrapado, si lo hay.
+ * Mueve la unidad y resuelve lo que encuentre en la casilla:
+ * - un objeto: la baya cura y quita el estado; la moneda da dinero;
+ * - un salvaje en la hierba: quien no captura lo debilita; quien captura lo atrapa (seguro si está debilitado, a
+ *   cara o cruz si no) y el salvaje se une al equipo en una casilla de al lado.
  */
-export function moveUnit(g: Game, u: Unit, x: number, y: number): Unit | null {
+export function moveUnit(g: Game, u: Unit, x: number, y: number): MoveEvent | null {
   if (u.x === x && u.y === y) return null
   const b = buildingAt(g, u.x, u.y)
   if (b) b.cap = CAPTURE_POINTS
   u.x = x
   u.y = y
+  const ev: MoveEvent = {}
+  const item = g.items.find((i) => i.x === x && i.y === y)
+  if (item) {
+    g.items = g.items.filter((i) => i !== item)
+    if (item.type === 'coin') g.funds[u.team] += COIN_VALUE
+    else { u.hp = Math.min(10, u.hp + BERRY_HEAL); u.status = null }
+    ev.item = item.type
+  }
   const wild = wildAt(g, x, y)
-  if (!wild || !KINDS[u.kind].capture || g.units.filter((o) => o.team === u.team).length >= MAX_UNITS) return null
-  const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
-    .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && !unitAt(g, p.x, p.y))
-  if (!spot) return null
-  g.wild = g.wild.filter((w) => w !== wild)
-  const caught = addUnit(g, wild.kind, u.team, spot.x, spot.y)
-  caught.hp = 6
-  return caught
+  if (wild) {
+    if (!KINDS[u.kind].capture) {
+      if (!wild.weak) { wild.weak = true; ev.wild = 'weak' }
+    } else if (g.units.filter((o) => o.team === u.team).length < MAX_UNITS) {
+      const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
+        .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && !unitAt(g, p.x, p.y))
+      if (spot && (wild.weak || Math.random() < CATCH_CHANCE)) {
+        g.wild = g.wild.filter((w) => w !== wild)
+        ev.caught = addUnit(g, wild.kind, u.team, spot.x, spot.y)
+        ev.caught.hp = wild.weak ? 5 : 8
+      } else if (spot) ev.wild = 'escaped'
+    }
+  }
+  return ev.caught || ev.wild || ev.item ? ev : null
 }
 
 /** ¿Puede congelar el agua de alrededor? Solo quien tenga un ataque de hielo, y si hay agua libre al lado. */
@@ -432,6 +467,11 @@ export function endTurn(g: Game) {
     let melted = false
     for (const row of g.tiles) for (let x = 0; x < row.length; x++) if (row[x] === 'i' && !g.units.some((u) => u.x === x && g.tiles[u.y] === row)) { row[x] = '~'; melted = true }
     if (melted) g.terrainVersion++
+  }
+  if (g.turn === 0 && g.day % 3 === 0 && g.items.length < 8) { // cada tres días aparece un objeto
+    const spots: Pos[] = []
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.tiles[y][x] === '.' && !unitAt(g, x, y) && !g.items.some((i) => i.x === x && i.y === y)) spots.push({ x, y })
+    if (spots.length) g.items.push({ ...spots[Math.floor(Math.random() * spots.length)], type: Math.random() < 0.35 ? 'coin' : 'berry' })
   }
   if (g.turn === 0 && g.day % 4 === 0) { // cada cuatro días aparece otro salvaje en la hierba alta
     const free: Pos[] = []

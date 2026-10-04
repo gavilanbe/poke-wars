@@ -15,15 +15,15 @@ export interface Terrain {
 
 const X = 99
 export const TERRAIN: Record<string, Terrain> = {
-  '.': { name: 'Pradera', def: 1, cost: { walk: 1, fly: 1, swim: X, amph: 1 } },
-  '"': { name: 'Hierba alta', def: 2, cost: { walk: 1, fly: 1, swim: X, amph: 1 } },
+  '.': { name: 'Pradera', def: 1, cost: { walk: 1, fly: 1, swim: 3, amph: 1 } },
+  '"': { name: 'Hierba alta', def: 2, cost: { walk: 1, fly: 1, swim: 3, amph: 1 } },
   T: { name: 'Bosque', def: 3, cost: { walk: 2, fly: 1, swim: X, amph: 2 } },
   M: { name: 'Montaña', def: 4, cost: { walk: 3, fly: 1, swim: X, amph: 3 } },
   '~': { name: 'Agua', def: 0, cost: { walk: X, fly: 1, swim: 1, amph: 1 } },
   s: { name: 'Piedras del río', def: 0, cost: { walk: 1, fly: 1, swim: 2, amph: 1 } },
-  i: { name: 'Hielo', def: 0, cost: { walk: 1, fly: 1, swim: X, amph: 1 } }, // agua congelada por un Pokémon de hielo
-  '=': { name: 'Camino', def: 0, cost: { walk: 1, fly: 1, swim: X, amph: 1 } },
-  B: { name: 'Puerta', def: 3, cost: { walk: 1, fly: 1, swim: X, amph: 1 } },
+  i: { name: 'Hielo', def: 0, cost: { walk: 1, fly: 1, swim: 2, amph: 1 } }, // agua congelada por un Pokémon de hielo
+  '=': { name: 'Camino', def: 0, cost: { walk: 1, fly: 1, swim: 2, amph: 1 } },
+  B: { name: 'Puerta', def: 3, cost: { walk: 1, fly: 1, swim: 2, amph: 1 } },
   '#': { name: 'Edificio', def: 0, cost: { walk: X, fly: 1, swim: X, amph: X } }, // macizo: se sobrevuela, pero nadie se para
 }
 
@@ -123,7 +123,7 @@ export const ROLES: Record<RoleId, Role> = {
   artillero: { name: 'Artillero', help: 'Ataca a 3-5 casillas. Muy frágil.', cost: 7000, mv: 3, move: 'walk', atk: 1.65, def: 0.75, range: [3, 5], vision: 2 },
   volador: { name: 'Volador', help: 'Vuela sobre cualquier terreno.', cost: 4500, mv: 7, move: 'fly', atk: 1.3, def: 0.9, range: [1, 1], vision: 5 },
   bombardero: { name: 'Bombardero', help: 'Volador caro y demoledor.', cost: 8500, mv: 6, move: 'fly', atk: 2, def: 1.4, range: [1, 1], vision: 4 },
-  nadador: { name: 'Nadador', help: 'Solo se mueve por el agua, y ahí manda.', cost: 5000, mv: 6, move: 'swim', atk: 1.55, def: 1.4, range: [1, 1], vision: 3 },
+  nadador: { name: 'Nadador', help: 'Rapidísimo en el agua y torpe en tierra.', cost: 5000, mv: 6, move: 'swim', atk: 1.55, def: 1.4, range: [1, 1], vision: 3 },
   apoyo: { name: 'Apoyo', help: 'Cura 2 PS a los aliados pegados cada turno y duerme a un rival a 1-2 casillas.', cost: 3000, mv: 5, move: 'walk', atk: 0, def: 1.1, range: [1, 2], vision: 3, heals: true },
 }
 export const ROLE_ORDER = Object.keys(ROLES) as RoleId[]
@@ -185,66 +185,9 @@ for (const [from, to] of Object.entries(finals as Record<string, string>)) {
 export const rosterOf = (commander: string): string[] => ROLE_ORDER.map((role) => ROSTERS[commander][role][0])
 export const MAX_UNITS = 16 // tope de Pokémon en el campo por equipo
 
-// Mitad izquierda del terreno (30x20 casillas en total): la derecha es su espejo, así las puertas (que siempre
-// miran abajo) quedan igual de accesibles para los dos equipos.
-const LEFT = [
-  'TTT..T....TT.~~',
-  'TT....M...T..~~',
-  'T.....M......~~',
-  '............M.~',
-  '....""".==..T.~',
-  '..==.""..=....~',
-  'T..=TT...=....s',
-  'T..=T....=====s',
-  '"".=..M..=""..~',
-  '"..=.....=...~~',
-  '...=.....=...~~',
-  '..============~',
-  '...=.........=~',
-  '...=...TTM"".=s',
-  '...=......""T.~',
-  '.MM=.......TT.~',
-  '.............~~',
-  'T.....~~~..TT~~',
-  'T.."".~~~..M.ss',
-  'TTT.""~~~....~~',
-]
-export const MAP = LEFT.map((row) => row + [...row].reverse().join(''))
-
-// Edificios por la casilla de su puerta. owner: -1 neutral.
-export const BUILDINGS: { type: BuildingType; owner: -1 | 0 | 1; x: number; y: number }[] = [
-  { type: 'gym', owner: 0, x: 3, y: 10 },
-  { type: 'center', owner: 0, x: 7, y: 10 },
-  { type: 'house', owner: 0, x: 1, y: 13 },
-  { type: 'house', owner: 0, x: 5, y: 13 },
-  { type: 'house', owner: -1, x: 2, y: 4 },
-  { type: 'mart', owner: -1, x: 8, y: 3 },
-  { type: 'center', owner: -1, x: 11, y: 6 },
-  { type: 'house', owner: -1, x: 3, y: 17 },
-  { type: 'mart', owner: -1, x: 9, y: 16 },
-  { type: 'house', owner: -1, x: 11, y: 10 },
-  { type: 'gym', owner: 1, x: 26, y: 10 },
-  { type: 'center', owner: 1, x: 22, y: 10 },
-  { type: 'house', owner: 1, x: 27, y: 13 },
-  { type: 'house', owner: 1, x: 23, y: 13 },
-  { type: 'house', owner: -1, x: 26, y: 4 },
-  { type: 'mart', owner: -1, x: 20, y: 3 },
-  { type: 'center', owner: -1, x: 18, y: 6 },
-  { type: 'house', owner: -1, x: 25, y: 17 },
-  { type: 'mart', owner: -1, x: 19, y: 16 },
-  { type: 'house', owner: -1, x: 17, y: 10 },
-]
-
-// Cada equipo empieza con el capturador y el explorador de su comandante
-export const START_UNITS: { role: RoleId; team: 0 | 1; x: number; y: number }[] = [
-  { role: 'capturador', team: 0, x: 3, y: 11 },
-  { role: 'explorador', team: 0, x: 4, y: 11 },
-  { role: 'capturador', team: 1, x: 26, y: 11 },
-  { role: 'explorador', team: 1, x: 25, y: 11 },
-]
-
-// Parte del mapa que cabe en pantalla (en casillas); el resto se recorre con la cámara
-export const VIEW = { w: 20, h: 13 }
+// Los mapas viven en src/maps.ts (generado por tools/make_maps.py)
+export { MAPS } from './maps'
+export type { MapDef } from './maps'
 
 export const CAPTURE_POINTS = 20
 

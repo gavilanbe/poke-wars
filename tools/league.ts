@@ -1,8 +1,8 @@
 // Liga de IA contra IA sin gráficos: la usan tools/sim.ts (informe) y tools/tune.ts (afinador).
 import { planRecruit, planUnit } from '../src/ai'
-import { attack, canUsePower, capture, createGame, endTurn, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
+import { attack, canUsePower, capture, createGame, endTurn, freeze, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
 
-import { COMMANDERS, KINDS, ROLES } from '../src/data'
+import { COMMANDERS, KINDS, MAPS, ROLES } from '../src/data'
 
 
 export interface LeagueResult {
@@ -22,7 +22,7 @@ export function league(ROUNDS: number): LeagueResult {
   let first = 0, total = 0, unfinished = 0, days = 0
   for (let round = 0; round < ROUNDS; round++) for (const red of ids) for (const blue of ids) {
     if (red === blue) continue
-    const g = createGame([red, blue])
+    const g = createGame([red, blue], true, total % MAPS.length) // se van turnando los mapas
     let turns = 0
     while (g.winner === null && turns < 400) {
       if (canUsePower(g)) usePower(g)
@@ -44,6 +44,7 @@ export function league(ROUNDS: number): LeagueResult {
           if (!g.units.includes(t)) { role(attKind).kills++; role(defKind).deaths++ }
           if (!g.units.includes(u)) { role(defKind).kills++; role(attKind).deaths++ }
         } else if (plan.action === 'capture') capture(g, u)
+      else if (plan.action === 'freeze') freeze(g, u)
         else u.moved = true
       }
       for (const b of g.buildings) {

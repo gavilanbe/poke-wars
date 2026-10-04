@@ -2,16 +2,18 @@
 
 Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 
-## Identidad propia (hecho; queda afinar)
-- La IA no usa «Congelar» y no busca quemar bosque a propósito.
-- Los salvajes se atrapan con solo pisar su hierba con un capturador; falta debilitarlos antes.
-- Solo 19 líneas tienen tercera fase (`src/finals.json`); el resto se queda en veterano al nivel 3.
-- Objetos en el mapa (bayas, cajas con dinero).
+## Queda por hacer
+- En Archipiélago y Bosque Viejo las partidas de IA contra IA se alargan (36 días de media) y alguna no termina:
+  la IA se atasca en los vados.
+- El fondo del combate (cielo y colinas) sigue pintado por código.
+- Solo 19 líneas tienen tercera fase (`src/finals.json`).
+- Equilibrio por mapa: `pnpm sim 30` y `pnpm tune`.
 
 ## Hecho en la pasada larga del 4 de octubre
 Tercera fase, guardar y continuar, ayuda (H), Tab al siguiente Pokémon, pantalla de pasar el ordenador, bocadillos
 letra a letra, Poké Ball al atrapar, efectos y sonidos de estado y de nivel, luz del combate según la hora, IA que
-defiende el gimnasio, tema de selección y ambiente de día.
+defiende el gimnasio, tema de selección y ambiente de día. Después: tres mapas con selector, bayas y monedas, salvajes que se debilitan
+antes de atraparlos, la IA congela ríos y quema cobertura, zoom con + y −, y nadadores que andan por tierra.
 
 ## Roles y comandantes (hecho el 4 de octubre; queda afinar)
 - Equilibrio: sumando 7 ligas (588 partidas por comandante) todos quedan entre el 47% y el 53%, dentro del ruido.
