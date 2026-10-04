@@ -1344,20 +1344,25 @@ function chooseCommanders(): Promise<[string, string]> {
   mode = 'select'
   return new Promise((resolve) => {
     const picks: string[] = []
-    selectEl.innerHTML = `<div class="bg"><div class="rays"></div><div class="stripes"></div></div>
+    selectEl.innerHTML = `<div class="bg"><div class="rays"></div><div class="stripes"></div><div class="ghost"><div></div></div></div>
       <header><small></small><h2>ELIGE COMANDANTE</h2><span class="who"></span></header>
-      <div class="plantel"></div>
       <section class="show">
         <div class="pic"><img class="e2" alt=""><img class="e1" alt=""><img class="main" alt=""></div>
-        <div class="txt"><h3></h3><p class="lema"></p><p class="estilo"></p>
+        <div class="txt"><h3></h3><p class="lema"></p>
+          <div class="bocadillo"></div>
+          <div class="ficha"><div class="stats"></div><div class="tipos"></div></div>
           <div class="poder"><b></b><span></span></div></div>
-        <div class="equipo"></div>
       </section>
+      <div class="equipo"><canvas class="campo" width="528" height="52"></canvas><div class="roles"></div></div>
+      <div class="plantel"></div>
       <footer>Flechas o ratón para mirar · Clic o Enter para elegir</footer>`
     const q = <E extends HTMLElement>(sel: string) => selectEl.querySelector(sel) as E
-    const show = q('.show'), plantel = q('.plantel'), equipo = q('.equipo')
+    const show = q('.show'), plantel = q('.plantel')
     let current = '', locked = false, team = 0, themeTimer = 0
-    let cells: { kind: string; cx: CanvasRenderingContext2D }[] = []
+    let squad: string[] = [], typing = 0
+    const campo = q<HTMLCanvasElement>('.campo').getContext('2d')!
+    const pips = (n: number) => `<span class="pips">${'<i class="on"></i>'.repeat(n)}${'<i></i>'.repeat(6 - n)}</span>`
+    const level = (v: number, per: number) => Math.max(1, Math.min(6, 3 + Math.round((v - 1) / per)))
 
     const tiles = ids.map((id, i) => {
       const btn = document.createElement('button')
@@ -1383,22 +1388,30 @@ function chooseCommanders(): Promise<[string, string]> {
       if (!changed) return
       q('h3').innerHTML = [...c.name].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')
       q('.lema').textContent = c.title
-      q('.estilo').textContent = passiveText(id)
+      q('.ghost div').textContent = `${c.name.toUpperCase()} · `.repeat(8)
       q('.poder b').textContent = `★ ${c.power}`
       q('.poder span').textContent = c.powerHelp
-      equipo.innerHTML = ''
-      cells = rosterOf(id).map((kind, i) => {
+      // Lo que dice al verle: se escribe letra a letra
+      const line = pick(c.quotes.start), bubble = q('.bocadillo')
+      clearInterval(typing)
+      let n = 0
+      bubble.textContent = ''
+      typing = window.setInterval(() => {
+        bubble.textContent = '«' + line.slice(0, ++n) + (n >= line.length ? '»' : '')
+        if (n >= line.length) clearInterval(typing)
+      }, 22)
+      q('.stats').innerHTML = `<div><span>Ataque</span>${pips(level(c.atk[0], 0.05))}</div><div><span>Defensa</span>${pips(level(c.def[0], 0.04))}</div>
+        <div><span>Movimiento</span>${pips(3 + c.mv[0] * 2)}</div><div><span>Con poder</span>${pips(level((c.atk[1] + c.def[1]) / 2 + c.mv[1] * 0.1, 0.07))}</div>`
+      squad = rosterOf(id)
+      const types = [...new Set(squad.flatMap((k) => KINDS[k].types))]
+      q('.tipos').innerHTML = `<span>Tipos del equipo</span><div>${types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 38}px" title="${TYPE_NAME[t]}"></i>`).join('')}</div>`
+      q('.roles').innerHTML = squad.map((kind, i) => {
         const k = KINDS[kind]
-        const cell = document.createElement('div')
-        cell.className = 'mon'
-        cell.style.setProperty('--i', String(i))
-        cell.title = `${k.name} · ${ROLES[k.role].help}`
-        cell.innerHTML = `<canvas width="44" height="40"></canvas><span>${ROLES[k.role].name}</span>
-          <em>${k.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px"></i>`).join('')}</em>`
-        equipo.append(cell)
-        return { kind, cx: cell.querySelector('canvas')!.getContext('2d')! }
-      })
+        return `<div class="mon" style="--i:${i}" title="${k.name} · ${ROLES[k.role].help}"><b>${k.name}</b><span>${ROLES[k.role].name}</span>
+          <em>${k.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px"></i>`).join('')}</em></div>`
+      }).join('')
       restart(show, 'swap')
+      restart(q('.equipo'), 'swap')
       sfx.cursor()
       sfx.cry(id, 1, 0.3)
       clearTimeout(themeTimer) // si te quedas mirándolo, suena su tema
@@ -1464,14 +1477,24 @@ function chooseCommanders(): Promise<[string, string]> {
       resolve(picks as [string, string])
     }
 
-    // El equipo del escaparate anda en su sitio
+    // El equipo desfila sobre un trozo de hierba del mapa, y el retrato va cambiando de cara
+    let lastFace = ''
     const loop = (time: number) => {
-      if (selectEl.hidden) return
-      cells.forEach(({ kind, cx }, i) => {
-        cx.imageSmoothingEnabled = false
-        cx.clearRect(0, 0, 44, 40)
-        drawSprite(cx, KINDS[kind].species, 'Walk', DIR.down, time + i * 160, 22, 18)
+      if (selectEl.hidden) return void clearInterval(typing)
+      campo.imageSmoothingEnabled = false
+      for (let x = 0; x < 528; x += 64) campo.drawImage(atlas, at.grass.x, 0, 64, 52, x, 0, 64, 52)
+      squad.forEach((kind, i) => {
+        const x = 24 + i * 48, hop = Math.abs(Math.sin(time / 260 + i * 0.9)) * 3
+        campo.fillStyle = 'rgba(16, 40, 24, 0.3)'
+        campo.beginPath()
+        campo.ellipse(x, 40, 11 - hop, 4, 0, 0, Math.PI * 2)
+        campo.fill()
+        drawSprite(campo, KINDS[kind].species, 'Walk', DIR.down, time + i * 160, x, 24 - hop)
       })
+      if (!locked && current) {
+        const face = ['Normal', 'Normal', 'Determined', 'Normal', 'Happy'][Math.floor(time / 900) % 5]
+        if (face !== lastFace) { lastFace = face; q<HTMLImageElement>('.pic .main').src = facePath(current, face) }
+      }
       requestAnimationFrame(loop)
     }
     selectEl.hidden = false
