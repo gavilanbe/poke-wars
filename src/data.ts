@@ -177,6 +177,7 @@ for (const [commander, roster] of Object.entries(ROSTERS)) {
 // Terceras fases (src/finals.json): se llega al nivel 3 y mejoran otro poco
 for (const [from, to] of Object.entries(finals as Record<string, string>)) {
   const mid = KINDS[from]
+  if (!mid) continue // esa línea ya no está en ningún equipo
   mid.evolves = to
   KINDS[to] = { ...mid, name: displayName(to), species: to, evolves: undefined, final: true, atk: Math.round(mid.atk * 110) / 100, def: Math.round(mid.def * 110) / 100 }
 }

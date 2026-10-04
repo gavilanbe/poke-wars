@@ -8,6 +8,8 @@
     "sim": "tsx tools/sim.ts",
     "tune": "tsx tools/tune.ts",
     "check": "tsx tools/check.ts",
+    "duel": "tsx tools/duel.ts",
+    "matchups": "tsx tools/matchups.ts",
     "assets": ".venv/bin/python tools/extract.py"
   },
   "devDependencies": {

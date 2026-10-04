@@ -12,7 +12,7 @@ export interface LeagueResult {
 }
 
 /** Juega todos contra todos (cada pareja, de rojo y de azul) las rondas que se pidan. */
-export function league(ROUNDS: number): LeagueResult {
+export function league(ROUNDS: number, only?: [string, string], mapId?: number): LeagueResult {
   const ids = Object.keys(COMMANDERS)
   const zero = () => Object.fromEntries(ids.map((id) => [id, 0])) as Record<string, number>
   const wins = zero(), games = zero()
@@ -22,7 +22,8 @@ export function league(ROUNDS: number): LeagueResult {
   let first = 0, total = 0, unfinished = 0, days = 0
   for (let round = 0; round < ROUNDS; round++) for (const red of ids) for (const blue of ids) {
     if (red === blue) continue
-    const g = createGame([red, blue], true, total % MAPS.length) // se van turnando los mapas
+    if (only && !(only.includes(red) && only.includes(blue))) continue // solo ese duelo
+    const g = createGame([red, blue], true, mapId ?? total % MAPS.length) // se van turnando los mapas
     let turns = 0
     while (g.winner === null && turns < 400) {
       if (canUsePower(g)) usePower(g)
