@@ -25,12 +25,12 @@ export const TERRAIN: Record<string, Terrain> = {
 }
 
 export type BuildingType = 'house' | 'center' | 'mart' | 'gym'
-// Los edificios son los de Petalburgo a tamaño real: ocupan `w` x 2 casillas y se usan desde la casilla de la
-// puerta (fila de abajo, columna `door`). `dx` centra la puerta del dibujo en esa casilla.
+// Los edificios (estilo 4ª generación) van a tamaño real: ocupan `w` x 2 casillas y se usan desde la casilla
+// de la puerta (fila de abajo, columna `door`). `dx` centra la puerta del dibujo en esa casilla.
 export const BUILDING_INFO: Record<BuildingType, { name: string; w: number; door: number; dx: number; income: number; help: string }> = {
-  house: { name: 'Casa', w: 2, door: 0, dx: -8, income: 1000, help: '+1000₽ por turno' },
-  center: { name: 'Centro Pokémon', w: 2, door: 0, dx: -8, income: 1000, help: 'Recluta y cura. +1000₽' },
-  mart: { name: 'Tienda', w: 2, door: 0, dx: -8, income: 2000, help: '+2000₽ por turno' },
+  house: { name: 'Casa', w: 2, door: 0, dx: 1, income: 1000, help: '+1000₽ por turno' },
+  center: { name: 'Centro Pokémon', w: 3, door: 1, dx: 8, income: 1000, help: 'Recluta y cura. +1000₽' },
+  mart: { name: 'Tienda', w: 2, door: 0, dx: -2, income: 2000, help: '+2000₽ por turno' },
   gym: { name: 'Gimnasio', w: 3, door: 1, dx: -8, income: 1000, help: 'Cuartel general: si lo capturan, pierdes' },
 }
 
@@ -111,9 +111,9 @@ const LEFT = [
   '...=..""~~',
   '...=."""~~',
   'T..=====ss',
-  '...=....~~',
+  '...=..M.~~',
   '.."=....T~',
-  '...=..M..~',
+  '...=.....~',
   '...=====.s',
   'T.......Ms',
   'TT.""...T~',
@@ -122,17 +122,17 @@ export const MAP = LEFT.map((row) => row + [...row].reverse().join(''))
 
 // Edificios por la casilla de su puerta. owner: -1 neutral.
 export const BUILDINGS: { type: BuildingType; owner: -1 | 0 | 1; x: number; y: number }[] = [
-  { type: 'gym', owner: 0, x: 3, y: 2 }, { type: 'center', owner: 0, x: 6, y: 3 }, { type: 'house', owner: 0, x: 1, y: 5 },
-  { type: 'mart', owner: -1, x: 5, y: 8 }, { type: 'center', owner: -1, x: 6, y: 11 }, { type: 'house', owner: -1, x: 1, y: 9 },
-  { type: 'gym', owner: 1, x: 16, y: 2 }, { type: 'center', owner: 1, x: 12, y: 3 }, { type: 'house', owner: 1, x: 17, y: 5 },
-  { type: 'mart', owner: -1, x: 13, y: 8 }, { type: 'center', owner: -1, x: 12, y: 11 }, { type: 'house', owner: -1, x: 17, y: 9 },
+  { type: 'gym', owner: 0, x: 3, y: 3 }, { type: 'center', owner: 0, x: 6, y: 3 }, { type: 'house', owner: 0, x: 1, y: 5 },
+  { type: 'mart', owner: -1, x: 1, y: 8 }, { type: 'center', owner: -1, x: 6, y: 11 }, { type: 'house', owner: -1, x: 1, y: 11 },
+  { type: 'gym', owner: 1, x: 16, y: 3 }, { type: 'center', owner: 1, x: 13, y: 3 }, { type: 'house', owner: 1, x: 17, y: 5 },
+  { type: 'mart', owner: -1, x: 17, y: 8 }, { type: 'center', owner: -1, x: 13, y: 11 }, { type: 'house', owner: -1, x: 17, y: 11 },
 ]
 
 export const START_UNITS: { kind: string; team: 0 | 1; x: number; y: number }[] = [
-  { kind: 'zigzagoon', team: 0, x: 3, y: 3 },
-  { kind: 'poochyena', team: 0, x: 5, y: 2 },
-  { kind: 'zigzagoon', team: 1, x: 16, y: 3 },
-  { kind: 'poochyena', team: 1, x: 14, y: 2 },
+  { kind: 'zigzagoon', team: 0, x: 3, y: 4 },
+  { kind: 'poochyena', team: 0, x: 4, y: 4 },
+  { kind: 'zigzagoon', team: 1, x: 16, y: 4 },
+  { kind: 'poochyena', team: 1, x: 15, y: 4 },
 ]
 
 export const CAPTURE_POINTS = 20

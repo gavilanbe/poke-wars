@@ -32,12 +32,12 @@ await sleep(4200)
 await shot('1-inicio')
 
 // Mover a Zigzagoon y abrir el menú
-await click(3, 3)
+await click(3, 4)
 await sleep(500)
-await page.mouse.move(...(await tile(4, 5)))
+await page.mouse.move(...(await tile(5, 6)))
 await sleep(300)
 await shot('2-mover')
-await click(4, 5)
+await click(5, 6)
 await sleep(1000)
 await shot('3-menu')
 await button('Esperar')
@@ -60,17 +60,17 @@ await page.evaluate(() => {
   const g = window.game()
   const foe = g.units.find((u) => u.team === 1 && u.kind === 'poochyena')
   foe.x = 6
-  foe.y = 4
+  foe.y = 5
   g.units.find((u) => u.team === 0 && u.kind === 'poochyena').kind = 'treecko'
 })
-await click(5, 2)
-await click(5, 4)
+await click(4, 4)
+await click(5, 5)
 await sleep(1000)
 await button('Atacar')
-await page.mouse.move(...(await tile(6, 4)))
+await page.mouse.move(...(await tile(6, 5)))
 await sleep(200)
 await shot('6-objetivo')
-await click(6, 4)
+await click(6, 5)
 await sleep(2300)
 await shot('7-ataque')
 await sleep(6500)

@@ -10,7 +10,7 @@ import {
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
   footprint, stoppable, targetsFrom, terrainAt, unitAt, usePower,
 } from './game'
-import { Place, initCutscenes, loadBattle, playBattle, playCapture } from './cutscenes'
+import { Place, initCutscenes, playBattle, playCapture } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
 import { muted, sfx, toggleMute } from './sfx'
 import { fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, versus, victory } from './ui'
@@ -57,14 +57,11 @@ const restart = (el: Element, cls: string) => {
 
 let tiles: HTMLImageElement
 let species: string[] = [] // orden de las hojas de Esmeralda (iconos, frente y espalda)
-let pieces: HTMLImageElement // edificios y árbol recortados de los mapas reales
-let pieceAt: Record<string, { x: number; w: number; h: number }> = {}
-let flowers: HTMLImageElement
-let flowerSpots: Pos[] = [] // en píxeles
+let atlas: HTMLImageElement // edificios, árbol, rocas y tiles de suelo
+let at: Record<string, { x: number; w: number; h: number }> = {}
+let water: HTMLImageElement
 let forestCells: Pos[] = []
-let stoneSprite: HTMLCanvasElement
 let terrainLayer: HTMLCanvasElement
-let waterCells: Pos[] = []
 let mapFx: Scene // efectos con sprites por encima del mapa
 
 function makeCanvas(w: number, h: number) {
@@ -76,101 +73,89 @@ function makeCanvas(w: number, h: number) {
   return [c, cx] as const
 }
 
-// Metatiles de tiles_general.png, con los mismos juegos de piezas que usan los mapas reales.
-// Los juegos de 9 van: esquinas y bordes alrededor del centro.
-const GRASS = 1, SHORE = 2, TALL_GRASS = 13, STONE = 189, POND_CENTER = 161
-const AUTO9 = {
-  water: [176, 177, 178, 184, 161, 186, 184, 161, 186], // estanque con borde de roca (abajo no hay pieza: va en la orilla)
-  path: [280, 281, 282, 288, 289, 290, 296, 297, 298], // camino de tierra
-  rock: [104, 105, 106, 112, 113, 114, 120, 121, 122],
-  meadow: [464, 465, 466, 472, 473, 474, 480, 481, 482], // césped corto, solo decorativo
-}
-const AUTO_GROUP: Record<string, [keyof typeof AUTO9, string]> = {
-  '~': ['water', '~s'], s: ['water', '~s'], '=': ['path', '=B'], M: ['rock', 'M'],
-}
-const POND_INNER = { left: 192, right: 194 } // esquinas hacia dentro del estanque
-
-const tileSrc = (id: number) => [(id % 32) * 16, Math.floor(id / 32) * 16, 16, 16] as const
+// El mapa usa un tileset de la comunidad con estilo de 4ª generación (ver tools/extract_map.py): `atlas` lleva
+// edificios, pino, rocas y los tiles de suelo; `water` es un autotile animado de 32 fotogramas.
 const hash = (x: number, y: number) => (((x * 73856093) ^ (y * 19349663)) >>> 0) / 4294967296
+const WATER_FRAMES = 32, WATER_W = 48
 
-/** Piedra del vado: el metatile de la roca sin el agua de fondo. */
-function makeStone() {
-  const [c, cx] = makeCanvas(32, 16)
-  cx.drawImage(tiles, ...tileSrc(STONE), 0, 0, 16, 16)
-  cx.drawImage(tiles, ...tileSrc(POND_CENTER), 16, 0, 16, 16)
-  const img = cx.getImageData(0, 0, 32, 16)
-  const d = img.data
-  const water = new Set<number>()
-  const rgb = (i: number) => (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
-  for (let i = 0; i < d.length; i += 4) if ((i / 4) % 32 >= 16) water.add(rgb(i))
-  for (let i = 0; i < d.length; i += 4) if (water.has(rgb(i))) d[i + 3] = 0
-  cx.putImageData(img, 0, 0)
-  return c
-}
+interface Flower { x: number; y: number; color: number }
+interface WaterQuarter { dx: number; dy: number; sx: number; sy: number }
+let flowerSpots: Flower[] = []
+let waterQuarters: WaterQuarter[] = []
+let overlayLayer: HTMLCanvasElement // árboles y rocas: van por encima del agua animada
 
 /**
- * El mapa se pinta una vez: cada casilla son 2x2 metatiles con bordes según las vecinas. Las praderas se
- * decoran como en las rutas: manchas de césped corto y grupos de flores (estas se animan aparte).
+ * El suelo se pinta una vez: cada casilla son 2x2 tiles de 16 px. Los caminos y el agua eligen sus piezas
+ * según las casillas vecinas; el agua se guarda como lista de cuartos de tile para animarla en cada fotograma.
  */
 function makeTerrainLayer(g: Game) {
   const [c, cx] = makeCanvas(g.w * T, g.h * T)
+  const [over, ox] = makeCanvas(g.w * T, g.h * T)
   const cell = (sx: number, sy: number) => g.tiles[sy >> 1]?.[sx >> 1]
-  const put = (id: number, sx: number, sy: number) => cx.drawImage(tiles, ...tileSrc(id), sx * 16, sy * 16, 16, 16)
-  const auto = (set: number[], same: (x: number, y: number) => boolean, sx: number, sy: number) => {
-    const row = !same(sx, sy - 1) ? 0 : !same(sx, sy + 1) ? 2 : 1
-    const col = !same(sx - 1, sy) ? 0 : !same(sx + 1, sy) ? 2 : 1
-    return set[row * 3 + col]
-  }
-  // Manchas de césped corto: ruido suave sobre praderas, lejos de todo lo demás
+  const put = (name: string, tx: number, ty: number, sx: number, sy: number) =>
+    cx.drawImage(atlas, at[name].x + tx * 16, ty * 16, 16, 16, sx * 16, sy * 16, 16, 16)
+  const isWater = (x: number, y: number) => '~s'.includes(cell(x, y) ?? '~')
+  const isPath = (x: number, y: number) => '=B'.includes(cell(x, y) ?? '=')
   const open = (sx: number, sy: number) => {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (cell(sx + dx, sy + dy) !== '.') return false
     return true
   }
-  const blob = (sx: number, sy: number) => {
-    const n = Math.sin(sx * 0.55 + 1.3) + Math.sin(sy * 0.7 + 0.4) + Math.sin((sx + sy) * 0.33)
-    return n > 0.7 && open(sx, sy)
-  }
-  const meadow = (sx: number, sy: number) => blob(sx, sy) && ((blob(sx - 1, sy) || blob(sx + 1, sy)) && (blob(sx, sy - 1) || blob(sx, sy + 1)))
-
-  waterCells = []
   flowerSpots = []
+  waterQuarters = []
   forestCells = []
   for (let sy = 0; sy < g.h * 2; sy++) {
     for (let sx = 0; sx < g.w * 2; sx++) {
       const ch = cell(sx, sy)
-      const isWater = (x: number, y: number) => '~s'.includes(cell(x, y) ?? '~')
-      put(!isWater(sx, sy) && cell(sx, sy - 1) !== undefined && isWater(sx, sy - 1) ? SHORE : GRASS, sx, sy)
+      put('grass', sx % 4, sy % 4, sx, sy)
       if (ch === '.') {
-        if (meadow(sx, sy)) put(auto(AUTO9.meadow, meadow, sx, sy), sx, sy)
-        // Flores en grupitos: una semilla por zona de 3x3 y algunas alrededor
-        else if (open(sx, sy) && hash(Math.floor(sx / 3), Math.floor(sy / 3)) < 0.16 && hash(sx, sy) < 0.55) flowerSpots.push({ x: sx * 16, y: sy * 16 })
+        // Flores en grupitos de un color, y alguna mata suelta para que el césped no quede liso
+        const zone = hash(Math.floor(sx / 3), Math.floor(sy / 3))
+        if (open(sx, sy) && zone < 0.2 && hash(sx, sy) < 0.6) flowerSpots.push({ x: sx * 16, y: sy * 16, color: Math.floor(zone * 15) % 3 })
+        else if (hash(sx + 7, sy + 3) < 0.12) put('tufts', hash(sy, sx) < 0.5 ? 0 : 1, 0, sx, sy)
+      } else if (ch === '"') put('tall', 0, 0, sx, sy)
+      else if (isPath(sx, sy)) {
+        const up = isPath(sx, sy - 1), down = isPath(sx, sy + 1), left = isPath(sx - 1, sy), right = isPath(sx + 1, sy)
+        if (up && down && left && right) { // esquinas hacia dentro
+          if (!isPath(sx - 1, sy - 1)) put('pathInner', 0, 0, sx, sy)
+          else if (!isPath(sx + 1, sy - 1)) put('pathInner', 1, 0, sx, sy)
+          else if (!isPath(sx - 1, sy + 1)) put('pathInner', 0, 1, sx, sy)
+          else if (!isPath(sx + 1, sy + 1)) put('pathInner', 1, 1, sx, sy)
+          else put('path', 1, 1, sx, sy)
+        } else put('path', !left ? 0 : !right ? 2 : 1, !up ? 0 : !down ? 2 : 1, sx, sy)
+      } else if (isWater(sx, sy)) {
+        // Autotile de RPG Maker: cada tile son cuatro cuartos de 8 px que se eligen por separado
+        for (const qy of [0, 1]) {
+          for (const qx of [0, 1]) {
+            const hx = qx ? 1 : -1, vy = qy ? 1 : -1
+            const h = isWater(sx + hx, sy), v = isWater(sx, sy + vy), d = isWater(sx + hx, sy + vy)
+            let tx = 1, ty = 1, inner = false
+            if (h && v && !d) inner = true
+            else if (!h && !v) (tx = qx * 2), (ty = qy * 2)
+            else if (!h) tx = qx * 2
+            else if (!v) ty = qy * 2
+            waterQuarters.push({
+              dx: sx * 16 + qx * 8, dy: sy * 16 + qy * 8,
+              sx: (inner ? 32 : tx * 16) + qx * 8, sy: (inner ? 0 : 16 + ty * 16) + qy * 8,
+            })
+          }
+        }
       }
-      if (ch === '"') put(TALL_GRASS, sx, sy)
-      const group = AUTO_GROUP[ch]
-      if (!group) continue
-      const same = (x: number, y: number) => {
-        const other = cell(x, y)
-        return other === undefined || group[1].includes(other)
-      }
-      let id = auto(AUTO9[group[0]], same, sx, sy)
-      if (group[0] === 'water' && same(sx, sy - 1)) { // esquinas hacia dentro
-        if (same(sx + 1, sy) && !same(sx + 1, sy - 1)) id = POND_INNER.right
-        else if (same(sx - 1, sy) && !same(sx - 1, sy - 1)) id = POND_INNER.left
-      }
-      put(id, sx, sy)
-      if (ch === 's') cx.drawImage(stoneSprite, 0, 0, 16, 16, sx * 16, sy * 16, 16, 16)
     }
   }
-  // Árboles de verdad (32x48): la copa tapa un poco la casilla de arriba, como en el juego
-  const tree = pieceAt.tree
+  // Pinos, rocas y piedras del vado: la copa del pino tapa un poco la casilla de arriba
+  const piece = (name: string, x: number, y: number) => {
+    const p = at[name]
+    ox.drawImage(atlas, p.x, 0, p.w, p.h, x * T + Math.floor((T - p.w) / 2), y * T + T - p.h, p.w, p.h)
+  }
   for (let y = 0; y < g.h; y++) {
     for (let x = 0; x < g.w; x++) {
-      if (g.tiles[y][x] === '~') waterCells.push({ x, y })
-      if (g.tiles[y][x] !== 'T') continue
-      forestCells.push({ x, y })
-      cx.drawImage(pieces, tree.x, 0, tree.w, tree.h, x * T, y * T + T - tree.h, tree.w, tree.h)
+      const ch = g.tiles[y][x]
+      if (ch === 'T') { forestCells.push({ x, y }); piece('tree', x, y) }
+      if (ch === 'M') piece('rock', x, y)
+      if (ch === 's') piece('stone', x, y)
     }
   }
+  overlayLayer = over
   return c
 }
 
@@ -311,7 +296,7 @@ function drawUnit(u: Unit, time: number) {
   const cx = Math.round((x + 16) / T - 0.5), cy = Math.round((y + 16) / T - 0.5)
   const under = g.tiles[cy]?.[cx]
   if (under === '"' && KINDS[u.kind].move !== 'fly') { // la hierba alta le tapa las patas
-    for (const ox of [0, 16]) ctx.drawImage(tiles, (TALL_GRASS % 32) * 16, Math.floor(TALL_GRASS / 32) * 16 + 7, 16, 9, cx * T + ox, cy * T + 23, 16, 9)
+    for (const ox of [0, 16]) ctx.drawImage(atlas, at.tall.x, 7, 16, 9, cx * T + ox, cy * T + 23, 16, 9)
   }
   if ((under === '~' || under === 's') && KINDS[u.kind].move !== 'fly' && Math.random() < 0.03) {
     mapFx.add({ img: 'ripple', fps: 7, x: x + 16, y: y + 24, max: 700, scale: 1, behind: true })
@@ -325,59 +310,105 @@ function drawUnit(u: Unit, time: number) {
   }
 }
 
+// Lienzos de trabajo de la flecha de ruta (del tamaño del mapa)
+let arrowLayers: (readonly [HTMLCanvasElement, CanvasRenderingContext2D])[] = []
+
 /**
- * Flecha de ruta en pixel art: tres capas de rectángulos (contorno, color del equipo y brillo), así las
- * esquinas encajan solas y no hay ni un píxel suavizado. El brillo avanza a rayas hacia la punta.
+ * Flecha de ruta. Se pinta la silueta (cuerpo fino con esquinas redondeadas y punta en triángulo) y de ella
+ * salen, por composición, el contorno, el relieve claro arriba, la sombra abajo y unos galones que avanzan.
  */
 function drawPathArrow(path: Pos[], time: number) {
   if (path.length < 2) return
+  if (!arrowLayers.length || arrowLayers[0][0].width !== canvas.width) {
+    arrowLayers = [0, 1, 2].map(() => makeCanvas(canvas.width, canvas.height))
+  }
+  const [[shape, sx], [work, wx], [body, bx]] = arrowLayers
   const pts = path.map((p) => center(p))
-  const last = pts[pts.length - 1], prev = pts[pts.length - 2]
-  const dx = Math.sign(last[0] - prev[0]), dy = Math.sign(last[1] - prev[1])
-  // El cuerpo acaba un poco antes para dejar sitio a la punta
-  pts[pts.length - 1] = [last[0] - dx * 6, last[1] - dy * 6]
-  const body = (half: number) => {
-    for (let i = 1; i < pts.length; i++) {
-      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]
-      ctx.fillRect(Math.min(x0, x1) - half, Math.min(y0, y1) - half, Math.abs(x1 - x0) + half * 2, Math.abs(y1 - y0) + half * 2)
-    }
-  }
-  // Punta escalonada: filas (o columnas) cada vez más estrechas
-  const head = (grow: number) => {
-    for (let i = -grow; i < 11 + grow; i++) {
-      const half = Math.max(0, 11 - i) + grow
-      const along = -5 + i
-      if (dx) ctx.fillRect(last[0] + dx * along - (dx < 0 ? 1 : 0), last[1] - half, 1, half * 2)
-      else ctx.fillRect(last[0] - half, last[1] + dy * along - (dy < 0 ? 1 : 0), half * 2, 1)
-    }
-  }
-  ctx.fillStyle = '#10141c'
-  body(7)
-  head(2)
-  ctx.fillStyle = TEAM_HEX[g.turn]
-  body(5)
-  head(0)
-  ctx.fillStyle = TEAM_DARK[g.turn] // sombra abajo y a la derecha, como un relieve
-  for (let i = 1; i < pts.length; i++) {
+  const n = pts.length
+  const tip = pts[n - 1], before = pts[n - 2]
+  const dx = Math.sign(tip[0] - before[0]), dy = Math.sign(tip[1] - before[1])
+  const bob = Math.floor(time / 260) % 2 // la punta respira un píxel
+  const half = 4
+  pts[n - 1] = [tip[0] - dx * 5, tip[1] - dy * 5] // el cuerpo acaba donde empieza la punta
+
+  // 1. Silueta
+  sx.clearRect(0, 0, shape.width, shape.height)
+  sx.fillStyle = '#fff'
+  for (let i = 1; i < n; i++) {
     const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]
-    if (y0 === y1) ctx.fillRect(Math.min(x0, x1) - 5, y0 + 3, Math.abs(x1 - x0) + 10, 2)
-    else ctx.fillRect(x0 + 3, Math.min(y0, y1) - 5, 2, Math.abs(y1 - y0) + 10)
+    sx.fillRect(Math.min(x0, x1) - half, Math.min(y0, y1) - half, Math.abs(x1 - x0) + half * 2, Math.abs(y1 - y0) + half * 2)
   }
-  // Rayas de brillo que corren hacia la punta
-  ctx.fillStyle = TEAM_LIGHT[g.turn]
+  const notch = (x: number, y: number, ox: number, oy: number) => { // redondea una esquina quitando 3 píxeles
+    const cx = x + ox * half - (ox > 0 ? 1 : 0), cy = y + oy * half - (oy > 0 ? 1 : 0)
+    sx.clearRect(cx, cy, 1, 1)
+    sx.clearRect(cx - ox, cy, 1, 1)
+    sx.clearRect(cx, cy - oy, 1, 1)
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const [x, y] = pts[i]
+    const ox = Math.sign(pts[i + 1][0] - x), oy = Math.sign(pts[i + 1][1] - y)
+    if (i === 0) { // arranque redondeado
+      if (ox) (notch(x, y, -ox, -1), notch(x, y, -ox, 1))
+      else (notch(x, y, -1, -oy), notch(x, y, 1, -oy))
+    } else {
+      const ix = Math.sign(x - pts[i - 1][0]), iy = Math.sign(y - pts[i - 1][1])
+      if (ix !== ox || iy !== oy) notch(x, y, ix - ox, iy - oy) // esquina exterior del giro
+    }
+  }
+  for (let i = 0; i < 11; i++) { // punta: triángulo de filas cada vez más cortas
+    const w = Math.max(1, 10 - i), along = i - 5 + bob
+    if (dx) sx.fillRect(tip[0] + (dx > 0 ? along : -along - 1), tip[1] - w, 1, w * 2)
+    else sx.fillRect(tip[0] - w, tip[1] + (dy > 0 ? along : -along - 1), w * 2, 1)
+  }
+
+  const tinted = (color: string, build: () => void) => {
+    wx.globalCompositeOperation = 'source-over'
+    wx.clearRect(0, 0, work.width, work.height)
+    build()
+    wx.globalCompositeOperation = 'source-in'
+    wx.fillStyle = color
+    wx.fillRect(0, 0, work.width, work.height)
+    wx.globalCompositeOperation = 'source-over'
+  }
+  // 2. Sombra en el suelo y contorno oscuro (la silueta desplazada en las 8 direcciones)
+  tinted('#10141c', () => { for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) wx.drawImage(shape, ox, oy) })
+  ctx.globalAlpha = 0.3
+  ctx.drawImage(work, 1, 3)
+  ctx.globalAlpha = 1
+  ctx.drawImage(work, 0, 0)
+  // 3. Cuerpo del color del equipo con galones claros que avanzan hacia la punta
+  bx.globalCompositeOperation = 'source-over'
+  bx.clearRect(0, 0, body.width, body.height)
+  bx.drawImage(shape, 0, 0)
+  bx.globalCompositeOperation = 'source-in'
+  bx.fillStyle = TEAM_HEX[g.turn]
+  bx.fillRect(0, 0, body.width, body.height)
+  bx.globalCompositeOperation = 'source-atop'
+  bx.fillStyle = TEAM_LIGHT[g.turn]
   let walked = 0
-  const offset = Math.floor(time / 45)
-  for (let i = 1; i < pts.length; i++) {
+  const offset = Math.floor(time / 55)
+  for (let i = 1; i < n; i++) {
     const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]
-    const len = Math.abs(x1 - x0) + Math.abs(y1 - y0), sx = Math.sign(x1 - x0), sy = Math.sign(y1 - y0)
-    for (let d = 0; d < len; d += 2) {
-      if ((walked + d - offset + 4000) % 12 < 6) ctx.fillRect(x0 + sx * d - 1, y0 + sy * d - 1, 2, 2)
+    const len = Math.abs(x1 - x0) + Math.abs(y1 - y0), ux = Math.sign(x1 - x0), uy = Math.sign(y1 - y0)
+    for (let d = 0; d < len; d++) {
+      if ((walked + d - offset + 6000) % 14 !== 0) continue
+      for (let k = 0; k < 4; k++) { // galón «>» de 2 px de grueso
+        const px = x0 + ux * (d - k), py = y0 + uy * (d - k)
+        bx.fillRect(px - uy * k - (ux < 0 ? 1 : 0) - (uy ? 1 : 0), py - ux * k - (uy < 0 ? 1 : 0) - (ux ? 1 : 0), ux ? 2 : 1, uy ? 2 : 1)
+        bx.fillRect(px + uy * k - (ux < 0 ? 1 : 0), py + ux * k - (uy < 0 ? 1 : 0), ux ? 2 : 1, uy ? 2 : 1)
+      }
     }
     walked += len
   }
-  ctx.fillStyle = '#fff'
-  if (dx) ctx.fillRect(last[0] + dx * 1 - 1, last[1] - 4, 2, 3)
-  else ctx.fillRect(last[0] - 4, last[1] + dy * 1 - 1, 3, 2)
+  bx.globalCompositeOperation = 'source-over'
+  ctx.drawImage(body, 0, 0)
+  // 4. Relieve: filo claro arriba e izquierda, sombra abajo y derecha
+  tinted('#ffffff', () => { wx.drawImage(shape, 0, 0); wx.globalCompositeOperation = 'destination-out'; wx.drawImage(shape, 1, 1) })
+  ctx.globalAlpha = 0.75
+  ctx.drawImage(work, 0, 0)
+  tinted(TEAM_DARK[g.turn], () => { wx.drawImage(shape, 0, 0); wx.globalCompositeOperation = 'destination-out'; wx.drawImage(shape, -2, -2) })
+  ctx.globalAlpha = 1
+  ctx.drawImage(work, 0, 0)
 }
 
 /** Selector: cuatro esquinas gruesas con relieve que laten a saltos, y un velo claro sobre la casilla. */
@@ -462,7 +493,7 @@ function drawTarget(t: Unit, time: number) {
 
 /** Rectángulo en píxeles del dibujo de un edificio (más ancho y alto que sus casillas). */
 function buildingRect(b: Building) {
-  const info = BUILDING_INFO[b.type], piece = pieceAt[b.type]
+  const info = BUILDING_INFO[b.type], piece = at[b.type]
   return { x: (b.x - info.door) * T + info.dx, y: (b.y + 1) * T - piece.h, w: piece.w, h: piece.h, piece }
 }
 
@@ -473,7 +504,7 @@ function drawBuilding(b: Building, time: number) {
   const grow = t < 1 ? Math.sin(t * Math.PI) * 6 : 0
   ctx.fillStyle = 'rgba(16, 40, 32, 0.25)' // sombra en el suelo
   ctx.fillRect(r.x + 4, r.y + r.h - 3, r.w - 4, 5)
-  ctx.drawImage(pieces, r.piece.x, 0, r.w, r.h, r.x - grow / 2, r.y - grow, r.w + grow, r.h + grow)
+  ctx.drawImage(atlas, r.piece.x, 0, r.w, r.h, r.x - grow / 2, r.y - grow, r.w + grow, r.h + grow)
 
   // Felpudo de la puerta del color del dueño: ahí es donde se captura y se recluta
   const dx = b.x * T, dy = b.y * T
@@ -521,17 +552,13 @@ function draw(time: number) {
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(terrainLayer, 0, 0)
 
-  // Destellos en el agua
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)'
-  for (const w of waterCells) {
-    const phase = Math.floor(time / 260 + w.x * 3 + w.y * 5) % 8
-    if (phase < 3) ctx.fillRect(w.x * T + 6 + ((w.x * 7 + w.y * 13) % 14) + phase * 2, w.y * T + 8 + ((w.x * 11 + w.y * 3) % 14), 4 - phase, 1)
-  }
-
-  // Flores que se mecen, como en las rutas
-  const sway = [0, 1, 0, 2][Math.floor(time / 280) % 4]
-  for (const f of flowerSpots) ctx.drawImage(flowers, sway * 16, 0, 16, 16, f.x, f.y, 16, 16)
-
+  // Agua animada, y encima lo que sobresale (pinos, rocas)
+  const wf = (Math.floor(time / 110) % WATER_FRAMES) * WATER_W
+  for (const q of waterQuarters) ctx.drawImage(water, wf + q.sx, q.sy, 8, 8, q.dx, q.dy, 8, 8)
+  // Flores que se mecen
+  const sway = Math.floor(time / 220) % 4
+  for (const f of flowerSpots) ctx.drawImage(atlas, at.flowers.x + sway * 16, f.color * 16, 16, 16, f.x, f.y, 16, 16)
+  ctx.drawImage(overlayLayer, 0, 0)
 
   // Casillas alcanzables: se abren como una onda desde la unidad y las recorre un brillo en diagonal
   if ((mode === 'move' || mode === 'inspect') && sel) {
@@ -1323,22 +1350,21 @@ muteBtn.onclick = () => { toggleMute(); muteBtn.innerHTML = `Sonido: ${muted ? '
 $('#new').onclick = () => { if (mode !== 'busy') newGame() }
 
 async function boot() {
-  const [tileImg, pieceImg, flowerImg, pieceMeta, names] = await Promise.all([
-    loadImage('/assets/tiles_general.png'), loadImage('/assets/pieces.png'), loadImage('/assets/flowers.png'),
-    fetch('/assets/pieces.json').then((r) => r.json()),
-    fetch('/assets/species.json').then((r) => r.json()), loadUnits(), loadFx().then(loadBattle),
+  const [tileImg, atlasImg, waterImg, atlasMeta, names] = await Promise.all([
+    loadImage('/assets/tiles_general.png'), loadImage('/assets/map/atlas.png'), loadImage('/assets/map/water.png'),
+    fetch('/assets/map/atlas.json').then((r) => r.json()),
+    fetch('/assets/species.json').then((r) => r.json()), loadUnits(), loadFx(),
   ])
   tiles = tileImg
   species = names
-  stoneSprite = makeStone()
-  pieces = pieceImg
-  pieceAt = pieceMeta
-  flowers = flowerImg
+  atlas = atlasImg
+  at = atlasMeta
+  water = waterImg
   canvas.width = MAP[0].length * T
   canvas.height = MAP.length * T
   mapFx = new Scene(mapFxCanvas, canvas.width, canvas.height)
   mapFx.start()
-  initCutscenes(sceneEl, tiles, pieces, pieceAt)
+  initCutscenes(sceneEl, tiles, atlas, at)
   resize()
   aiBtn.textContent = 'Azul: IA'
   powerBtn.textContent = '★ Poder del comandante'
