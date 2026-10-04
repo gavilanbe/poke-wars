@@ -15,12 +15,16 @@ export function toggleMute() {
 let master: GainNode | null = null
 const buffers = new Map<string, AudioBuffer>()
 let available = new Set<string>()
-const VOLUME: Record<string, number> = { cursor: 0.25, step: 0.35, talk: 0.3, coin: 0.4, select: 0.5, confirm: 0.5, cancel: 0.5 }
+let loops: Record<string, number> = {} // segundo al que vuelve cada tema al repetirse
+// Los archivos ya vienen nivelados (interfaz bajita, golpes fuertes); esto solo afina
+const VOLUME: Record<string, number> = { select: 0.5, confirm: 0.5, cancel: 0.5, step: 0.45, talk: 0.5, coin: 0.5, land: 0.6, lunge: 0.6, cast: 0.6 }
 
 /** Carga el índice y va descodificando los archivos en segundo plano. */
 export async function loadAudio() {
   try {
-    available = new Set(await fetch('/audio/manifest.json').then((r) => (r.ok ? r.json() : [])))
+    const manifest = await fetch('/audio/manifest.json').then((r) => (r.ok ? r.json() : { files: [] }))
+    available = new Set(manifest.files)
+    loops = manifest.loops ?? {}
   } catch {
     return
   }
@@ -71,26 +75,43 @@ function fade(el: HTMLAudioElement, to: number, ms = 700) {
   step()
 }
 
+/**
+ * Arranca un tema en bucle. Los temas tienen una entrada que solo suena la primera vez: poco antes del final se
+ * funde con una segunda copia que empieza justo después de la entrada, así el bucle no se nota.
+ */
+function startLoop(name: string, volume: number, from = 0): HTMLAudioElement {
+  const el = new Audio(`/audio/${name}.mp3`)
+  const loopStart = loops[name]
+  el.loop = loopStart === undefined
+  el.muted = muted
+  el.volume = 0
+  if (from) el.currentTime = from
+  if (loopStart !== undefined) {
+    el.ontimeupdate = () => {
+      if (!el.duration || el.currentTime < el.duration - 1.8 || tracks.get(name) !== el) return
+      el.ontimeupdate = null
+      const next = startLoop(name, volume, loopStart)
+      tracks.set(name, next)
+      fade(el, 0, 1600)
+    }
+  }
+  tracks.set(name, el)
+  el.play().then(() => fade(el, volume, from ? 1600 : 700)).catch(() => {}) // sin gesto del usuario aún: se reintenta al primer clic
+  return el
+}
+
 function loopTrack(name: string, volume: number, current: string): string {
   if (name === current) return current
   const old = tracks.get(current)
-  if (old) fade(old, 0)
-  if (!name || !available.has(name)) return ''
-  let el = tracks.get(name)
-  if (!el) {
-    el = new Audio(`/audio/${name}.mp3`)
-    el.loop = true
-    tracks.set(name, el)
-  }
-  el.volume = 0
-  el.muted = muted
-  el.play().then(() => fade(el!, volume)).catch(() => {}) // sin gesto del usuario aún: se reintenta al primer clic
+  if (old) { tracks.delete(current); fade(old, 0) }
+  if (!name || !available.has(name)) return name
+  startLoop(name, volume)
   return name
 }
 
 export const music = {
   /** Cambia de tema con fundido; '' para silencio. */
-  play(name: string) { currentMusic = loopTrack(name ? 'music_' + name : '', MUSIC_VOLUME, currentMusic) || (name ? 'music_' + name : '') },
+  play(name: string) { currentMusic = loopTrack(name ? 'music_' + name : '', MUSIC_VOLUME, currentMusic) },
   ambience(name: string) { currentAmbience = loopTrack(name ? 'amb_' + name : '', 0.3, currentAmbience) },
   /** Baja la música un momento (para un cartel o un efecto largo). */
   duck(ms: number) {
@@ -105,6 +126,7 @@ export const music = {
 addEventListener('pointerdown', () => {
   const el = tracks.get(currentMusic)
   if (el && el.paused && !muted) { el.volume = 0; el.play().then(() => fade(el, MUSIC_VOLUME)).catch(() => {}) }
+  else if (!el && currentMusic && available.has(currentMusic)) startLoop(currentMusic, MUSIC_VOLUME)
 })
 
 function ctx(): AudioContext | null {
@@ -153,8 +175,11 @@ function noise(dur: number, vol = 0.2, delay = 0, cutoff = 1800) {
 const notes = (freqs: number[], step: number, dur: number, opts: ToneOpts = {}) =>
   freqs.forEach((f, i) => tone(f, dur, { ...opts, delay: (opts.delay ?? 0) + i * step }))
 
+let lastTick = 0
+
 export const sfx = {
-  cursor: () => void (sample('cursor') || tone(1250, 0.025, { vol: 0.015 })),
+  // Tic de menú: muy suave y sintetizado, y nunca más de uno cada 70 ms
+  cursor: () => { const now = performance.now(); if (now - lastTick > 70) { lastTick = now; tone(1100, 0.02, { vol: 0.012, type: 'triangle' }) } },
   select: () => void (sample('select') || notes([520, 780], 0.05, 0.07)),
   step: () => void (sample('step') || tone(190, 0.04, { type: 'triangle', vol: 0.12, to: 120 })),
   confirm: () => void (sample('confirm') || notes([660, 990], 0.045, 0.06)),
@@ -165,12 +190,13 @@ export const sfx = {
   bigHit: () => void (sample('bigHit') || (()=>{ noise(0.3, 0.4, 0, 3200); tone(240, 0.3, { to: 40, type: 'sawtooth', vol: 0.16 }); tone(1400, 0.08, { vol: 0.05 }) })()),
   weakHit: () => void (sample('weakHit') || (()=>{ noise(0.08, 0.15, 0, 900); tone(140, 0.1, { to: 90, type: 'triangle', vol: 0.1 }) })()),
   ko: () => void (sample('ko') || (()=>{ tone(520, 0.45, { to: 50, type: 'sawtooth', vol: 0.1 }); noise(0.35, 0.18, 0.08, 1200) })()),
-  capture: () => void (sample('capture') || (()=>{ tone(260, 0.07, { type: 'triangle', vol: 0.14 }); noise(0.06, 0.12, 0, 700) })()),
-  captured: () => void (sample('captured') || notes([523, 659, 784, 1047, 1319], 0.08, 0.14)),
+  // Pisotón de la captura: la muestra a todo volumen más un golpe grave sintetizado debajo, para que se note sobre la música
+  capture: () => { tone(120, 0.14, { to: 50, type: 'triangle', vol: 0.22 }); if (!sample('capture', { vol: 1 })) noise(0.08, 0.2, 0, 700) },
+  captured: () => void (sample('jingle_capture', { vol: 0.8 }) || sample('captured') || notes([523, 659, 784, 1047, 1319], 0.08, 0.14)),
   evolve: () => void (sample('evolve') || notes([392, 494, 587, 784, 988, 1175, 1568, 1976], 0.09, 0.16, { type: 'triangle', vol: 0.12 })),
-  turn: () => void (sample('turn') || notes([392, 587, 784], 0.09, 0.16, { vol: 0.06 })),
+  turn: () => void (sample('jingle_turn', { vol: 0.6 }) || sample('turn') || notes([392, 587, 784], 0.09, 0.16, { vol: 0.06 })),
   coin: (delay = 0) => void (sample('coin', { delay }) || notes([988, 1319], 0.05, 0.1, { vol: 0.04, delay })),
-  heal: () => void (sample('heal') || notes([660, 880, 1100], 0.06, 0.1, { type: 'triangle', vol: 0.09 })),
+  heal: () => void (sample('jingle_heal', { vol: 0.6 }) || sample('heal') || notes([660, 880, 1100], 0.06, 0.1, { type: 'triangle', vol: 0.09 })),
   recruit: () => void (sample('recruit') || tone(180, 0.3, { to: 900, type: 'triangle', vol: 0.1 })),
   land: () => void (sample('land') || (()=>{ noise(0.1, 0.25, 0, 600); tone(110, 0.1, { to: 60, type: 'triangle', vol: 0.15 }) })()),
   battle: () => void (sample('battle') || (()=>{ noise(0.25, 0.12, 0, 5000); notes([196, 262, 330, 392], 0.05, 0.08, { vol: 0.05 }) })()),
@@ -187,6 +213,10 @@ export const sfx = {
   ready: () => void (sample('ready') || notes([784, 988, 1175, 1568], 0.06, 0.12, { type: 'triangle', vol: 0.1 })),
   ambush: () => void (sample('ambush') || tone(140, 0.12, { type: 'sawtooth', vol: 0.05 })),
   crit: () => void (sample('crit') || tone(1400, 0.1, { vol: 0.06 })),
+  /** Fanfarria al terminar de evolucionar. */
+  evolved: () => void (sample('jingle_evolve', { vol: 0.8 }) || sample('captured')),
+  /** Grito original del Pokémon; `rate` más bajo lo hace más grave (para cuando cae). */
+  cry: (species: string, rate = 1, vol = 0.55) => void sample('cry_' + species, { rate, vol }),
   /** Sonido del ataque según el tipo del Pokémon (si no hay muestra, el disparo genérico). */
   move: (type: string) => void (sample('mv_' + type) || sample('shoot')),
   win: () => void (sample('win') || notes([523, 523, 523, 659, 784, 659, 784, 1047], 0.13, 0.22, { vol: 0.08 })),

@@ -2,7 +2,7 @@
 // como las escenas de Advance Wars) con los sprites de Mundo Misterioso y los efectos de Esmeralda.
 import { ATTACK_NAME, KINDS, PType, TYPE_COLOR, TYPE_NAME, effectiveness } from './data'
 import { Actor, Scene, easeBack, easeIn, easeOut, rnd } from './scene'
-import { sfx } from './sfx'
+import { music, sfx } from './sfx'
 import { cover, uncover } from './ui'
 import { DIR, facePath, spriteHeight } from './units'
 
@@ -337,7 +337,8 @@ async function strike(a: Side, d: Side, dmg: number, crit = false) {
   const eff = effectiveness(type, KINDS[d.kind].type)
   const big = eff > 1
   say(`¡${KINDS[a.kind].name} usó ${ATTACK_NAME[type]}!`)
-  setTimeout(() => sfx.move(type), 220) // el sonido propio del ataque, sobre el gesto de lanzarlo
+  sfx.cry(KINDS[a.kind].species, 1, 0.6) // grita al atacar
+  setTimeout(() => sfx.move(type), 260) // y luego el sonido propio del ataque
   await MOVES[type](a, d)
 
   // Impacto: parada, destello, retroceso y números
@@ -382,6 +383,7 @@ async function strike(a: Side, d: Side, dmg: number, crit = false) {
   // K.O.: sale volando
   say(`¡${KINDS[d.kind].name} se ha debilitado!`)
   sfx.ko()
+  sfx.cry(KINDS[d.kind].species, 0.7, 0.7) // el grito, más grave, al caer
   scene.fx('explosion', dx, dy, { fps: 12, scale: 3 })
   scene.addShake(8)
   stamp('K.O.', dx, dy - 30, 'ko')
@@ -428,6 +430,8 @@ async function evolve(s: Side, kind: string) {
   }
   scene.play(act, 'Rotate')
   void scene.tween(500, (t) => { act.tint[1] = 1 - t; act.oy = -Math.sin(t * Math.PI) * 18 })
+  sfx.evolved()
+  sfx.cry(KINDS[kind].species, 1, 0.7)
   stamp('¡EVOLUCIÓN!', W / 2, 60, 'super')
   say(`¡Ha evolucionado a ${KINDS[kind].name}!`)
   await scene.wait(1300)
@@ -591,6 +595,7 @@ export async function playCapture(c: CaptureData) {
   }
   showCount(c.capBefore)
   say(`¡${KINDS[c.kind].name} intenta capturar el edificio!`)
+  sfx.cry(KINDS[c.kind].species, 1, 0.6)
 
   const act = scene.actor(KINDS[c.kind].species, left - 22, base + 12, DIR.right, 1)
   scene.play(act, 'Walk', true)
@@ -614,7 +619,8 @@ export async function playCapture(c: CaptureData) {
     showCount(Math.round(c.capBefore + ((c.capAfter - c.capBefore) * i) / stomps))
     scene.addShake(last ? 6 : 3)
     scene.hitStop(last ? 90 : 40)
-    ;(last ? sfx.bigHit : sfx.capture)()
+    sfx.capture() // el pisotón contra el tejado, siempre
+    if (last) sfx.bigHit()
     scene.add({ ring: last ? 40 : 22, size: 3, color: '#fff', x: bx, y: roof, max: 260 })
     for (const side of [-1, 1]) {
       scene.fx('gray_smoke', bx + side * (piece.w / 2 + 2), base - 6, { fps: 12, scale: 1, flipX: side < 0, vx: side * 0.5 })
@@ -626,6 +632,7 @@ export async function playCapture(c: CaptureData) {
 
   if (c.done) {
     scene.flashScreen('#fff', 0.9, 5)
+    music.play('') // se corta la tensión y entra la fanfarria
     sfx.captured()
     say('¡Edificio capturado!')
     void scene.tween(700, (t) => { glow = Math.sin(t * Math.PI) })
@@ -639,6 +646,7 @@ export async function playCapture(c: CaptureData) {
     }
     for (let i = 0; i < 10; i++) scene.add({ img: 'gold_stars', x: bx, y: roof, vx: Math.cos(i) * 2.2, vy: Math.sin(i) * 2.2 - 1, drag: 0.94, max: 700, scale: 1 })
     stamp('¡CAPTURADO!', W / 2, 162, `super t${c.team}`)
+    sfx.cry(KINDS[c.kind].species, 1.1, 0.7)
     scene.play(act, 'Rotate')
     await scene.tween(520, (t) => { act.oy = -Math.sin(t * Math.PI) * 22 })
     scene.play(act, 'Hop')

@@ -271,7 +271,7 @@ const unitShownAt = (x: number, y: number) => { const u = unitAt(g, x, y); retur
 /** Pone la música y el ambiente que tocan ahora: turno propio o rival, noche, lluvia. */
 function themeNow() {
   if (AUTO || !g || g.winner !== null) return
-  music.play(isAI[g.turn] ? 'enemy' : phaseOf(g) === 3 ? 'night' : 'map')
+  music.play('co_' + g.co[g.turn]) // cada comandante tiene su tema, como en Advance Wars
   music.ambience(g.weather === 'rain' ? 'rain' : phaseOf(g) === 3 ? 'night' : '')
 }
 
@@ -858,7 +858,7 @@ function label(p: Pos, text: string, cls = '', delay = 0) {
 
 function dropIn(u: Unit, delay = 0) {
   setFx(u, { drop: performance.now() + delay })
-  setTimeout(sfx.recruit, delay)
+  setTimeout(() => { sfx.recruit(); if (g.units.includes(u)) sfx.cry(spriteOf(u), 1, 0.4) }, delay)
   setTimeout(() => {
     if (!g.units.includes(u)) return
     const [x, y] = center(u)
@@ -1036,6 +1036,7 @@ async function powerSequence() {
     setPowerColor(g.co[team])
     music.play('power')
     sfx.power()
+    setTimeout(() => sfx.cry(g.co[team], 1, 0.8), 350)
     const cutin = powerCutin(team, g.co[team])
     await sleep(1000) // el nombre del poder cae a golpes
     fx.addShake(12)
@@ -1163,8 +1164,11 @@ function finish() {
   talkEl.hidden = true
   setTimeout(() => {
     music.ambience('')
-    music.play('victory')
-    sfx.win()
+    // Si gana la IA contra un humano, suena el tema de derrota
+    const lost = isAI[winner] && !isAI[1 - winner]
+    music.play(lost ? 'defeat' : 'victory')
+    if (!lost) sfx.win()
+    sfx.cry(g.co[winner], 1, 0.8)
     victory(winner, g.co[winner], g.day, newGame)
   }, 900)
 }
@@ -1218,6 +1222,8 @@ async function newGame() {
   // Presentación: los comandantes frente a frente mientras se monta el mapa por debajo
   sfx.battle()
   const intro = versus(cos)
+  setTimeout(() => sfx.cry(cos[0], 1, 0.7), 250)
+  setTimeout(() => sfx.cry(cos[1], 1, 0.7), 900)
   await sleep(600)
   sfx.bigHit()
   startGame(cos, 1500)
@@ -1233,7 +1239,7 @@ async function animateMove(u: Unit, path: Pos[]) {
   for (let i = 1; i < path.length; i++) {
     const start = performance.now()
     unitDir.set(u.id, dirFrom(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y))
-    if (!AUTO) sfx.step()
+    if (!AUTO && i % 2 === 1) sfx.step() // un paso sí y otro no, para que no machaque
     for (;;) {
       const t = Math.min(1, (performance.now() - start) / step)
       animPos.set(u.id, {
@@ -1316,11 +1322,13 @@ async function doCapture(u: Unit, b: Building) {
   const done = capture(g, u)
   if (AUTO) return done
   talkEl.hidden = true
+  music.play('capture')
   await playCapture({
     kind: u.kind, team: u.team, building: { type: b.type, owner },
     capBefore: before, capAfter: done ? 0 : b.cap, done, total: CAPTURE_POINTS,
   })
   captureFx(u, b, done)
+  themeNow()
   return done
 }
 
@@ -1335,7 +1343,7 @@ function select(u: Unit) {
   mode = u.team === g.turn && !u.moved && !isAI[g.turn] ? 'move' : 'inspect'
   setFx(u, { pop: selTime })
   unitDir.set(u.id, DIR.down)
-  sfx.select()
+  sfx.cry(spriteOf(u), 1, 0.35) // el grito hace de sonido de selección
 }
 
 function placeNear(el: HTMLElement, p: Pos) {
@@ -1595,7 +1603,6 @@ canvas.addEventListener('mousemove', (e) => {
   if (hover && hover.x === p.x && hover.y === p.y) return
   if (!hover) (cursor.x = p.x * T), (cursor.y = p.y * T)
   hover = p
-  if (mode === 'move' || mode === 'target') sfx.cursor()
   refreshInfo()
   showForecast()
 })
