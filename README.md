@@ -42,6 +42,19 @@ Pokémon Essentials tomados del repositorio de Pokémon Infinite Fusion): `tools
 `public/fonts` salen de las hojas de letras de Esmeralda con `tools/make_font.py` (necesita `fonttools` y `brotli`
 en el `.venv`); Jersey 15/25 son de Google Fonts.
 
+## Sonido
+
+La música y los efectos están generados con ElevenLabs y viven en `public/audio`. Para regenerar o añadir:
+
+```sh
+echo 'ELEVENLABS_API_KEY=...' > .env.audio   # ignorado por git
+node tools/make_audio.mjs                     # genera lo que falte
+node tools/make_audio.mjs hit music_battle    # regenera esos
+```
+
+Las descripciones de cada efecto y tema están al principio de `tools/make_audio.mjs`. `src/sfx.ts` los reproduce y, si
+falta algún archivo, usa un sonido sintetizado.
+
 ## Dónde tocar
 
 - `src/data.ts`: terrenos, tabla de tipos, unidades (coste, movimiento, ataque…), el mapa en ASCII (mitad izquierda; se

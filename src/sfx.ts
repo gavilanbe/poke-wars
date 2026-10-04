@@ -1,11 +1,111 @@
-// Efectos de sonido sintetizados (WebAudio), estilo chiptune. Sin archivos.
+// Sonido del juego. Los efectos y la música salen de public/audio (generados con ElevenLabs: tools/make_audio.mjs);
+// si un archivo falta, el efecto cae a una versión sintetizada con WebAudio, así el juego nunca se queda mudo.
 
 let ac: AudioContext | null = null
 export let muted = localStorage.getItem('pokewars-muted') === '1'
 export function toggleMute() {
   muted = !muted
   localStorage.setItem('pokewars-muted', muted ? '1' : '0')
+  if (master) master.gain.value = muted ? 0 : 1
+  if (!muted) ctx()
 }
+
+// ---------- Muestras grabadas ----------
+
+let master: GainNode | null = null
+const buffers = new Map<string, AudioBuffer>()
+let available = new Set<string>()
+const VOLUME: Record<string, number> = { cursor: 0.25, step: 0.35, talk: 0.3, coin: 0.4, select: 0.5, confirm: 0.5, cancel: 0.5 }
+
+/** Carga el índice y va descodificando los archivos en segundo plano. */
+export async function loadAudio() {
+  try {
+    available = new Set(await fetch('/audio/manifest.json').then((r) => (r.ok ? r.json() : [])))
+  } catch {
+    return
+  }
+  const a = new AudioContext()
+  for (const name of available) {
+    if (name.startsWith('music_')) continue // la música va en streaming
+    fetch(`/audio/${name}.mp3`).then((r) => r.arrayBuffer()).then((data) => a.decodeAudioData(data)).then((b) => buffers.set(name, b)).catch(() => {})
+  }
+}
+
+function out(a: AudioContext): AudioNode {
+  if (!master) {
+    master = a.createGain()
+    master.connect(a.destination)
+  }
+  return master
+}
+
+/** Reproduce una muestra si está cargada; devuelve false si hay que tirar del sintetizador. */
+function sample(name: string, { vol = VOLUME[name] ?? 0.7, delay = 0, rate = 1 } = {}): boolean {
+  const buffer = buffers.get(name)
+  if (!buffer) return false
+  const a = ctx()
+  if (!a) return true
+  const src = a.createBufferSource(), gain = a.createGain()
+  src.buffer = buffer
+  src.playbackRate.value = rate
+  gain.gain.value = vol
+  src.connect(gain).connect(out(a))
+  src.start(a.currentTime + delay)
+  return true
+}
+
+// ---------- Música y ambiente ----------
+
+const tracks = new Map<string, HTMLAudioElement>()
+let currentMusic = '', currentAmbience = ''
+const MUSIC_VOLUME = 0.32
+
+function fade(el: HTMLAudioElement, to: number, ms = 700) {
+  const from = el.volume, start = performance.now()
+  const step = () => {
+    const t = Math.min(1, (performance.now() - start) / ms)
+    el.volume = Math.max(0, Math.min(1, from + (to - from) * t))
+    if (t < 1) requestAnimationFrame(step)
+    else if (to === 0) el.pause()
+  }
+  step()
+}
+
+function loopTrack(name: string, volume: number, current: string): string {
+  if (name === current) return current
+  const old = tracks.get(current)
+  if (old) fade(old, 0)
+  if (!name || !available.has(name)) return ''
+  let el = tracks.get(name)
+  if (!el) {
+    el = new Audio(`/audio/${name}.mp3`)
+    el.loop = true
+    tracks.set(name, el)
+  }
+  el.volume = 0
+  el.muted = muted
+  el.play().then(() => fade(el!, volume)).catch(() => {}) // sin gesto del usuario aún: se reintenta al primer clic
+  return name
+}
+
+export const music = {
+  /** Cambia de tema con fundido; '' para silencio. */
+  play(name: string) { currentMusic = loopTrack(name ? 'music_' + name : '', MUSIC_VOLUME, currentMusic) || (name ? 'music_' + name : '') },
+  ambience(name: string) { currentAmbience = loopTrack(name ? 'amb_' + name : '', 0.3, currentAmbience) },
+  /** Baja la música un momento (para un cartel o un efecto largo). */
+  duck(ms: number) {
+    const el = tracks.get(currentMusic)
+    if (!el) return
+    fade(el, MUSIC_VOLUME * 0.25, 200)
+    setTimeout(() => fade(el, MUSIC_VOLUME, 600), ms)
+  },
+  sync() { for (const el of tracks.values()) el.muted = muted },
+}
+// Si el navegador bloqueó la música al cargar, arranca con el primer gesto
+addEventListener('pointerdown', () => {
+  const el = tracks.get(currentMusic)
+  if (el && el.paused && !muted) { el.volume = 0; el.play().then(() => fade(el, MUSIC_VOLUME)).catch(() => {}) }
+})
 
 function ctx(): AudioContext | null {
   if (muted) return null
@@ -54,35 +154,40 @@ const notes = (freqs: number[], step: number, dur: number, opts: ToneOpts = {}) 
   freqs.forEach((f, i) => tone(f, dur, { ...opts, delay: (opts.delay ?? 0) + i * step }))
 
 export const sfx = {
-  cursor: () => tone(1250, 0.025, { vol: 0.015 }),
-  select: () => notes([520, 780], 0.05, 0.07),
-  step: () => tone(190, 0.04, { type: 'triangle', vol: 0.12, to: 120 }),
-  confirm: () => notes([660, 990], 0.045, 0.06),
-  cancel: () => tone(320, 0.1, { to: 170 }),
-  error: () => tone(140, 0.12, { type: 'sawtooth', vol: 0.05 }),
-  lunge: () => tone(300, 0.12, { to: 900, type: 'triangle', vol: 0.08 }),
-  hit: () => { noise(0.16, 0.3); tone(170, 0.16, { to: 55, type: 'sawtooth', vol: 0.12 }) },
-  bigHit: () => { noise(0.3, 0.4, 0, 3200); tone(240, 0.3, { to: 40, type: 'sawtooth', vol: 0.16 }); tone(1400, 0.08, { vol: 0.05 }) },
-  weakHit: () => { noise(0.08, 0.15, 0, 900); tone(140, 0.1, { to: 90, type: 'triangle', vol: 0.1 }) },
-  ko: () => { tone(520, 0.45, { to: 50, type: 'sawtooth', vol: 0.1 }); noise(0.35, 0.18, 0.08, 1200) },
-  capture: () => { tone(260, 0.07, { type: 'triangle', vol: 0.14 }); noise(0.06, 0.12, 0, 700) },
-  captured: () => notes([523, 659, 784, 1047, 1319], 0.08, 0.14),
-  evolve: () => notes([392, 494, 587, 784, 988, 1175, 1568, 1976], 0.09, 0.16, { type: 'triangle', vol: 0.12 }),
-  turn: () => notes([392, 587, 784], 0.09, 0.16, { vol: 0.06 }),
-  coin: (delay = 0) => notes([988, 1319], 0.05, 0.1, { vol: 0.04, delay }),
-  heal: () => notes([660, 880, 1100], 0.06, 0.1, { type: 'triangle', vol: 0.09 }),
-  recruit: () => tone(180, 0.3, { to: 900, type: 'triangle', vol: 0.1 }),
-  land: () => { noise(0.1, 0.25, 0, 600); tone(110, 0.1, { to: 60, type: 'triangle', vol: 0.15 }) },
-  battle: () => { noise(0.25, 0.12, 0, 5000); notes([196, 262, 330, 392], 0.05, 0.08, { vol: 0.05 }) },
-  cast: () => tone(500, 0.18, { to: 1400, type: 'triangle', vol: 0.07 }),
-  shoot: () => { noise(0.3, 0.14, 0, 4000); tone(900, 0.3, { to: 200, type: 'sawtooth', vol: 0.05 }) },
-  talk: () => notes([700, 620, 760], 0.045, 0.04, { vol: 0.03 }),
+  cursor: () => void (sample('cursor') || tone(1250, 0.025, { vol: 0.015 })),
+  select: () => void (sample('select') || notes([520, 780], 0.05, 0.07)),
+  step: () => void (sample('step') || tone(190, 0.04, { type: 'triangle', vol: 0.12, to: 120 })),
+  confirm: () => void (sample('confirm') || notes([660, 990], 0.045, 0.06)),
+  cancel: () => void (sample('cancel') || tone(320, 0.1, { to: 170 })),
+  error: () => void (sample('error') || tone(140, 0.12, { type: 'sawtooth', vol: 0.05 })),
+  lunge: () => void (sample('lunge') || tone(300, 0.12, { to: 900, type: 'triangle', vol: 0.08 })),
+  hit: () => void (sample('hit') || (()=>{ noise(0.16, 0.3); tone(170, 0.16, { to: 55, type: 'sawtooth', vol: 0.12 }) })()),
+  bigHit: () => void (sample('bigHit') || (()=>{ noise(0.3, 0.4, 0, 3200); tone(240, 0.3, { to: 40, type: 'sawtooth', vol: 0.16 }); tone(1400, 0.08, { vol: 0.05 }) })()),
+  weakHit: () => void (sample('weakHit') || (()=>{ noise(0.08, 0.15, 0, 900); tone(140, 0.1, { to: 90, type: 'triangle', vol: 0.1 }) })()),
+  ko: () => void (sample('ko') || (()=>{ tone(520, 0.45, { to: 50, type: 'sawtooth', vol: 0.1 }); noise(0.35, 0.18, 0.08, 1200) })()),
+  capture: () => void (sample('capture') || (()=>{ tone(260, 0.07, { type: 'triangle', vol: 0.14 }); noise(0.06, 0.12, 0, 700) })()),
+  captured: () => void (sample('captured') || notes([523, 659, 784, 1047, 1319], 0.08, 0.14)),
+  evolve: () => void (sample('evolve') || notes([392, 494, 587, 784, 988, 1175, 1568, 1976], 0.09, 0.16, { type: 'triangle', vol: 0.12 })),
+  turn: () => void (sample('turn') || notes([392, 587, 784], 0.09, 0.16, { vol: 0.06 })),
+  coin: (delay = 0) => void (sample('coin', { delay }) || notes([988, 1319], 0.05, 0.1, { vol: 0.04, delay })),
+  heal: () => void (sample('heal') || notes([660, 880, 1100], 0.06, 0.1, { type: 'triangle', vol: 0.09 })),
+  recruit: () => void (sample('recruit') || tone(180, 0.3, { to: 900, type: 'triangle', vol: 0.1 })),
+  land: () => void (sample('land') || (()=>{ noise(0.1, 0.25, 0, 600); tone(110, 0.1, { to: 60, type: 'triangle', vol: 0.15 }) })()),
+  battle: () => void (sample('battle') || (()=>{ noise(0.25, 0.12, 0, 5000); notes([196, 262, 330, 392], 0.05, 0.08, { vol: 0.05 }) })()),
+  cast: () => void (sample('cast') || tone(500, 0.18, { to: 1400, type: 'triangle', vol: 0.07 })),
+  shoot: () => void (sample('shoot') || (()=>{ noise(0.3, 0.14, 0, 4000); tone(900, 0.3, { to: 200, type: 'sawtooth', vol: 0.05 }) })()),
+  talk: () => void (sample('talk') || notes([700, 620, 760], 0.045, 0.04, { vol: 0.03 })),
   power: () => {
+    if (sample('power')) return
     tone(110, 1.1, { to: 880, type: 'sawtooth', vol: 0.09 })
     noise(0.9, 0.1, 0, 2500)
     notes([523, 659, 784, 1047, 1319, 1568], 0.07, 0.3, { delay: 1.0, vol: 0.08 })
     noise(0.5, 0.35, 1.0, 5000)
   },
-  ready: () => notes([784, 988, 1175, 1568], 0.06, 0.12, { type: 'triangle', vol: 0.1 }),
-  win: () => notes([523, 523, 523, 659, 784, 659, 784, 1047], 0.13, 0.22, { vol: 0.08 }),
+  ready: () => void (sample('ready') || notes([784, 988, 1175, 1568], 0.06, 0.12, { type: 'triangle', vol: 0.1 })),
+  ambush: () => void (sample('ambush') || tone(140, 0.12, { type: 'sawtooth', vol: 0.05 })),
+  crit: () => void (sample('crit') || tone(1400, 0.1, { vol: 0.06 })),
+  /** Sonido del ataque según el tipo del Pokémon (si no hay muestra, el disparo genérico). */
+  move: (type: string) => void (sample('mv_' + type) || sample('shoot')),
+  win: () => void (sample('win') || notes([523, 523, 523, 659, 784, 659, 784, 1047], 0.13, 0.22, { vol: 0.08 })),
 }

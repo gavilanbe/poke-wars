@@ -12,7 +12,7 @@ import {
 } from './game'
 import { Place, initCutscenes, playBattle, playCapture } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
-import { muted, sfx, toggleMute } from './sfx'
+import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
 import { fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, versus, victory } from './ui'
 import { Anim, DIR, animDuration, dirFrom, drawSprite, facePath, loadUnits } from './units'
 
@@ -267,6 +267,13 @@ const viewer = (): Team | null => (!g.fog || (isAI[0] && isAI[1]) ? null : isAI[
 let sight = new Set<number>()
 const shown = (u: Unit) => { const v = viewer(); return v === null || canSee(g, v, u, sight) }
 const unitShownAt = (x: number, y: number) => { const u = unitAt(g, x, y); return u && shown(u) ? u : undefined }
+
+/** Pone la música y el ambiente que tocan ahora: turno propio o rival, noche, lluvia. */
+function themeNow() {
+  if (AUTO || !g || g.winner !== null) return
+  music.play(isAI[g.turn] ? 'enemy' : phaseOf(g) === 3 ? 'night' : 'map')
+  music.ambience(g.weather === 'rain' ? 'rain' : phaseOf(g) === 3 ? 'night' : '')
+}
 
 const center = (p: Pos) => [p.x * T + T / 2, p.y * T + T / 2] as const
 const setFx = (u: Unit, patch: UnitFx) => unitFx.set(u.id, { ...unitFx.get(u.id), ...patch })
@@ -1027,6 +1034,7 @@ async function powerSequence() {
     talkEl.hidden = true
     setFace(team, 'Determined', 6000)
     setPowerColor(g.co[team])
+    music.play('power')
     sfx.power()
     const cutin = powerCutin(team, g.co[team])
     await sleep(1000) // el nombre del poder cae a golpes
@@ -1034,7 +1042,7 @@ async function powerSequence() {
     await cutin
   }
   const affected = usePower(g)
-  if (!AUTO) await powerFx(team, affected)
+  if (!AUTO) { await powerFx(team, affected); themeNow() }
   finish()
 }
 
@@ -1154,6 +1162,8 @@ function finish() {
   if (AUTO) return
   talkEl.hidden = true
   setTimeout(() => {
+    music.ambience('')
+    music.play('victory')
     sfx.win()
     victory(winner, g.co[winner], g.day, newGame)
   }, 900)
@@ -1202,6 +1212,7 @@ function chooseCommanders(): Promise<[string, string]> {
 async function newGame() {
   hideOverlay()
   bannerEl.hidden = talkEl.hidden = true
+  if (!AUTO) { music.play('title'); music.ambience('') }
   const cos = await chooseCommanders()
   if (AUTO) return startGame(cos)
   // Presentación: los comandantes frente a frente mientras se monta el mapa por debajo
@@ -1211,6 +1222,7 @@ async function newGame() {
   sfx.bigHit()
   startGame(cos, 1500)
   await intro
+  themeNow()
 }
 
 // ---------- Animaciones ----------
@@ -1272,10 +1284,12 @@ async function battle(att: Unit, def: Unit) {
   const res = attack(g, att, def)
   if (AUTO) return
   talkEl.hidden = true
+  music.play('battle')
   await playBattle({
     a, d, dmg: res.dmg, counter: res.counter, crit: res.crit,
     evolved: res.evolved ? (res.evolved === att ? 'a' : 'd') : null, evolvedKind: res.evolved?.kind ?? '',
   })
+  themeNow()
 
   label(d, `-${res.dmg}`, 'dmg')
   if (res.crit) label(d, '¡Crítico!', 'gold', 200)
@@ -1446,7 +1460,7 @@ async function click(p: Pos) {
       moveUnit(g, unit, end.x, end.y)
       unit.moved = true
       label(end, '¡Emboscada!', 'dmg')
-      sfx.error()
+      sfx.ambush()
       fx.addShake(5)
       return finish()
     }
@@ -1487,6 +1501,7 @@ async function nextTurn() {
   endTurn(g)
   for (const u of g.units) unitDir.delete(u.id)
   refreshPanel()
+  themeNow()
   await turnBanner()
   if (g.weather !== weatherShown) {
     weatherShown = g.weather
@@ -1626,7 +1641,7 @@ fogBtn.onclick = () => {
   if (g) g.fog = fogOn
   fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`
 }
-muteBtn.onclick = () => { toggleMute(); muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`; sfx.confirm() }
+muteBtn.onclick = () => { toggleMute(); music.sync(); muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`; sfx.confirm() }
 $('#new').onclick = () => { if (mode !== 'busy') newGame() }
 
 async function boot() {
@@ -1640,6 +1655,7 @@ async function boot() {
   at = atlasMeta
   water = waterImg
   resize()
+  void loadAudio()
   await setupHud()
   grayAtlas = makeGray(atlas)
   mapFx = new Scene(mapFxCanvas, canvas.width, canvas.height)

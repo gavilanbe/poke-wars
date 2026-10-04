@@ -337,6 +337,7 @@ async function strike(a: Side, d: Side, dmg: number, crit = false) {
   const eff = effectiveness(type, KINDS[d.kind].type)
   const big = eff > 1
   say(`¡${KINDS[a.kind].name} usó ${ATTACK_NAME[type]}!`)
+  setTimeout(() => sfx.move(type), 220) // el sonido propio del ataque, sobre el gesto de lanzarlo
   await MOVES[type](a, d)
 
   // Impacto: parada, destello, retroceso y números
@@ -365,6 +366,7 @@ async function strike(a: Side, d: Side, dmg: number, crit = false) {
   stamp(`-${dmg}`, dx - a.sign * 4, dy - 50, big ? 'dmg big' : 'dmg')
   if (crit) {
     stamp('¡CRÍTICO!', W / 2, 92, 'super')
+    sfx.crit()
     scene.flashScreen('#ffd84a', 0.6, 5)
     scene.addShake(12)
     scene.hitStop(120)

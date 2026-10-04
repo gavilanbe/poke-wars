@@ -3,3 +3,4 @@ dist
 .venv
 vendor
 tools/preview
+.env.audio
