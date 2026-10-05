@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Poké Wars</title>
+    <title>Poké Wars · un juego de gavilanbe</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/ui.css" />
@@ -23,8 +23,9 @@
       .ld-top { top: 0; background: radial-gradient(ellipse 70% 120% at 28% 0, #ff7a6c, #e8483c 45%, #b8281c); border-bottom: 3.6vh solid #10141c; }
       .ld-bot { bottom: 0; background: radial-gradient(ellipse 70% 120% at 72% 100%, #ffffff, #e6eaf2 45%, #b4bccc); border-top: 3.6vh solid #10141c; color: #10141c; }
       .ld-logo { position: relative; margin-bottom: 9vh; text-align: center; filter: drop-shadow(0 1vh 0 #7c140c); }
-      .ld-logo span { display: block; font-size: 17vh; letter-spacing: 0.04em; color: #ffcb05; text-shadow: 0.035em 0 #2a5caa, -0.035em 0 #2a5caa, 0 0.035em #2a5caa, 0 -0.035em #2a5caa, 0.03em 0.03em #2a5caa, -0.03em -0.03em #2a5caa, 0.03em -0.03em #2a5caa, -0.03em 0.03em #2a5caa, 0.06em 0.07em #1b3f7a; }
-      .ld-logo b { display: block; margin-top: -3vh; font-weight: 400; font-size: 12vh; letter-spacing: 0.24em; margin-left: 0.24em; transform: skewX(-10deg); text-shadow: 0.05em 0.06em 0 #7c140c; }
+      .ld-logo small { display: block; margin-bottom: 0; font-size: 2.8vh; letter-spacing: 0.4em; color: #ffd84a; text-shadow: 0.2vh 0.2vh 0 #7c140c; }
+      .ld-logo span { display: block; font-size: 14vh; letter-spacing: 0.04em; color: #ffcb05; text-shadow: 0.035em 0 #2a5caa, -0.035em 0 #2a5caa, 0 0.035em #2a5caa, 0 -0.035em #2a5caa, 0.03em 0.03em #2a5caa, -0.03em -0.03em #2a5caa, 0.03em -0.03em #2a5caa, -0.03em 0.03em #2a5caa, 0.06em 0.07em #1b3f7a; }
+      .ld-logo b { display: block; margin-top: -2.4vh; font-weight: 400; font-size: 10vh; letter-spacing: 0.24em; margin-left: 0.24em; transform: skewX(-10deg); text-shadow: 0.05em 0.06em 0 #7c140c; }
       .ld-info { position: relative; margin-top: 13vh; text-align: center; max-width: 80vw; }
       .ld-info small { display: block; font-size: 3vh; letter-spacing: 0.3em; color: #5c6884; }
       .ld-tip { margin: 1.2vh 0 0; min-height: 4.4vh; font-size: 4.2vh; animation: ld-tip 2.6s both; }
@@ -50,7 +51,7 @@
   <body>
     <div id="loading">
       <div class="ld-ball">
-        <div class="ld-half ld-top"><div class="ld-logo"><span>POKÉ</span><b>WARS</b></div></div>
+        <div class="ld-half ld-top"><div class="ld-logo"><small>GAVILANBE PRESENTA</small><span>POKÉ</span><b>WARS</b></div></div>
         <div class="ld-half ld-bot"><div class="ld-info"><small>CARGANDO</small><p class="ld-tip">Preparando el campo de batalla…</p></div></div>
       </div>
       <div class="ld-btn"><i></i><b>0</b></div>
@@ -96,7 +97,7 @@
             <div class="rival t0"><div class="pic"><img class="e1" alt=""><img class="main" alt=""></div><div class="who"><b></b><span></span></div><p class="say"></p></div>
             <div class="rival t1"><div class="pic"><img class="e1" alt=""><img class="main" alt=""></div><div class="who"><b></b><span></span></div><p class="say"></p></div>
           </div>
-          <div class="logo2"><div class="poke"></div><div class="wars"></div></div>
+          <div class="logo2"><div class="by"><i class="hawk"></i>GAVILANBE <small>PRESENTA</small></div><div class="poke"></div><div class="wars"></div></div>
           <div class="tag">Estrategia por turnos · Captura, evoluciona y conquista</div>
           <div class="press">Pulsa cualquier tecla</div>
           <div class="menu">
@@ -108,7 +109,7 @@
             <div class="blurb"></div>
           </div>
           <div class="toggles"><button data-opt="help">? Cómo se juega</button><button data-opt="fog"></button><button data-opt="sound"></button></div>
-          <div class="foot"><span><kbd>←↑↓→</kbd> moverse · <kbd>Enter</kbd> aceptar · <kbd>1</kbd>–<kbd>3</kbd> mapa · <kbd>N</kbd> niebla · <kbd>M</kbd> sonido · <kbd>H</kbd> ayuda</span><span>Juego de fans sin ánimo de lucro · hecho con Claude Opus 5.5</span></div>
+          <div class="foot"><span><kbd>←↑↓→</kbd> moverse · <kbd>Enter</kbd> aceptar · <kbd>1</kbd>–<kbd>3</kbd> mapa · <kbd>N</kbd> niebla · <kbd>M</kbd> sonido · <kbd>H</kbd> ayuda</span><span>Un juego de <a href="https://github.com/gavilanbe" target="_blank" rel="noopener">gavilanbe</a> · de fans, sin ánimo de lucro · hecho con Claude Opus 5.5</span></div>
         </div>
         <div id="select" hidden></div>
         <div id="story" hidden></div>

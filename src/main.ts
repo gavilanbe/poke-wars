@@ -1860,8 +1860,12 @@ function refreshTitle() {
 }
 
 // El logo se monta letra a letra para animarlas por separado; la O de POKÉ es una Poké Ball
-titleEl.querySelector('.poke')!.innerHTML = ['P', '<i class="ball"></i>', 'K', 'É'].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')
-titleEl.querySelector('.wars')!.innerHTML = [...'WARS'].map((ch, i) => `<span style="--i:${i + 4}">${ch}</span>`).join('')
+titleEl.querySelector('.poke')!.innerHTML = ['P', '<i class="ball"></i>', 'K', 'É'].map((ch, i) => `<span style="--i:${i}"${ch.length === 1 ? ` data-ch="${ch}"` : ''}>${ch}</span>`).join('')
+titleEl.querySelector('.wars')!.innerHTML = [...'WARS'].map((ch, i) => `<span style="--i:${i + 4}" data-ch="${ch}">${ch}</span>`).join('')
+// El gavilán de la firma, píxel a píxel: alas arriba y alas abajo
+const hawkPixels = (rows: string[]) => rows.flatMap((row, y) => [...row].map((ch, x) => (ch === 'X' ? `calc(var(--px, 0.36vh) * ${x}) calc(var(--px, 0.36vh) * ${y})` : ''))).filter(Boolean).join(',')
+document.documentElement.style.setProperty('--hawk', hawkPixels(['X...........X', 'XX.........XX', '.XXX.....XXX.', '..XXXX.XXXX..', '...XXXXXXX...', '.....XXX.....', '......X......']))
+document.documentElement.style.setProperty('--hawk2', hawkPixels(['.............', '.............', '..XXX...XXX..', '.XXXXX.XXXXX.', 'XX.XXXXXXX.XX', 'X....XXX....X', '......X......']))
 // Un botón por mapa, con su miniatura
 MAPS.forEach((map, i) => {
   const btn = document.createElement('button'), mini = document.createElement('canvas'), k = 3
