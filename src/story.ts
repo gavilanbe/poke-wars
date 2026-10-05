@@ -136,7 +136,7 @@ async function license() {
       <img src="${facePath('pikachu', 'Happy')}" alt="">
       <dl><dt>Nombre</dt><dd>Pikachu</dd><dt>Destino</dt><dd>Villa Central</dd><dt>Le recluta</dt><dd>El Gran Maestro</dd><dt>Le examina</dt><dd>Chatot (muy exigente)</dd></dl>
       <i class="st-stamp">RECLUTADO</i></div>
-    <p><kbd>Enter</kbd> para empezar</p>`
+    <p><span class="tecla"><kbd>Enter</kbd> para empezar</span><span class="dedo">Toca para empezar</span></p>`
   el.hidden = false
   restart(el, 'go')
   sfx.confirm()

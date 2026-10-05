@@ -728,7 +728,8 @@ main { display: block; }
 
 #story { position: absolute; inset: 0; z-index: 10; pointer-events: none; color: #fff; font-family: var(--ui); line-height: 1.1; overflow: hidden; }
 #story[hidden] { display: none; }
-#story button, #story .st-talk { pointer-events: auto; }
+/* Todo lo que se pasa con una pulsación tiene que recibir también el toque o el clic, no solo la tecla */
+#story button, #story .st-talk, #story .st-license, #story .st-chapter, #story .st-banner { pointer-events: auto; }
 #story kbd { float: none; opacity: 1; display: inline-block; min-width: 2.6vh; margin: 0 0.4vh; padding: 0.1vh 0.8vh; font: inherit; font-size: 0.8em; text-align: center; color: #10141c; background: #dfe6f4; border-radius: 0.6vh; box-shadow: 0 0.4vh 0 #6c7890; text-shadow: none; }
 .st-world, .st-brief, .st-result { display: none; position: absolute; inset: 0; }
 #story.world .st-world { display: block; }
