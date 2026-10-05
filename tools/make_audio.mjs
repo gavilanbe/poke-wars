@@ -171,6 +171,13 @@ const MUSIC = {
     ['[Theme B] {key lifts to C major, soaring heroic melody}', 16, ['hopeful lift']],
     ['[Theme A] {melody returns with brass stabs and timpani}', 16, ['maximum intensity']],
   ]) },
+  // Encuentro con un salvaje: un susto, y luego una persecución juguetona mientras se le cerca
+  wild: { loop: 4, plan: plan(['168 BPM', 'F-sharp minor', 'sudden wild creature encounter in tall grass', 'startled, playful, cat-and-mouse tension'], [
+    ['[Intro] {sharp surprised brass stab, rapid ascending xylophone run, cymbal choke}', 4, ['alarm-like opening sting']],
+    ['[Theme A] {bouncing staccato bass, darting flute and trumpet call-and-response melody, galloping snare}', 18, ['nimble, mischievous chase']],
+    ['[Theme B] {key lifts to A major, eager rising melody, timpani hits on the off-beat}', 14, ['almost got it, hopeful tension']],
+    ['[Theme A] {melody returns with woodblock ticks and brass stabs}', 14, ['push your luck, restless energy']],
+  ]) },
   capture: { loop: 0, plan: plan(['138 BPM', 'B minor', 'tense suspense loop', 'holding breath, will it work'], [
     ['[Loop] {ticking staccato strings, pulsing bass, snare rolls building}', 20, ['no melody resolution, rising tension, timpani heartbeat']],
   ]) },
@@ -196,6 +203,7 @@ const MUSIC = {
   jingle_evolve: { plan: plan(['140 BPM', 'A major', 'short evolution-complete fanfare'], [['[Fanfare] {shimmering rising arpeggios burst into a triumphant brass phrase}', 6, ['magical then triumphant, ends cleanly']]]) },
   jingle_levelup: { plan: plan(['150 BPM', 'D major', 'very short level-up jingle'], [['[Jingle] {quick ascending trumpet and chime arpeggio ending on a bright chord}', 3, ['rewarding, ends cleanly']]]) },
   jingle_catch: { plan: plan(['140 BPM', 'G major', 'short new-team-member fanfare'], [['[Fanfare] {happy brass and glockenspiel phrase with a final cymbal}', 4, ['cheerful, ends cleanly']]]) },
+  jingle_wild: { plan: plan(['168 BPM', 'F-sharp minor', 'very short startled encounter sting'], [['[Sting] {two sharp surprised brass stabs, a fast rising xylophone flourish, cymbal choke}', 3, ['something jumped out of the grass, ends cleanly']]]) },
   jingle_turn: { plan: plan(['140 BPM', 'D major', 'very short turn-start sting'], [['[Sting] {two-bar trumpet call with snare}', 3, ['ready-set-go, ends cleanly']]]) },
   // Fanfarria de ataque de cada comandante: suena al empezar un combate cuando ataca su equipo. Tres segundos, en la
   // tonalidad y el carácter de su tema, y con un instrumento que solo lleva él, para que se distingan de oído.

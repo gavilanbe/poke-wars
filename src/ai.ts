@@ -47,8 +47,8 @@ export function planUnit(g: Game, u: Unit): Plan {
     // Un salvaje en la hierba: quien captura va a por él
     const wild = wildAt(g, spot.x, spot.y)
     const item = g.items.some((i) => i.x === spot.x && i.y === spot.y)
-    // Salvajes: quien captura va a atraparlos y quien no, a debilitarlos; y nadie deja un objeto en el suelo
-    consider(base + (wild ? (k.capture ? 30 : wild.weak ? 0 : 6) : 0) + (item ? 10 : 0), { to: spot, action: 'wait' })
+    // Salvajes: quien captura va a atraparlos; y nadie deja un objeto en el suelo
+    consider(base + (wild && k.capture ? 30 : 0) + (item ? 10 : 0), { to: spot, action: 'wait' })
     // Evolucionar gasta el turno: lo hace si no tiene a mano una captura, un remate o un buen golpe; antes, si está herido
     if (canEvolve(u)) consider(base + 20 + (10 - u.hp) * 1.5, { to: spot, action: 'evolve' })
     // Congelar el río cuando su objetivo está al otro lado y no hay nada mejor que hacer

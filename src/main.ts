@@ -835,10 +835,6 @@ function draw(time: number) {
     const dx = jig === 0 ? -1 : jig === 2 ? 1 : 0
     for (const [ox, oy] of [[0, 0], [16, 0], [0, 16], [16, 16]]) ctx.drawImage(atlas, at.tall.x, 0, 16, 16, w.x * T + ox + dx, w.y * T + oy - (jig < 3 ? 1 : 0), 16, 16)
     if (Math.random() < 0.03) mapFx.fx('tall_grass', w.x * T + 16 + rnd(-6, 6), w.y * T + 16, { scale: 1, fps: 12 })
-    if (w.weak && Math.floor(time / 300) % 2) { // debilitado: listo para atraparlo
-      ctx.fillStyle = '#10141c'; ctx.fillRect(w.x * T + 12, w.y * T - 2, 8, 12)
-      ctx.fillStyle = '#ffd84a'; ctx.fillRect(w.x * T + 14, w.y * T, 4, 5); ctx.fillRect(w.x * T + 14, w.y * T + 6, 4, 2)
-    }
   }
 
   // Zona de peligro (R): rayado rojo fijo sobre todo lo que los rivales pueden atacar en su turno
@@ -1029,7 +1025,7 @@ function draw(time: number) {
   if (counting) refreshStatus()
 }
 
-/** Mueve y enseña lo que pase en la casilla: objeto recogido, salvaje debilitado, atrapado o escapado. */
+/** Mueve y enseña lo que pase en la casilla: objeto recogido, salvaje atrapado o escapado. */
 function moveCatch(game: Game, u: Unit, x: number, y: number, outcome?: boolean) {
   const ev = moveUnit(game, u, x, y, outcome)
   if (!ev || titleOn || !shown(u)) return
@@ -1040,7 +1036,6 @@ function moveCatch(game: Game, u: Unit, x: number, y: number, outcome?: boolean)
     fx.burst(x * T + 16, y * T + 16, { n: 10, colors: ['#70f088', '#d0ffd8'], speed: 1, life: 700, size: 3, up: 1.2 })
     sfx.heal()
   }
-  if (ev.wild === 'weak') { label(at, '¡Salvaje debilitado!', 'gold'); fx.addShake(3); sfx.hit() }
   if (ev.wild === 'escaped' && outcome === undefined) { label(at, '¡Se ha escapado de la Ball!', 'dmg'); sfx.error() }
   if (ev.wild === 'broke') { label(at, 'Sin dinero para una Ball', 'dmg'); sfx.error() }
   if (ev.stored) { // atrapado en el minijuego: la Ball va al cinturón, a la espera de que la suelten
@@ -1506,10 +1501,10 @@ const miniBar = (value: number, max: number) => {
 }
 
 /** Tarjeta de lo que hay bajo el cursor: Pokémon (con su barra de PS), edificio o terreno. */
-/** ¿Sabe quien mira qué salvaje es ese? Sí, si tiene a alguien a dos casillas o menos, o si ya lo han debilitado. */
-const knownWild = (w: { x: number; y: number; weak?: boolean }) => {
+/** ¿Sabe quien mira qué salvaje es ese? Sí, si tiene a alguien a dos casillas o menos. */
+const knownWild = (w: { x: number; y: number }) => {
   const who = viewer()
-  return who === null || !!w.weak || g.units.some((u) => u.team === who && Math.abs(u.x - w.x) + Math.abs(u.y - w.y) <= 2)
+  return who === null || g.units.some((u) => u.team === who && Math.abs(u.x - w.x) + Math.abs(u.y - w.y) <= 2)
 }
 /** Barra de experiencia del panel: cuánto lleva, a qué evoluciona y, si está llena, que ya puede hacerlo. */
 function xpLine(u: Unit): string {
@@ -1534,7 +1529,7 @@ function refreshInfo() {
     infoEl.innerHTML = known
       ? `<img class="mug" src="${facePath(k.species)}">
         <div class="who"><b>${k.name}</b>${k.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px" title="${TYPE_NAME[t]}"></i>`).join('')}<small>salvaje</small></div>
-        <div class="hpline wildline ${wild.weak ? 'weak' : ''}">${wild.weak ? 'Debilitado: empieza cansado' : 'En plena forma'}</div>
+        <div class="hpline wildline">Escondido en la hierba</div>
         <div class="line"><span>${ROLES[k.role].name}</span><span class="${edge >= 4 ? 'edge' : ''}">${edge >= 4 ? `▲ Fuerte contra ${COMMANDERS[rival].name}` : edge >= 2 ? `Algo útil contra ${COMMANDERS[rival].name}` : ''}</span></div>
         <div class="reach aid"><b>Capturador</b>◓ Ponte encima para intentar atraparlo</div>`
       : `<span class="big">¿Pokémon salvaje?</span>
@@ -2405,12 +2400,27 @@ async function arrive(u: Unit, x: number, y: number) {
   mode = 'busy'
   menuEl.hidden = forecastEl.hidden = true
   talkEl.hidden = true
-  music.play('capture')
-  const res = await playCatch({ kind: u.kind, team: u.team, hp: u.hp, wild: wild.kind, weak: !!wild.weak, funds: g.funds[u.team], sure: tutorial.isOpen && !!wild.weak })
+  // El encuentro: la hierba estalla, tu Capturador se sobresalta, suena el aviso y la cámara se echa encima
+  music.play('')
+  face(u, wild)
+  setFx(u, { pop: performance.now() })
+  label(u, '!', 'gold')
+  const [wx, wy] = center(wild)
+  for (let i = 0; i < 5; i++) mapFx.fx('tall_grass', wx + rnd(-10, 10), wy + rnd(-6, 6), { scale: 1, fps: 14, delay: i * 60 })
+  mapFx.add({ ring: 24, size: 3, color: '#fff', x: wx, y: wy, max: 300 })
+  sfx.encounter()
+  const r = canvas.getBoundingClientRect()
+  stage.style.setProperty('--ex', `${((wx - cam.x) / canvas.width) * r.width}px`)
+  stage.style.setProperty('--ey', `${((wy - cam.y) / canvas.height) * r.height}px`)
+  restart(stage, 'encounter')
+  await sleep(600)
+  music.play('wild')
+  const res = await playCatch({ kind: u.kind, team: u.team, hp: u.hp, wild: wild.kind, funds: g.funds[u.team], sure: tutorial.isOpen })
   g.funds[u.team] -= res.spent
   u.hp = Math.max(1, u.hp - res.hurt) // lo que le haya pegado el salvaje se queda
   if (res.fled) g.wild = g.wild.filter((w) => w !== wild)
   moveCatch(g, u, x, y, res.caught)
+  stage.classList.remove('encounter')
   if (res.hurt) { label({ x, y }, `−${res.hurt} PS`, 'dmg', 300); hurt(u) }
   themeNow()
 }
@@ -2492,8 +2502,8 @@ function openMenu() {
   // Quedarse ahí: según lo que haya en la casilla, es atrapar, debilitar, recoger o simplemente esperar
   const wild = wildAt(g, at.x, at.y), item = g.items.find((i) => i.x === at.x && i.y === at.y)
   const stay = async () => { sfx.confirm(); await arrive(u, at.x, at.y); u.moved = true; finish() }
-  if (wild && catchable(g, u, at.x, at.y)) items.push(['Atrapar', wild.weak ? 'Salvaje debilitado: lanza una Ball' : 'Salvaje sano: difícil, mejor debilítalo antes', stay])
-  else items.push(['Esperar', wild && !k.capture && !wild.weak ? 'Debilita al salvaje de la hierba' : item ? (item.type === 'berry' ? `Recoge la baya: +${BERRY_HEAL} PS` : `Recoge la moneda: +${COIN_VALUE}₽`) : 'Termina su jugada aquí', stay])
+  if (wild && catchable(g, u, at.x, at.y)) items.push(['Atrapar', `${KINDS[wild.kind].name} salvaje: cánsalo y lánzale una Ball · puede costarte PS`, stay])
+  else items.push(['Esperar', item ? (item.type === 'berry' ? `Recoge la baya: +${BERRY_HEAL} PS` : `Recoge la moneda: +${COIN_VALUE}₽`) : 'Termina su jugada aquí', stay])
   items.push(['Cancelar', 'Vuelve a elegir destino', cancel])
   menuEl.replaceChildren(...items.map(([text, detail, fn], i) => {
     const btn = document.createElement('button')

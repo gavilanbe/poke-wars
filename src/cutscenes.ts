@@ -155,8 +155,8 @@ function dropHp(el: HTMLElement, from: number, to: number) {
 const say = (text: string) => { root.querySelector('.msg')!.textContent = text }
 
 /** Entra con la cortinilla de barras: tapa el mapa, monta la escena y destapa. */
-async function open(mode: string) {
-  await cover()
+async function open(mode: string, wipe: number | 'wild' = -1) {
+  await cover(wipe)
   root.className = mode
   root.hidden = false
   root.querySelectorAll('.stamp').forEach((el) => el.remove())
@@ -1364,7 +1364,7 @@ export async function playCapture(c: CaptureData) {
 
 export interface CatchData {
   kind: string; team: number; hp: number // el Capturador y los PS con los que llega
-  wild: string; weak: boolean // debilitado: empieza con un golpe ya dado
+  wild: string
   funds: number
   sure?: boolean // el tutorial no falla
 }
@@ -1400,14 +1400,14 @@ export function sceneKey(key: string): boolean {
 export async function playCatch(c: CatchData): Promise<CatchResult> {
   const CH = 232, CW = Math.round((CH * Math.max(1.25, Math.min(2.4, innerWidth / innerHeight))) / 2) * 2
   scene.resize(CW, CH)
-  await open('capture')
-  const k = KINDS[c.kind], w = KINDS[c.wild], TEAM_NAME = ['Rojo', 'Azul']
+  await open('capture', 'wild')
+  const k = KINDS[c.kind], w = KINDS[c.wild]
   const base = CH - 62, horizon = base - 74, wx = Math.round(CW * 0.64), wy = base - 6, R = 50
   const cy = wy - 34, trait = traitOf(w.type)
   let held: { x: number; y: number; rot: number; ball: number } | null = null
   // El cerco. Aguante: los golpes que le quedan por recibir hasta agotarse. Paciencia: lo que tarda en hartarse y huir.
   const maxStamina = trait.id === 'tough' ? 4 : 3
-  let stamina = maxStamina - (c.weak ? 1 : 0), patience = 5, rage = 0, hp = c.hp, hurt = 0, spent = 0, ball = 0
+  let stamina = maxStamina, patience = 5, rage = 0, hp = c.hp, hurt = 0, spent = 0, ball = 0
   let arcs: { from: number; w: number; kind: 'hit' | 'ball' | 'foe' }[] = [], angle = -Math.PI / 2, dir = 1, speed = 0, drift = 0, lap = 0
   let live = false, dial = false, lastTime = 0
   let settle: ((p: Press) => void) | null = null
@@ -1427,7 +1427,7 @@ export async function playCatch(c: CatchData): Promise<CatchResult> {
     arcs = parts.map((p, n) => { const arc = { from: at, w: p.w, kind: p.kind }; at += p.w + (free * cuts[n]) / total; return arc })
     drift = 0
     if (trait.id === 'calm' || Math.random() < 0.5) dir = -dir
-    speed = ((Math.PI * 2) / 2100) * (1 + 0.14 * tired() + 0.1 * rage) * (trait.id === 'fast' ? 1.3 : trait.id === 'tough' ? 0.82 : 1) * (c.weak ? 0.88 : 1)
+    speed = ((Math.PI * 2) / 2100) * (1 + 0.14 * tired() + 0.1 * rage) * (trait.id === 'fast' ? 1.3 : trait.id === 'tough' ? 0.82 : 1)
   }
   /** La zona que hay bajo ese ángulo, y lo centrado que cae en ella (0 en el borde, 1 en el medio). */
   const zoneAt = (a: number): Press | null => {
@@ -1508,10 +1508,11 @@ export async function playCatch(c: CatchData): Promise<CatchResult> {
 
   const foe = scene.actor(w.species, wx, wy, DIR.left, scaleOf(c.wild))
   scene.play(foe, 'Idle', true)
+  foe.visible = false // aún está escondido: saldrá de un salto
   const me = scene.actor(k.species, Math.round(CW * 0.2), base + 30, DIR.right, scaleOf(c.kind))
-  scene.play(me, 'Idle', true)
+  scene.play(me, 'Walk', true)
   me.ox = -CW * 0.4
-  void scene.tween(420, (t) => { me.ox = -CW * 0.4 * (1 - easeOut(t)) })
+  void scene.tween(520, (t) => { me.ox = -CW * 0.4 * (1 - easeOut(t)) }).then(() => scene.play(me, 'Idle', true))
   const dizzyTimer = setInterval(() => { // cansado: le dan vueltas las estrellas
     if (stamina > 1 || !foe.visible) return
     for (let i = 0; i < 3; i++) scene.add({ img: 'gold_stars', x: wx + Math.cos(i * 2.1 + scene.time / 300) * 20, y: wy - 62 + Math.sin(i * 2.1 + scene.time / 300) * 5, max: 240, scale: 1 })
@@ -1555,9 +1556,34 @@ export async function playCatch(c: CatchData): Promise<CatchResult> {
     setTimeout(() => el.remove(), 1100)
   }
   refresh()
+  // La aparición: la hierba se agita cada vez más, sale de un salto entre hojas, tu Pokémon se sobresalta y entra su nombre
+  for (let i = 0; i < 3; i++) {
+    scene.fx('jump_tall_grass', wx + rnd(-26, 26), wy - 6, { fps: 14, scale: 2 })
+    for (let n = 0; n < 4; n++) scene.add({ img: 'leaf', fps: 16, loop: true, x: wx + rnd(-30, 30), y: wy - 10, vx: rnd(-1.5, 1.5), vy: rnd(-2.5, -1), g: 0.12, max: 600, scale: 1 })
+    sfx.step()
+    scene.addShake(1 + i)
+    await scene.wait(230 - i * 40)
+  }
+  foe.visible = true
+  foe.sy = foe.sx = 0.4
+  scene.play(foe, 'Hop')
+  sfx.cry(w.species, 1, 0.7)
+  scene.flashScreen('#fff', 0.55, 6)
+  scene.addShake(6)
+  scene.add({ ring: 54, size: 6, color: '#fff', x: wx, y: wy - 30, max: 340 })
+  for (let n = 0; n < 16; n++) scene.add({ img: 'leaf', fps: 18, loop: true, x: wx + rnd(-10, 10), y: wy - 20, vx: rnd(-4, 4), vy: rnd(-5, -1.5), g: 0.14, max: 900, scale: n % 3 ? 1 : 2 })
+  void scene.tween(420, (t) => { foe.oy = -Math.sin(t * Math.PI) * 46; foe.sx = foe.sy = 0.4 + 0.6 * easeBack(Math.min(1, t * 1.6)) }).then(() => { foe.oy = 0; scene.play(foe, 'Idle', true) })
+  scene.play(me, 'Hurt') // el susto
+  void scene.tween(260, (t) => { me.oy = -Math.sin(t * Math.PI) * 10; me.ox = -6 * Math.sin(t * Math.PI) }).then(() => scene.play(me, 'Idle', true))
+  pop('!', me.x + 4, me.y - 74, 'alert')
+  const hello = document.createElement('div')
+  hello.className = 'wildhello'
+  hello.innerHTML = `<small>¡UN POKÉMON SALVAJE!</small><b>${[...w.name.toUpperCase()].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')}</b>`
+  ui.append(hello)
+  setTimeout(() => hello.remove(), 1500)
+  await scene.wait(1250)
   void ui.offsetWidth
   ui.classList.add('in')
-  sfx.cry(w.species, 1, 0.6)
 
   /** Espera a que se pulse (devuelve en qué zona estaba el cursor), a que dé la vuelta entera o a que se deje. */
   const turn = () => new Promise<Press>((resolve) => {
@@ -1582,7 +1608,7 @@ export async function playCatch(c: CatchData): Promise<CatchResult> {
   })
 
   let caught = false, fled = false
-  await scene.wait(500)
+  await scene.wait(350)
   while (!caught && !fled) {
     if (BALLS[ball].cost > left()) ball = 0
     layout()

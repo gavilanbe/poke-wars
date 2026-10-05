@@ -28,7 +28,7 @@ export interface Mission {
   rules: Omit<Rules, 'mission' | 'fired'>
   map: MapDef
   pieces: Piece[]
-  wild?: { x: number; y: number; kind: string; weak?: boolean }[]
+  wild?: { x: number; y: number; kind: string }[]
   items?: { x: number; y: number; type: ItemType }[]
   funds: [number, number]
   fog: boolean

@@ -15,8 +15,9 @@ export function fitOverlays(stageHeight: number) {
 wipe.innerHTML = '<i></i>'.repeat(10)
 
 /** Cortinilla de barras que tapa la pantalla (como al empezar un combate en Pokémon). */
-export async function cover(team = -1) {
-  wipe.className = team < 0 ? 'in' : `in t${team}`
+/** Cortinilla de barras; con un equipo, de su color, y con 'wild', de hierba (encuentro con un salvaje). */
+export async function cover(team: number | 'wild' = -1) {
+  wipe.className = team === 'wild' ? 'in wild' : team < 0 ? 'in' : `in t${team}`
   wipe.hidden = false
   await sleep(330)
 }

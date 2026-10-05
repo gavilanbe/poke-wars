@@ -231,6 +231,8 @@ export const sfx = {
   heal: () => void (sample('jingle_heal', { vol: 0.6 }) || sample('heal') || notes([660, 880, 1100], 0.06, 0.1, { type: 'triangle', vol: 0.09 })),
   recruit: () => void (sample('recruit') || tone(180, 0.3, { to: 900, type: 'triangle', vol: 0.1 })),
   land: () => { buzz(14); void (sample('land') || (()=>{ noise(0.1, 0.25, 0, 600); tone(110, 0.1, { to: 60, type: 'triangle', vol: 0.15 }) })()) },
+  /** Algo salta de la hierba: el aviso del encuentro con un salvaje. */
+  encounter: () => void (sample('jingle_wild', { vol: 0.8 }) || notes([880, 660, 880, 1320], 0.06, 0.1, { type: 'square', vol: 0.07 })),
   /** El atacante coge impulso: un tono que sube (más largo antes de un golpe gordo). */
   charge: (strong = false) => { tone(180, strong ? 0.42 : 0.28, { to: strong ? 1100 : 760, type: 'triangle', vol: strong ? 0.08 : 0.05 }); noise(strong ? 0.4 : 0.26, 0.05, 0, 3000) },
   /** El grave que va debajo de cada impacto; pesa lo que pese el golpe (0 a 1). */

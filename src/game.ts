@@ -58,7 +58,7 @@ export interface Game {
   fog: boolean // niebla de guerra: solo se ve lo que queda cerca de tus Pokémon y edificios
   weather: Weather
   fainted: [Fainted[], Fainted[]]
-  wild: { x: number; y: number; kind: string; weak?: boolean }[] // salvajes escondidos en la hierba alta; debilitados son más fáciles de atrapar
+  wild: { x: number; y: number; kind: string }[] // salvajes escondidos en la hierba alta
   belt: [Stored[], Stored[]] // el cinturón de cada equipo: Pokémon atrapados que esperan en su Ball a que un Capturador los suelte
   items: { x: number; y: number; type: ItemType }[] // bayas y monedas por el mapa
   map: number
@@ -420,7 +420,7 @@ export function judge(g: Game) {
 export interface MoveEvent {
   caught?: Unit // salvaje atrapado
   stored?: string // atrapado y guardado en el cinturón
-  wild?: 'weak' | 'escaped' | 'broke' // debilitado por quien no captura, se escapó de la Ball, o no había dinero para una
+  wild?: 'escaped' | 'broke' // se escapó de la Ball, o no había dinero para una
   item?: ItemType // objeto recogido
 }
 
@@ -430,8 +430,8 @@ export const BALLS = [
   { id: 'great', name: 'Súper Ball', cost: 800, bonus: 0.15 },
   { id: 'ultra', name: 'Ultra Ball', cost: 1500, bonus: 0.3 },
 ]
-/** Probabilidad de atrapar con una Poké Ball lanzada sin más (lo que hace la IA): mucho mejor si está debilitado. */
-export const AUTO_CATCH = { weak: 0.85, fresh: 0.35 }
+/** Probabilidad de atrapar con una Poké Ball lanzada sin más (lo que hace la IA, que no juega el cerco). */
+export const AUTO_CATCH = 0.55
 const besideFree = (g: Game, x: number, y: number) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
   .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && !unitAt(g, p.x, p.y))
 const hasRoom = (g: Game, team: Team) => g.units.filter((o) => o.team === team).length < MAX_UNITS
@@ -464,7 +464,7 @@ export function release(g: Game, u: Unit): Unit | null {
 /**
  * Mueve la unidad y resuelve lo que encuentre en la casilla:
  * - un objeto: la baya cura y quita el estado; la moneda da dinero;
- * - un salvaje en la hierba: quien no captura lo debilita; quien captura le lanza una Poké Ball (que cuesta dinero)
+ * - un salvaje en la hierba: quien captura le lanza una Poké Ball (que cuesta dinero)
  *   y, si lo atrapa, el salvaje se une al equipo. `outcome` es el resultado ya decidido (y pagado) en el minijuego:
  *   entonces va al cinturón, a esperar en su Ball. Sin él se lanza una Poké Ball a suertes, como hace la IA: si sale
  *   bien aparece en la casilla de al lado y, si no, el salvaje se revuelve y le quita PS.
@@ -487,12 +487,12 @@ export function moveUnit(g: Game, u: Unit, x: number, y: number, outcome?: boole
   if (wild) {
     const field = hasRoom(g, u.team) ? besideFree(g, x, y) : undefined, belt = g.belt[u.team].length < BELT_MAX
     if (!KINDS[u.kind].capture) {
-      if (!wild.weak) { wild.weak = true; ev.wild = 'weak' }
+      // quien no captura pasa de largo: cansarlo y atraparlo es cosa del Capturador
     } else if (outcome !== undefined ? belt || field : field && g.funds[u.team] >= BALLS[0].cost) {
       if (outcome === undefined) g.funds[u.team] -= BALLS[0].cost
-      if (outcome ?? Math.random() < (wild.weak ? AUTO_CATCH.weak : AUTO_CATCH.fresh)) {
+      if (outcome ?? Math.random() < AUTO_CATCH) {
         g.wild = g.wild.filter((w) => w !== wild)
-        const hp = wild.weak ? 6 : 9
+        const hp = 9
         if (outcome !== undefined && belt) { g.belt[u.team].push({ kind: wild.kind, hp }); ev.stored = wild.kind }
         else { ev.caught = addUnit(g, wild.kind, u.team, field!.x, field!.y); ev.caught.hp = hp }
       } else {

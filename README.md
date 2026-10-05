@@ -57,7 +57,7 @@ El juego se instala como aplicación y se juega con el dedo, en horizontal:
   decide. En verde tu Capturador le golpea y lo cansa; en dorado lanzas la Ball (más fácil cuanto más cansado); en
   rojo te pega él y pierdes PS de verdad. Fallar le gasta la paciencia y acaba huyendo. Cada tipo retuerce el dial.
 - **El cinturón**: lo atrapado espera en su Ball (hasta tres) y cualquier Capturador lo saca a la casilla de al lado
-  con la orden «Soltar», que gasta su turno. La IA no juega el minijuego: lanza a suertes y, si falla, pierde 2 PS.
+  con la orden «Soltar», que gasta su turno. La IA no juega el minijuego: lanza a suertes (55 %) y, si falla, pierde 2 PS.
 
 ## Experiencia y evolución
 

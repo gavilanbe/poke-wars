@@ -1209,5 +1209,11 @@ button { touch-action: manipulation; }
 .ballfx.throw { animation: ball-throw 0.52s cubic-bezier(0.3, 0, 0.6, 1) forwards; }
 @keyframes ball-throw { 0% { translate: 0 0; rotate: 0turn; scale: 0.6; } 50% { translate: calc(var(--dx) * 0.5) calc(var(--dy) * 0.5 - 46px); scale: 1.2; } 100% { translate: var(--dx) var(--dy); rotate: 2turn; scale: 1; } }
 #info .wildline { color: #ffd0a0; font-size: 17px; }
-#info .wildline.weak { color: #8cf08c; }
 #info .line .edge { color: #ffd84a; }
+
+/* Aparición del salvaje: su nombre entra letra a letra y un «!» sobre tu Pokémon */
+.wildhello { position: absolute; left: 0; right: 0; top: 16%; text-align: center; pointer-events: none; animation: banner-life 1.5s both; }
+.wildhello small { display: block; font-size: 3.2vh; letter-spacing: 0.6vh; color: #ffd84a; text-shadow: 0.3vh 0.3vh 0 #10141c; }
+.wildhello b { display: block; font-family: var(--display); font-weight: 400; font-size: 12vh; line-height: 1; letter-spacing: 0.4vh; color: #fff; }
+.wildhello b span { display: inline-block; text-shadow: 0.6vh 0.6vh 0 #2c7c40, -0.3vh -0.3vh 0 #10141c, 0.3vh -0.3vh 0 #10141c, -0.3vh 0.3vh 0 #10141c; animation: letter-slam 0.26s calc(0.1s + var(--i) * 0.035s) backwards; }
+.cappop.alert { font-size: 11vh; color: #ffd84a; }

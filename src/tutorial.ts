@@ -11,7 +11,7 @@ export interface DemoUnit { kind: string; team: 0 | 1; x: number; y: number; hp?
 export interface Lesson {
   buildings?: { x: number; y: number; owner?: -1 | 0 | 1; cap?: number }[] // por la casilla de su puerta
   units: DemoUnit[]
-  wild?: { x: number; y: number; kind: string; weak?: boolean }[]
+  wild?: { x: number; y: number; kind: string }[]
   items?: { x: number; y: number; type: ItemType }[]
   funds?: [number, number]
   meter?: [number, number]
@@ -287,27 +287,19 @@ const PAGES: Page[] = [
     title: 'SALVAJES Y OBJETOS',
     text: 'En la hierba alta se esconden <b>Pokémon salvajes</b>. Atraparlos cuesta <b>Balls</b> y algo de riesgo, pero salen mucho más baratos que reclutar.',
     lesson: () => ({
-      cursor: [7, 14], funds: [1500, 0], items: [{ x: 5, y: 15, type: 'berry' }, { x: 8, y: 16, type: 'coin' }],
-      wild: [{ x: 10, y: 14, kind: typed('grass') }, { x: 11, y: 13, kind: typed('normal'), weak: true }],
-      units: [{ kind: RED('luchador'), team: 0, x: 7, y: 14 }, { kind: RED('capturador'), team: 0, x: 12, y: 12 }, { kind: RED('explorador'), team: 0, x: 4, y: 15, hp: 5 }, far],
+      cursor: [12, 12], funds: [1500, 0], items: [{ x: 5, y: 15, type: 'berry' }, { x: 8, y: 16, type: 'coin' }],
+      wild: [{ x: 11, y: 13, kind: typed('normal') }],
+      units: [{ kind: RED('capturador'), team: 0, x: 12, y: 12 }, { kind: RED('explorador'), team: 0, x: 4, y: 15, hp: 5 }, far],
     }),
     async play(d) {
-      await d.say('La hierba que se agita esconde un salvaje; de cerca se ve quién es. Písala con cualquier Pokémon para debilitarlo.')
-      await d.press('Enter', 800)
-      await d.to(10, 14)
-      await d.press('Enter')
-      await menu(d)
-      await d.press('Enter') // Esperar: al pisar la hierba, debilita al salvaje
-      await d.idle()
-      await d.say('Ahora lleva a un Capturador a un salvaje debilitado: así es mucho más fácil.')
-      await d.to(12, 12)
+      await d.say('La hierba que se agita esconde un salvaje; de cerca se ve quién es. Solo un Capturador puede atraparlo.')
       await d.press('Enter', 800)
       await d.to(11, 13)
       await d.press('Enter')
       await menu(d)
-      await d.press('Enter') // el Capturador se planta encima: empieza el lanzamiento
+      await d.press('Enter') // el Capturador se planta encima: empieza el cerco
       await d.wait(1800)
-      await d.say('El cerco: pulsa en verde para golpearlo, en dorado para lanzar la Ball… y nunca en rojo, que te pega él. Aquí es todo dorado.')
+      await d.say('El cerco: pulsa en verde para golpearlo y cansarlo, en dorado para lanzar la Ball… y nunca en rojo, que te pega él. Aquí es todo dorado.')
       await d.press('Enter')
       await d.idle()
       await d.say('¡Atrapado! Espera en su Ball, en tu cinturón: un Capturador lo suelta donde quieras con la orden «Soltar».')
