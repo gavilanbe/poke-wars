@@ -289,6 +289,7 @@ const mouse = { x: -1, y: -1, inside: false } // posición en la pantalla del ma
 const keysDown = new Set<string>()
 const worldW = () => g.w * T, worldH = () => g.h * T
 function panTo(x: number, y: number, snap = false) {
+  if (viewFit) return // en el mapa del mundo la cámara no se mueve
   // Si la ventana es mayor que el mundo, se centra
   cam.tx = worldW() <= canvas.width ? (worldW() - canvas.width) / 2 : Math.max(0, Math.min(worldW() - canvas.width, x - canvas.width / 2))
   cam.ty = worldH() <= canvas.height ? (worldH() - canvas.height) / 2 : Math.max(0, Math.min(worldH() - canvas.height, y - canvas.height / 2))
@@ -330,8 +331,14 @@ function hurt(u: Unit, ms = 380) {
 }
 
 /** El mapa ocupa toda la ventana: se elige la escala y el lienzo coge los píxeles que quepan. */
+/** En el mapa del mundo de la historia: el rectángulo de la ventana en el que tiene que caber el mapa entero. */
+let viewFit: { x: number; y: number; w: number; h: number } | null = null
 function resize() {
   scale = Math.max(1.5, Math.min(4, Math.round((innerWidth / 640) * 2) / 2 + zoom * 0.5))
+  if (viewFit && g) { // se aleja hasta que cabe entero (en pasos de cuarto de punto mientras se pueda, para que el píxel no baile)
+    const fit = Math.min(viewFit.w / worldW(), viewFit.h / worldH())
+    scale = fit >= 1 ? Math.floor(fit * 4) / 4 : fit
+  }
   canvas.width = Math.ceil(innerWidth / scale)
   canvas.height = Math.ceil(innerHeight / scale)
   mapFx?.resize(canvas.width, canvas.height)
@@ -340,7 +347,10 @@ function resize() {
     c.style.height = canvas.height * scale + 'px'
   }
   fitOverlays(innerHeight)
-  if (g) panTo(cam.tx + canvas.width / 2, cam.ty + canvas.height / 2, true)
+  if (viewFit && g) { // el mapa, centrado en su rectángulo y quieto
+    cam.x = cam.tx = -(viewFit.x + (viewFit.w - worldW() * scale) / 2) / scale
+    cam.y = cam.ty = -(viewFit.y + (viewFit.h - worldH() * scale) / 2) / scale
+  } else if (g) panTo(cam.tx + canvas.width / 2, cam.ty + canvas.height / 2, true)
 }
 
 /** Un Pokémon y lo que puede llegar a ser: sus hojas se piden juntas para que la evolución no aparezca a medias. */
@@ -1935,10 +1945,12 @@ story.init({
     hover = null
   },
   mission(game: Game) {
+    viewFit = null
     stage.classList.remove('storying')
     isAI[0] = false; isAI[1] = true
     void loadSpeciesList(speciesOf(game))
     enterGame(game)
+    resize()
     shownFunds[0] = game.funds[0]; shownFunds[1] = game.funds[1]; shownMeter[0] = shownMeter[1] = 0
     weatherShown = game.weather
     const first = game.units.find((u) => u.team === 0) ?? { x: 0, y: 0 }
@@ -1948,7 +1960,8 @@ story.init({
     game.units.forEach((u, i) => dropIn(u, 500 + i * 90))
     themeNow()
   },
-  title() { showTitle() },
+  title() { viewFit = null; showTitle(); resize() },
+  fit(rect: { x: number; y: number; w: number; h: number } | null) { viewFit = rect; resize() },
   screen: (x: number, y: number) => [(x * T + T / 2 - cam.x) * scale, (y * T + T / 2 - cam.y) * scale],
   tile: () => T * scale,
   pan(x: number, y: number, snap?: boolean) { panTo(x * T + T / 2, y * T + T / 2, snap) },

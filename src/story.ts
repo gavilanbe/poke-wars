@@ -19,6 +19,8 @@ export interface StoryApi {
   /** Tamaño en pantalla de una casilla. */
   tile(): number
   pan(x: number, y: number, snap?: boolean): void
+  /** Aleja la vista hasta que el mapa entero quepa en ese rectángulo de la ventana (null: vista normal). */
+  fit(rect: { x: number; y: number; w: number; h: number } | null): void
   /** Deja caer en el campo los refuerzos recién llegados. */
   drop(units: Unit[]): void
   /** Bloquea o devuelve el manejo del mapa mientras alguien habla. */
@@ -43,6 +45,8 @@ let hero = 'pikachu' // comandante elegido para la misión
 const q = <E extends HTMLElement>(sel: string) => host.querySelector(sel) as E
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 const restart = (el: Element, cls: string) => { el.classList.remove(cls); void (el as HTMLElement).offsetWidth; el.classList.add(cls) }
+/** Como restart, pero la clase se va sola cuando acaba su animación. */
+const flash = (el: Element, cls: string) => { restart(el, cls); (el as HTMLElement).onanimationend = () => el.classList.remove(cls) }
 const RANK_TEXT: Record<string, string> = { S: 'Impecable', A: 'Muy bien', B: 'Bien', C: 'Por los pelos' }
 
 // ---------- Conversaciones ----------
@@ -184,23 +188,108 @@ function buildWorld() {
   api.world(world)
 }
 
+/** Coloca el mapa: la región entera a la izquierda de la ficha de misión, con su marco, y el fondo recortado alrededor. */
+function layout() {
+  if (screen !== 'world' && screen !== 'brief') return
+  const vh = innerHeight / 100, card = Math.min(50 * vh, innerWidth * 0.36)
+  api.fit({ x: 4 * vh, y: 13 * vh, w: innerWidth - card - 12 * vh, h: innerHeight - 21 * vh })
+  const [x0, y0] = api.screen(-0.5, -0.5), u = api.tile(), w = WORLD.rows[0].length * u, h = WORLD.rows.length * u
+  const map = q('.st-frame')
+  Object.assign(map.style, { left: x0 + 'px', top: y0 + 'px', width: w + 'px', height: h + 'px' })
+  map.style.setProperty('--u', u + 'px')
+  // El fondo tapa todo menos el hueco del mapa
+  q('.st-backdrop').style.clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${x0}px ${y0}px, ${x0}px ${y0 + h}px, ${x0 + w}px ${y0 + h}px, ${x0 + w}px ${y0}px, ${x0}px ${y0}px)`
+}
+addEventListener('resize', layout)
+/** Posición dentro del marco, en porcentaje, de una casilla del mundo. */
+const at = (x: number, y: number) => `left:${((x + 0.5) / WORLD.rows[0].length) * 100}%;top:${((y + 0.5) / WORLD.rows.length) * 100}%`
+
+/** Lo que el mapa enseña como superado y como abierto: va por detrás del guardado mientras dura la celebración. */
+let doneShown = 0, openShown = 0
+const dotAt = new Map<string, HTMLElement>()
+/** Suelta un efecto de usar y tirar sobre una casilla del mapa. */
+function fx(cls: string, x: number, y: number, style = '') {
+  const el = document.createElement('i')
+  el.className = cls
+  el.style.cssText = at(x, y) + ';' + style
+  el.onanimationend = () => el.remove()
+  q('.st-fx').append(el)
+}
+function burst(x: number, y: number, colors: string[], n = 14) {
+  fx('st-wave', x, y)
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2 + Math.random() * 0.4, d = 1.2 + Math.random() * 1.6
+    fx('st-bit', x, y, `--dx:${Math.cos(a) * d};--dy:${Math.sin(a) * d - 0.8};background:${colors[k % colors.length]};animation-delay:${Math.random() * 60}ms`)
+  }
+}
+
+/** Tras ganar: se planta la bandera, la ruta se enciende punto a punto y el siguiente destino se abre de golpe. */
+async function celebration(n: number) {
+  const on = () => screen === 'world'
+  await sleep(500)
+  if (!on()) return
+  const won = MISSIONS[n - 1]
+  doneShown = n
+  paintCard()
+  burst(won.node[0], won.node[1] - 1.9, ['#ffd84a', '#fff', '#58d870', '#f4645a'], 18)
+  const flag = host.querySelectorAll<HTMLElement>('.st-flags i')[n - 1]
+  flag.classList.add('on'); restart(flag, 'new')
+  q('.st-flags span').textContent = `${n} de ${MISSIONS.length} banderas`
+  sfx.ready()
+  if (n >= MISSIONS.length) return
+  await sleep(650)
+  for (const [k, el] of [...host.querySelectorAll<HTMLElement>(`.st-dot[data-leg="${n}"]`)].entries()) {
+    if (!on()) return
+    el.classList.add('open'); flash(el, 'hit')
+    if (k % 2 === 0) sfx.coin()
+    await sleep(55)
+  }
+  await sleep(200)
+  if (!on()) return
+  openShown = n
+  paintCard()
+  const next = MISSIONS[n]
+  restart(host.querySelector(`.st-node[data-i="${n}"]`)!, 'unlock')
+  burst(next.node[0], next.node[1] - 1.9, ['#f4645a', '#ffd84a', '#fff'])
+  sfx.land()
+  await sleep(600)
+  if (on() && chosen === n - 1) select(n) // camina hasta la siguiente
+}
+
 /** Enseña el mapa del mundo, con la ficha en la misión que toca. */
 async function showWorld(celebrate = false) {
   screen = 'world'
   buildWorld()
   host.hidden = false
   host.className = 'world'
-  q('.st-nodes').innerHTML = MISSIONS.map((m, i) => `<button class="st-node" data-i="${i}"><i></i><b>${i + 1}</b></button>`).join('')
-  host.querySelectorAll<HTMLButtonElement>('.st-node').forEach((btn, i) => (btn.onclick = () => { if (i <= cleared()) { if (i === chosen) openBrief(); else select(i) } }))
-  const n = cleared(), at = Math.min(celebrate ? Math.max(0, n - 1) : n, MISSIONS.length - 1)
-  chosen = at
-  Object.assign(token, below(MISSIONS[at]), { path: [], moving: false })
-  api.pan(token.x, token.y, true)
+  const n = cleared()
+  // La ruta de la historia, punteada de misión en misión: dorada hasta donde se ha llegado
+  let dots = ''
+  celebrate &&= n > 0
+  doneShown = celebrate ? n - 1 : n
+  openShown = doneShown
+  let k = 0
+  for (let i = 1; i < MISSIONS.length; i++) for (const p of route(below(MISSIONS[i - 1]), below(MISSIONS[i])).slice(1, -1)) dots += `<i class="st-dot ${i <= openShown ? 'open' : ''}" data-leg="${i}" data-at="${p.x},${p.y}" style="${at(p.x, p.y)};--k:${k++}"></i>`
+  // El cartel va bajo la puerta, salvo que ahí caiga el pin de otra misión: entonces, a un lado
+  const label = (m: Mission) => MISSIONS.some((o) => o !== m && Math.abs(o.node[0] - m.node[0]) < 3 && Math.abs(o.node[1] - 1.9 - (m.node[1] + 1.15)) < 1.2)
+    ? `${at(m.node[0] + 1.7, m.node[1] - 0.2)};translate:0 -50%` : at(m.node[0], m.node[1] + 1.15)
+  q('.st-nodes').innerHTML = dots + MISSIONS.map((m, i) => `<button class="st-node" data-i="${i}" style="${at(m.node[0], m.node[1] - 1.9)};--k:${i}"><i></i><b>${i + 1}</b></button>
+    <span class="st-place" data-i="${i}" style="${label(m)};--k:${i}">${m.place}</span>`).join('')
+  dotAt.clear()
+  host.querySelectorAll<HTMLElement>('.st-dot').forEach((el) => dotAt.set(el.dataset.at!, el))
+  q('.st-fx').innerHTML = ''
+  restart(q('.st-frame'), 'enter')
+  setTimeout(() => q('.st-frame').classList.remove('enter'), 1800)
+  host.querySelectorAll<HTMLButtonElement>('.st-node').forEach((btn, i) => (btn.onclick = () => { if (i <= cleared()) { if (i === chosen) void openBrief(); else select(i) } }))
+  const start = Math.min(celebrate ? Math.max(0, n - 1) : n, MISSIONS.length - 1)
+  chosen = start
+  Object.assign(token, below(MISSIONS[start]), { path: [], moving: false })
+  layout()
   void loadSpecies(save.hero)
   paintCard()
-  q('.st-flags').innerHTML = MISSIONS.map((_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('') + `<span>${n} de ${MISSIONS.length} banderas</span>`
+  q('.st-flags').innerHTML = MISSIONS.map((_, i) => `<i class="${i < doneShown ? 'on' : ''}" style="--k:${i}"></i>`).join('') + `<span>${doneShown} de ${MISSIONS.length} banderas</span>`
   music.play('select')
-  if (celebrate && n < MISSIONS.length) { await sleep(900); select(n) } // camina hasta la siguiente
+  if (celebrate) void celebration(n)
 }
 
 function select(i: number) {
@@ -227,7 +316,11 @@ function paintCard() {
     <button class="st-go">¡A LA BATALLA! <kbd>Enter</kbd></button>`
   q('.st-go').onclick = () => openBrief()
   restart(card, 'swap')
-  host.querySelectorAll('.st-node').forEach((el, i) => { el.className = `st-node ${i < cleared() ? 'done' : i === cleared() ? 'next' : 'locked'} ${i === chosen ? 'sel' : ''}` })
+  host.querySelectorAll('.st-node').forEach((el, i) => { el.className = `st-node ${i < doneShown ? 'done' : i <= openShown ? 'next' : 'locked'} ${i === chosen ? 'sel' : ''}` })
+  host.querySelectorAll('.st-place').forEach((el, i) => { el.className = `st-place ${i > openShown ? 'locked' : ''} ${i === chosen ? 'sel' : ''}` })
+  const ring = q('.st-ring')
+  ring.style.cssText = at(m.node[0], m.node[1] + 1)
+  ring.style.setProperty('--c', foe.color)
 }
 
 /** Lo llama el bucle de pintado: mueve la ficha, lleva la cámara y recoloca los marcadores sobre el mapa. */
@@ -237,17 +330,25 @@ export function frame(time: number, dt: number) {
     const next = token.path[0], dx = next.x - token.x, dy = next.y - token.y, d = Math.hypot(dx, dy), step = dt * 0.009
     token.moving = true
     if (Math.abs(dx) + Math.abs(dy) > 0.01) token.dir = dirFrom(dx, dy)
-    if (d <= step) { token.x = next.x; token.y = next.y; token.path.shift(); if (token.path.length % 2 === 0) sfx.step() } else { token.x += (dx / d) * step; token.y += (dy / d) * step }
+    if (d <= step) {
+      token.x = next.x; token.y = next.y; token.path.shift()
+      if (token.path.length % 2 === 0) sfx.step()
+      fx('st-dust', next.x, next.y + 0.3)
+      const dot = dotAt.get(`${next.x},${next.y}`)
+      if (dot) flash(dot, 'hit')
+      if (!token.path.length) { // ha llegado: saltito, onda y el pin se asoma
+        flash(q('.st-token'), 'land')
+        fx('st-wave', next.x, next.y)
+        const pin = host.querySelector(`.st-node[data-i="${chosen}"]`)
+        if (pin) restart(pin, 'ping')
+        sfx.select()
+      }
+    } else { token.x += (dx / d) * step; token.y += (dy / d) * step }
     api.pan(token.x, token.y)
   } else token.moving = false
-  const size = api.tile()
-  host.querySelectorAll<HTMLElement>('.st-node').forEach((el, i) => {
-    const [x, y] = api.screen(MISSIONS[i].node[0], MISSIONS[i].node[1] - 2.6)
-    el.style.transform = `translate(${x}px, ${y}px)`
-  })
-  const [tx, ty] = api.screen(token.x, token.y), el = q<HTMLCanvasElement>('.st-token')
-  el.style.width = el.style.height = size * 1.5 + 'px'
-  el.style.transform = `translate(${tx - size * 0.75}px, ${ty - size * 1.05}px)`
+  const el = q<HTMLCanvasElement>('.st-token')
+  el.style.left = ((token.x + 0.5) / WORLD.rows[0].length) * 100 + '%'
+  el.style.top = ((token.y + 0.5) / WORLD.rows.length) * 100 + '%'
   tokenCtx.imageSmoothingEnabled = false
   tokenCtx.clearRect(0, 0, 48, 48)
   tokenCtx.fillStyle = 'rgba(16, 40, 24, 0.35)'
@@ -382,8 +483,9 @@ export const story = {
     api = deps
     host = document.querySelector('#story')!
     host.innerHTML = `<div class="st-world">
+        <div class="st-backdrop"></div>
         <header><b>LA GUERRA DE LAS BANDERAS</b><div class="st-flags"></div></header>
-        <div class="st-nodes"></div><canvas class="st-token" width="48" height="48"></canvas>
+        <div class="st-frame"><div class="st-nodes"></div><i class="st-ring"></i><div class="st-fx"></div><canvas class="st-token" width="48" height="48"></canvas><div class="st-sky"><i></i><i></i><i></i></div></div>
         <aside class="st-card"></aside>
         <footer><kbd>←</kbd><kbd>→</kbd> misión · <kbd>Enter</kbd> elegir · <kbd>Esc</kbd> salir al título</footer>
       </div>
@@ -446,7 +548,7 @@ export const story = {
     if (screen === 'result') {
       const buttons = [...host.querySelectorAll<HTMLButtonElement>('.st-result .st-buttons button')], at = buttons.indexOf(document.activeElement as HTMLButtonElement)
       if (k === 'ArrowLeft' || k === 'ArrowRight') { buttons[(at + 1) % buttons.length]?.focus(); sfx.cursor() }
-      else if (yes) (buttons[at] ?? buttons[buttons.length - 1]).click()
+      else if (yes) (buttons[at] ?? buttons[buttons.length - 1])?.click() // aún no hay botones mientras se cuenta el final
       return true
     }
     return false
