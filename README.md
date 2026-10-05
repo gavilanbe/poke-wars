@@ -48,6 +48,17 @@ El juego se instala como aplicación y se juega con el dedo, en horizontal:
   título y, en mitad de una partida, avisa con un botón. La compilación (`vite.config.ts`) escribe `precache.json`.
 - **Icono**: `node tools/make_icons.mjs` lo vuelve a dibujar en todos los tamaños (`public/icons`).
 
+## Salvajes: el cerco y el cinturón
+
+- **Quién sale**: los salvajes de tu mitad del mapa son de los que más daño hacen al equipo del comandante rival, y
+  los de la suya, al tuyo (`wildAgainst` en `src/game.ts`). Nunca son de ninguno de los dos equipos. De cerca (dos
+  casillas) se ve quién es y el panel dice contra quién sirve.
+- **El cerco** (`playCatch` en `src/cutscenes.ts`): un cursor gira por un dial alrededor del salvaje y un solo botón
+  decide. En verde tu Capturador le golpea y lo cansa; en dorado lanzas la Ball (más fácil cuanto más cansado); en
+  rojo te pega él y pierdes PS de verdad. Fallar le gasta la paciencia y acaba huyendo. Cada tipo retuerce el dial.
+- **El cinturón**: lo atrapado espera en su Ball (hasta tres) y cualquier Capturador lo saca a la casilla de al lado
+  con la orden «Soltar», que gasta su turno. La IA no juega el minijuego: lanza a suertes y, si falla, pierde 2 PS.
+
 ## Experiencia y evolución
 
 - Cada PS de daño da un punto de experiencia; debilitar da 5 más y rendir un edificio, 4 (`src/game.ts`).

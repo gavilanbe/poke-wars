@@ -36,7 +36,7 @@ const SCENES = {
   estado: [`lab.battle(${JSON.stringify(fight('torchic', 'zigzagoon', { dmg: 7, counter: 1, status: 'burn' }, '"'))})`, 5600],
   captura: [`lab.capture({ kind: 'zigzagoon', team: 0, building: { type: 'center', owner: 1 }, capBefore: 9, capAfter: 0, done: true, total: 20 })`, 6400],
   captura2: [`lab.capture({ kind: 'chikorita', team: 1, building: { type: 'gym', owner: -1 }, capBefore: 20, capAfter: 10, done: false, total: 20 })`, 3200],
-  atrapar: [`lab.catch({ kind: 'mareep', team: 0, wild: 'poochyena', weak: true, funds: 2400, sure: true }); setTimeout(() => dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })), 1900); setTimeout(() => dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })), 3050)`, 9500],
+  atrapar: [`lab.catch({ kind: 'mareep', team: 0, hp: 8, wild: 'poochyena', weak: false, funds: 2400 }); for (const ms of [1700, 3300, 4900, 6500, 8100, 9700]) setTimeout(() => dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })), ms)`, 12500],
   pikachu: [`lab.power('pikachu')`, 4200],
   charizard: [`lab.power('charizard')`, 4200],
   blastoise: [`lab.power('blastoise')`, 4200],

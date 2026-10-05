@@ -1174,3 +1174,40 @@ button { touch-action: manipulation; }
 .plate.low { animation: plate-low 0.7s steps(2) infinite; }
 .plate.low .hpnum { color: #e84838; }
 @keyframes plate-low { 50% { box-shadow: 0 0 0 4px #e84838, 5px 5px 0 #0006; } }
+
+/* ---------- Atrapar: «El cerco» y el cinturón ---------- */
+.capwho .myhp { display: flex; align-items: center; gap: 1.2vh; margin-top: 0.8vh; font-size: 2.6vh; text-shadow: 0.2vh 0.2vh 0 #10141c; }
+.capwho .myhp u { position: relative; display: block; width: 22vh; height: 2vh; background: #485060; border: 0.4vh solid #10141c; }
+.capwho .myhp i { position: absolute; left: 0; top: 0; bottom: 0; transition: width 0.3s; box-shadow: inset 0 0.5vh 0 #ffffff70; }
+.capwho .myhp em { font-style: normal; font-family: var(--display); font-size: 3vh; }
+.capwho.hurt { animation: plate-hurt 0.35s; }
+.capwhat .trait { color: #dfe6f4; }
+.capwhat .trait em { font-style: normal; padding: 0 1vh; margin-right: 0.6vh; color: #10141c; background: #ffd84a; border-radius: 0.6vh; }
+.capwhat .gauges { display: flex; justify-content: flex-end; gap: 2.4vh; margin-top: 1vh; font-size: 2.3vh; color: #a8b4cc; }
+.capwhat .gauges span { display: flex; align-items: center; gap: 0.8vh; margin: 0; color: inherit; font-size: inherit; }
+.capwhat .gauges i { display: flex; gap: 0.5vh; }
+.capwhat .gauges b { display: block; width: 1.9vh; height: 1.9vh; margin: 0; border-radius: 50%; background: #303848; border: 0.3vh solid #6c7890; font-size: 0; }
+.capwhat .gauges .stam b.on { background: #58e070; border-color: #fff; }
+.capwhat .gauges .pat b.on { background: #58b8f0; border-color: #fff; }
+.catchbar .odds { font-size: 2.5vh; color: #dfe6f4; white-space: nowrap; }
+.catchbar .odds b { font-family: var(--display); font-weight: 400; font-size: 3.8vh; color: #ffd84a; }
+.catchbar p .z { display: inline-block; width: 2.6vh; height: 1.4vh; margin: 0 0.7vh 0 1.2vh; border: 0.3vh solid #10141c; border-radius: 0.6vh; vertical-align: 0.1vh; }
+.catchbar p .z.hit { background: #58e070; margin-left: 0; }
+.catchbar p .z.ball { background: #ffd84a; }
+.catchbar p .z.foe { background: #ff5040; }
+.catchbar .throw { min-width: 16vh; animation: ready 0.7s infinite; }
+.catchbar .quit { display: none; }
+.touch .catchbar .quit { display: block; grid-column: 1 / -1; justify-self: center; font-family: var(--ui); font-size: 2.6vh; padding: 0.8vh 2.4vh; color: #dfe6f4; background: #1c2230; border: 0.3vh solid #48546c; border-radius: 1.2vh; }
+.capui.busy .cappop { opacity: 1; }
+/* Cinturón: las Balls con lo atrapado, en la ficha del comandante */
+.cop .belt { position: absolute; left: 8px; top: calc(100% + 22px); display: flex; gap: 4px; }
+.cop.t1 .belt { left: auto; right: 8px; }
+.cop .belt i { display: block; width: 30px; height: 30px; border-radius: 50%; background: #10141cd0; border: 2px solid #48546c; overflow: hidden; }
+.cop .belt i:has(img) { border-color: #ffd84a; background: linear-gradient(#e8483c 0 47%, #10141c 47% 53%, #f4f6fb 53%); box-shadow: 0 2px 0 #10141c; animation: talk-bob 1.2s steps(2) infinite; }
+.cop .belt img { width: 100%; height: 100%; image-rendering: pixelated; border-radius: 50%; }
+/* La Ball que sale del Capturador y cae en la casilla de al lado */
+.ballfx.throw { animation: ball-throw 0.52s cubic-bezier(0.3, 0, 0.6, 1) forwards; }
+@keyframes ball-throw { 0% { translate: 0 0; rotate: 0turn; scale: 0.6; } 50% { translate: calc(var(--dx) * 0.5) calc(var(--dy) * 0.5 - 46px); scale: 1.2; } 100% { translate: var(--dx) var(--dy); rotate: 2turn; scale: 1; } }
+#info .wildline { color: #ffd0a0; font-size: 17px; }
+#info .wildline.weak { color: #8cf08c; }
+#info .line .edge { color: #ffd84a; }

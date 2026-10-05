@@ -1354,13 +1354,33 @@ export async function playCapture(c: CaptureData) {
 
 // ---------- Atrapar a un salvaje: el lanzamiento de Ball ----------
 
+// «El cerco». Alrededor del salvaje gira un cursor sobre un dial con tres clases de zona, y un solo botón decide:
+//   · verde: tu Capturador se lanza y lo golpea. Le quita aguante: cada golpe agranda la zona dorada… y añade rojo.
+//   · dorada: lanzas la Ball. Cuanto más cansado esté, más fácil que la retenga; agotado, no falla.
+//   · roja: te ve venir y te pega él. Tu Capturador pierde PS de verdad, los que luego tiene en el mapa.
+// Pulsar fuera de zona, dejar pasar una vuelta entera o fallar una Ball le gasta la paciencia: a cero, huye. Así que
+// hay que decidir cuánto arriesgar: lanzar ya con poca probabilidad o seguir cansándolo con más rojo y más prisa.
+// Y cada tipo de Pokémon retuerce el dial a su manera (ver traitOf).
+
 export interface CatchData {
-  kind: string; team: number // el Capturador
-  wild: string; weak: boolean
+  kind: string; team: number; hp: number // el Capturador y los PS con los que llega
+  wild: string; weak: boolean // debilitado: empieza con un golpe ya dado
   funds: number
   sure?: boolean // el tutorial no falla
 }
-export interface CatchResult { caught: boolean; spent: number; fled: boolean } // `fled`: el salvaje se ha ido del mapa
+/** `fled`: el salvaje se ha ido del mapa. `hurt`: los PS que ha perdido el Capturador. */
+export interface CatchResult { caught: boolean; spent: number; fled: boolean; hurt: number }
+interface Press { kind: 'hit' | 'ball' | 'foe' | 'miss' | 'lap' | 'quit'; exact: number }
+const ZONE: Record<string, string> = { hit: '#58e070', ball: '#ffd84a', foe: '#ff5040' }
+/** Cómo se comporta cada salvaje en el cerco, según su tipo. */
+function traitOf(type: PType): { id: 'fast' | 'sly' | 'tough' | 'restless' | 'fierce' | 'calm'; name: string; help: string } {
+  if (type === 'electric' || type === 'flying' || type === 'fighting') return { id: 'fast', name: 'Veloz', help: 'el cursor corre más' }
+  if (type === 'ghost' || type === 'dark' || type === 'psychic') return { id: 'sly', name: 'Escurridizo', help: 'las zonas se esconden a ratos' }
+  if (type === 'rock' || type === 'steel' || type === 'ground') return { id: 'tough', name: 'Duro', help: 'aguanta un golpe más, pero va lento' }
+  if (type === 'grass' || type === 'bug' || type === 'poison') return { id: 'restless', name: 'Inquieto', help: 'las zonas no paran quietas' }
+  if (type === 'fire' || type === 'dragon') return { id: 'fierce', name: 'Feroz', help: 'si te pega, quita 3 PS' }
+  return { id: 'calm', name: 'Tranquilo', help: 'sin trucos' }
+}
 
 const BALL_IMG = BALLS.map((b) => { const img = new Image(); img.src = `assets/ui/${b.id === 'poke' ? 'ball' : 'ball_' + b.id}.png`; return img })
 let catchInput: ((key: string) => void) | null = null
@@ -1382,12 +1402,42 @@ export async function playCatch(c: CatchData): Promise<CatchResult> {
   scene.resize(CW, CH)
   await open('capture')
   const k = KINDS[c.kind], w = KINDS[c.wild], TEAM_NAME = ['Rojo', 'Azul']
-  const base = CH - 62, horizon = base - 74, wx = Math.round(CW * 0.64), wy = base - 6, R = 30
-  const period = c.weak ? 1700 : 1050
-  let ring = true, held: { x: number; y: number; rot: number; ball: number; open?: number } | null = null, spin = 0
-  const phaseAt = (time: number) => (time % period) / period // 0: aro abierto del todo · 1: cerrado sobre el salvaje
-  const chanceAt = (phase: number, ball: number) => Math.min(1, (c.weak ? 0.5 : 0.08) + (c.weak ? 0.5 : 0.47) * phase + BALLS[ball].bonus)
-  let ball = 0
+  const base = CH - 62, horizon = base - 74, wx = Math.round(CW * 0.64), wy = base - 6, R = 50
+  const cy = wy - 34, trait = traitOf(w.type)
+  let held: { x: number; y: number; rot: number; ball: number } | null = null
+  // El cerco. Aguante: los golpes que le quedan por recibir hasta agotarse. Paciencia: lo que tarda en hartarse y huir.
+  const maxStamina = trait.id === 'tough' ? 4 : 3
+  let stamina = maxStamina - (c.weak ? 1 : 0), patience = 5, rage = 0, hp = c.hp, hurt = 0, spent = 0, ball = 0
+  let arcs: { from: number; w: number; kind: 'hit' | 'ball' | 'foe' }[] = [], angle = -Math.PI / 2, dir = 1, speed = 0, drift = 0, lap = 0
+  let live = false, dial = false, lastTime = 0
+  let settle: ((p: Press) => void) | null = null
+  const tired = () => maxStamina - stamina
+  /** Probabilidad de que la Ball elegida lo retenga ahora mismo: sube con cada golpe; agotado, no falla. */
+  const chanceNow = () => (c.sure || stamina <= 0 ? 1 : Math.min(0.97, [0.3, 0.5, 0.72, 0.88][Math.min(3, tired())] + BALLS[ball].bonus))
+  /** Reparte las zonas por el dial: cuanto más cansado, más dorado… y más rojo, y más deprisa gira. */
+  const layout = () => {
+    if (c.sure) { arcs = [{ from: 0, w: Math.PI * 2, kind: 'ball' }]; speed = (Math.PI * 2) / 2600; return }
+    const parts: { w: number; kind: 'hit' | 'ball' | 'foe' }[] = [{ w: stamina <= 0 ? 2.2 : Math.min(1, 0.3 + 0.2 * tired()), kind: 'ball' }]
+    if (stamina > 0) parts.push({ w: Math.max(0.42, 0.85 - 0.14 * tired()), kind: 'hit' })
+    for (let n = Math.min(4, 1 + tired() + rage); n > 0; n--) parts.push({ w: trait.id === 'tough' ? 0.6 : 0.44, kind: 'foe' })
+    parts.sort(() => Math.random() - 0.5)
+    const free = Math.PI * 2 - parts.reduce((sum, p) => sum + p.w, 0), cuts = parts.map(() => 0.3 + Math.random())
+    const total = cuts.reduce((sum, v) => sum + v, 0)
+    let at = Math.random() * Math.PI * 2
+    arcs = parts.map((p, n) => { const arc = { from: at, w: p.w, kind: p.kind }; at += p.w + (free * cuts[n]) / total; return arc })
+    drift = 0
+    if (trait.id === 'calm' || Math.random() < 0.5) dir = -dir
+    speed = ((Math.PI * 2) / 2100) * (1 + 0.14 * tired() + 0.1 * rage) * (trait.id === 'fast' ? 1.3 : trait.id === 'tough' ? 0.82 : 1) * (c.weak ? 0.88 : 1)
+  }
+  /** La zona que hay bajo ese ángulo, y lo centrado que cae en ella (0 en el borde, 1 en el medio). */
+  const zoneAt = (a: number): Press | null => {
+    const full = Math.PI * 2
+    for (const arc of arcs) {
+      const rel = ((((a - arc.from - drift) % full) + full) % full)
+      if (rel <= arc.w) return { kind: arc.kind, exact: 1 - Math.abs(rel / arc.w - 0.5) * 2 }
+    }
+    return null
+  }
   scene.background = (ctx, time) => {
     SKY.forEach((band, i) => { ctx.fillStyle = band; ctx.fillRect(-16, Math.round((i * horizon) / 5) - (i ? 0 : 16), CW + 32, Math.ceil(horizon / 5) + (i ? 1 : 17)) })
     ctx.fillStyle = '#ffffffd8'
@@ -1416,53 +1466,84 @@ export async function playCatch(c: CatchData): Promise<CatchResult> {
       ctx.drawImage(BALL_IMG[held.ball], -15, -15)
       ctx.restore()
     }
-    if (!ring) return
-    // Diana fija y aro que se cierra: el color dice lo fácil que sería ahora mismo
-    const phase = phaseAt(time), chance = chanceAt(phase, ball), cy = wy - 32
-    spin = time / 900
-    ctx.lineWidth = 3
-    ctx.strokeStyle = '#10141c'
-    ctx.beginPath(); ctx.arc(wx, cy, R + 2, 0, Math.PI * 2); ctx.stroke()
-    ctx.strokeStyle = '#fff'
+    // El cerco: el dial alrededor del salvaje. Mientras está vivo, el cursor gira; si da una vuelta entera sin que pulses, se impacienta.
+    const dt = Math.min(50, time - lastTime)
+    lastTime = time
+    if (live) {
+      const step = speed * dt
+      angle += dir * step
+      if (trait.id === 'restless') drift -= dir * step * 0.35 // las zonas tampoco paran quietas
+      if ((lap += step) >= Math.PI * 2 && !c.sure) settle?.({ kind: 'lap', exact: 0 })
+    }
+    if (!dial) return
+    const hidden = trait.id === 'sly' && live && Math.floor(time / 620) % 3 === 2 // escurridizo: las zonas desaparecen a ratos
+    const under = live ? zoneAt(angle) : null
+    ctx.lineCap = 'butt'
+    ctx.strokeStyle = 'rgba(16, 20, 28, 0.6)'
+    ctx.lineWidth = 12
     ctx.beginPath(); ctx.arc(wx, cy, R, 0, Math.PI * 2); ctx.stroke()
-    const r = R * (2.5 - 2.1 * phase)
-    for (const [color, width] of [['#10141c', 7], [chance >= 0.8 ? '#58e070' : chance >= 0.5 ? '#ffd84a' : chance >= 0.3 ? '#ff9a3c' : '#ff5a48', 4]] as [string, number][]) {
-      ctx.strokeStyle = color
-      ctx.lineWidth = width
-      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(wx, cy, r, spin + (i * Math.PI) / 2 + 0.12, spin + ((i + 1) * Math.PI) / 2 - 0.12); ctx.stroke() }
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.arc(wx, cy, R, 0, Math.PI * 2); ctx.stroke()
+    if (!hidden) {
+      for (const arc of arcs) {
+        const on = under?.kind === arc.kind && live, pulse = arc.kind === 'ball' ? 0.75 + 0.25 * Math.sin(time / 110) : 1
+        for (const [color, width] of [['#10141c', on ? 13 : 11], [ZONE[arc.kind], on ? 9 : 7]] as const) {
+          ctx.strokeStyle = color
+          ctx.globalAlpha = width > 10 ? 1 : pulse
+          ctx.lineWidth = width
+          ctx.beginPath(); ctx.arc(wx, cy, R, arc.from + drift + (width > 10 ? -0.03 : 0), arc.from + arc.w + drift + (width > 10 ? 0.03 : 0)); ctx.stroke()
+        }
+        ctx.globalAlpha = 1
+      }
+    }
+    // El cursor: una punta blanca con su estela
+    for (let i = 4; i >= 0; i--) {
+      const a = angle - dir * i * 0.07, x = wx + Math.cos(a) * R, y = cy + Math.sin(a) * R
+      ctx.fillStyle = i ? `rgba(255, 255, 255, ${0.5 - i * 0.1})` : '#10141c'
+      ctx.beginPath(); ctx.arc(x, y, i ? 5 - i * 0.6 : 8, 0, Math.PI * 2); ctx.fill()
+      if (!i) { ctx.fillStyle = under ? ZONE[under.kind] : '#fff'; ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.fill() }
     }
   }
 
   const foe = scene.actor(w.species, wx, wy, DIR.left, scaleOf(c.wild))
   scene.play(foe, 'Idle', true)
-  if (c.weak) foe.tint = ['#6878a0', 0.25]
   const me = scene.actor(k.species, Math.round(CW * 0.2), base + 30, DIR.right, scaleOf(c.kind))
   scene.play(me, 'Idle', true)
   me.ox = -CW * 0.4
   void scene.tween(420, (t) => { me.ox = -CW * 0.4 * (1 - easeOut(t)) })
-  const dizzy = () => { if (c.weak && ring) for (let i = 0; i < 3; i++) scene.add({ img: 'gold_stars', x: wx + Math.cos(i * 2.1 + scene.time / 300) * 20, y: wy - 62 + Math.sin(i * 2.1 + scene.time / 300) * 5, max: 240, scale: 1 }) }
-  const dizzyTimer = setInterval(dizzy, 240)
+  const dizzyTimer = setInterval(() => { // cansado: le dan vueltas las estrellas
+    if (stamina > 1 || !foe.visible) return
+    for (let i = 0; i < 3; i++) scene.add({ img: 'gold_stars', x: wx + Math.cos(i * 2.1 + scene.time / 300) * 20, y: wy - 62 + Math.sin(i * 2.1 + scene.time / 300) * 5, max: 240, scale: 1 })
+  }, 240)
 
   const ui = document.createElement('div')
   ui.className = `capui catchui t${c.team}`
-  ui.innerHTML = `<div class="capwho"><img src="${facePath(k.species)}" alt=""><div><b>${k.name}</b><span>${ROLES[k.role].name} · Equipo ${TEAM_NAME[c.team]}</span></div></div>
-    <div class="capwhat o-1"><small>POKÉMON SALVAJE</small><b>${w.name}</b><span class="${c.weak ? 'easy' : 'hard'}">${c.weak ? 'Debilitado: fácil de atrapar' : 'En plena forma: difícil'}</span></div>
+  ui.innerHTML = `<div class="capwho"><img src="${facePath(k.species)}" alt=""><div><b>${k.name}</b><span class="myhp"><u><i></i></u><em></em></span></div></div>
+    <div class="capwhat o-1"><small>POKÉMON SALVAJE · ${TYPE_NAME[w.type].toUpperCase()}</small><b>${w.name}</b><span class="trait"><em>${trait.name}</em> ${trait.help}</span>
+      <div class="gauges"><span>Aguante<i class="stam"></i></span><span>Paciencia<i class="pat"></i></span></div></div>
     <div class="catchbar">
       <div class="purse"><i class="coin"></i><b></b></div>
       <div class="balls">${BALLS.map((b, i) => `<button data-ball="${i}"><img src="${BALL_IMG[i].src}" alt=""><b>${b.name}</b><span>${b.cost}₽</span></button>`).join('')}</div>
-      <button class="throw">¡LANZAR!</button>
-      <div class="tries"></div>
-      <p><kbd>←</kbd><kbd>→</kbd> elegir Ball · <kbd>Enter</kbd> lanzar cuando el aro esté <em>pequeño</em> · <kbd>Esc</kbd> dejarlo</p>
+      <button class="throw">¡YA!</button>
+      <div class="odds"></div>
+      <p><i class="z hit"></i>golpéalo para cansarlo · <i class="z ball"></i>lanza la Ball · <i class="z foe"></i>te pega y pierdes PS<span class="tecla"> · <kbd>←</kbd><kbd>→</kbd> Ball · <kbd>Enter</kbd> ¡ya! · <kbd>Esc</kbd> dejarlo</span></p>
+      <button class="quit dedo">Dejarlo</button>
     </div>`
   root.append(ui)
   const q = <E extends HTMLElement>(sel: string) => ui.querySelector(sel) as E
   const buttons = [...ui.querySelectorAll<HTMLButtonElement>('.balls button')]
-  let spent = 0, tries = 3
   const left = () => c.funds - spent
+  const pips = (n: number, of: number) => '<b class="on"></b>'.repeat(Math.max(0, n)) + '<b></b>'.repeat(Math.max(0, of - n))
   const refresh = () => {
     q('.purse b').textContent = String(left())
     buttons.forEach((btn, i) => { btn.disabled = BALLS[i].cost > left(); btn.classList.toggle('on', i === ball) })
-    q('.tries').innerHTML = `Intentos ${'<i class="on"></i>'.repeat(tries)}${'<i></i>'.repeat(3 - tries)}`
+    q('.stam').innerHTML = pips(stamina, maxStamina)
+    q('.pat').innerHTML = pips(patience, 5)
+    q('.myhp i').style.width = hp * 10 + '%'
+    q('.myhp i').style.background = hp > 5 ? '#58d058' : hp > 2 ? '#f0c030' : '#e84838'
+    q('.myhp em').textContent = `${hp}/10 PS`
+    q('.odds').innerHTML = left() < BALLS[0].cost ? 'Sin dinero para una Ball' : `Si lanzas ahora: <b>${Math.round(chanceNow() * 100)}%</b>`
   }
   const pickBall = (i: number) => { if (BALLS[i].cost <= left() && i !== ball) { ball = i; sfx.cursor(); refresh() } }
   const pop = (text: string, x: number, y: number, cls: string) => {
@@ -1478,116 +1559,199 @@ export async function playCatch(c: CatchData): Promise<CatchResult> {
   ui.classList.add('in')
   sfx.cry(w.species, 1, 0.6)
 
-  /** Espera a que la persona lance (devuelve en qué punto estaba el aro) o lo deje (null). */
-  const input = () => new Promise<number | null>((resolve) => {
-    const done = (value: number | null) => { catchInput = null; q<HTMLButtonElement>('.throw').onclick = null; resolve(value) }
-    const fire = () => done(phaseAt(scene.time))
+  /** Espera a que se pulse (devuelve en qué zona estaba el cursor), a que dé la vuelta entera o a que se deje. */
+  const turn = () => new Promise<Press>((resolve) => {
+    lap = 0
+    live = true
+    settle = (value) => {
+      settle = catchInput = null
+      live = false
+      q<HTMLButtonElement>('.throw').onclick = q<HTMLButtonElement>('.quit').onclick = scene.canvas.onpointerdown = null
+      resolve(value)
+    }
+    const fire = () => settle?.(zoneAt(angle) ?? { kind: 'miss', exact: 0 })
     catchInput = (key) => {
       if (key === 'ArrowLeft' || key === 'ArrowRight') { for (let i = ball + (key === 'ArrowRight' ? 1 : -1); i >= 0 && i < BALLS.length; i += key === 'ArrowRight' ? 1 : -1) if (BALLS[i].cost <= left()) return pickBall(i) }
       else if (key === 'Enter' || key === ' ' || key === 'z') fire()
-      else if (key === 'Escape' || key === 'x') done(null)
+      else if (key === 'Escape' || key === 'x') settle?.({ kind: 'quit', exact: 0 })
     }
     q<HTMLButtonElement>('.throw').onclick = fire
+    q<HTMLButtonElement>('.quit').onclick = () => settle?.({ kind: 'quit', exact: 0 })
+    scene.canvas.onpointerdown = fire // tocar la escena también vale
     buttons.forEach((btn, i) => (btn.onclick = () => pickBall(i)))
   })
 
   let caught = false, fled = false
-  while (tries > 0 && !caught) {
+  await scene.wait(500)
+  while (!caught && !fled) {
     if (BALLS[ball].cost > left()) ball = 0
-    if (BALLS[0].cost > left()) { pop('¡Sin dinero!', CW / 2, CH * 0.45, 'dmg'); await scene.wait(900); break }
+    layout()
     refresh()
     ui.classList.remove('busy')
-    ring = true
-    const phase = await input()
-    if (phase === null) break
-    ring = false
+    dial = true
+    const press = await turn()
     ui.classList.add('busy')
-    spent += BALLS[ball].cost
-    tries--
-    refresh()
-    const chance = chanceAt(phase, ball)
-    pop(phase > 0.82 ? '¡EXCELENTE!' : phase > 0.58 ? '¡GENIAL!' : phase > 0.3 ? '¡BIEN!' : 'Flojo…', wx, wy - 96, phase > 0.3 ? 'good' : 'weak')
-    // Lanzamiento en arco
-    scene.play(me, 'Attack')
-    sfx.lunge()
-    const from = { x: me.x + 14, y: me.y - 30 }
-    held = { x: from.x, y: from.y, rot: 0, ball }
-    await scene.tween(460, (t) => {
-      held!.x = from.x + (wx - from.x) * t
-      held!.y = from.y + (wy - 34 - from.y) * t - Math.sin(t * Math.PI) * 70
-      held!.rot = t * 14
-      if (Math.random() < 0.6) scene.add({ x: held!.x, y: held!.y, max: 260, size: 3, color: '#fff', behind: true })
-    })
-    scene.play(me, 'Idle', true)
-    // Lo absorbe: destello y el Pokémon se encoge hacia la Ball
-    scene.flashScreen('#fff', 0.7, 6)
-    scene.addShake(4)
-    sfx.hit()
-    scene.add({ ring: 46, size: 5, color: '#fff', x: wx, y: wy - 34, max: 300 })
-    foe.tint = ['#fff', 1]
-    await scene.tween(260, (t) => { foe.sx = foe.sy = 1 - t; foe.oy = -34 * t })
-    foe.visible = false
-    await scene.tween(320, (t) => { held!.y = wy - 34 + (34 - 6) * easeIn(t); held!.rot = 14 + t * 6 })
-    sfx.land()
-    scene.burst(wx, wy - 4, 8, { colors: ['#e8f0d8', '#c8d0b8'], speed: 1.8, up: 1, max: 380, size: 3 })
-    await scene.tween(220, (t) => { held!.y = wy - 6 - Math.sin(t * Math.PI) * 12 })
-    held.rot = 0
-    // Se menea: uno, dos, tres… o se abre antes
-    caught = !!c.sure || Math.random() < chance
-    const shakes = caught ? 3 : Math.random() < chance ? 2 : Math.random() < 0.6 ? 1 : 0
-    await scene.wait(260)
-    for (let i = 0; i < shakes; i++) {
-      sfx.ball()
-      await scene.tween(440, (t) => { held!.rot = Math.sin(t * Math.PI * 2) * 0.5 * (1 - t * 0.3); held!.x = wx + Math.sin(t * Math.PI * 2) * 4 })
-      held.rot = 0; held.x = wx
-      await scene.wait(380)
+    if (press.kind === 'quit') break
+
+    if (press.kind === 'hit') { // en verde: tu Pokémon se lanza y lo cansa
+      scene.play(me, 'Attack')
+      sfx.lunge()
+      const reachX = wx - me.x - 26 * foe.scale * 0.5, reachY = wy - me.y
+      await scene.tween(150, (t) => { me.ox = reachX * easeIn(t); me.oy = reachY * easeIn(t) - Math.sin(t * Math.PI) * 14; if (Math.random() < 0.5) scene.ghost(me) })
+      stamina--
+      scene.hitStop(90)
+      scene.addShake(5)
+      scene.canvas.animate([{ transform: 'scale(1.06)' }, { transform: 'scale(1)' }], { duration: 260, easing: 'cubic-bezier(0.2, 1.4, 0.4, 1)' })
+      scene.fx('hit', wx, cy, { fps: 20, scale: 2.6 })
+      scene.add({ ring: 40, size: 6, color: '#58e070', x: wx, y: cy, max: 300 })
+      scene.burst(wx, cy, 12, { colors: ['#fff', '#58e070'], speed: 3.5, size: 3, max: 360 })
+      sfx.thump(0.5); sfx.hit()
+      scene.play(foe, 'Hurt')
+      foe.tint = ['#fff', 1]
+      void scene.tween(300, (t) => { foe.tint[1] = Math.floor(t * 6) % 2 ? 0 : 1 - t; foe.ox = 10 * (1 - t) })
+      pop(stamina <= 0 ? '¡AGOTADO!' : press.exact > 0.6 ? '¡En el punto!' : '¡Golpe!', wx, wy - 100, 'good')
+      if (stamina <= 0) { foe.tint = ['#6878a0', 0.3]; sfx.ready() }
+      refresh()
+      void scene.tween(300, (t) => { me.ox = reachX * (1 - easeOut(t)); me.oy = reachY * (1 - easeOut(t)) - Math.sin(t * Math.PI) * 12 }).then(() => scene.play(me, 'Idle', true))
+      await scene.wait(520)
+      scene.play(foe, 'Idle', true)
+      continue
     }
-    if (caught) {
-      sfx.confirm()
-      scene.add({ ring: 40, size: 4, color: '#ffd84a', x: wx, y: wy - 6, max: 400 })
-      for (let i = 0; i < 14; i++) scene.add({ img: 'gold_stars', x: wx, y: wy - 8, vx: Math.cos(i * 0.45) * 3.2, vy: Math.sin(i * 0.45) * 3.2 - 2, g: 0.08, drag: 0.95, max: 800, scale: 2 })
-      await scene.wait(420)
-      music.play('')
-      sfx.caught()
-      scene.flashScreen('#fff', 0.6, 5)
-      for (let i = 0; i < 60; i++) scene.add({ img: 'confetti', frame: Math.floor(rnd(0, 12)), x: wx + rnd(-50, 50), y: wy - 60, vx: rnd(-4, 4), vy: rnd(-6.5, -2), g: 0.16, drag: 0.98, max: rnd(1000, 1600), scale: 2, vr: 0.2 })
-      const banner = document.createElement('div')
-      banner.className = `capbanner t${c.team}`
-      banner.innerHTML = `<b>${[...'¡ATRAPADO!'].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')}</b><span>${w.name} se une a tu equipo · gastado ${spent}₽ en Balls</span>`
-      ui.classList.add('won')
-      ui.append(banner)
-      scene.play(me, 'Hop')
-      await scene.tween(900, (t) => { me.oy = -Math.abs(Math.sin(t * Math.PI * 2)) * 16 })
-      await scene.wait(900)
-    } else {
-      // Se abre la Ball y sale de un salto
+
+    if (press.kind === 'foe') { // en rojo: te ve venir y te pega él
+      const dmg = trait.id === 'fierce' ? 3 : 2
+      scene.play(foe, 'Attack')
+      sfx.cry(w.species, 1.1, 0.5)
+      const reachX = me.x - wx + 22, reachY = me.y - wy
+      await scene.tween(170, (t) => { foe.ox = reachX * easeIn(t); foe.oy = reachY * easeIn(t) - Math.sin(t * Math.PI) * 18; if (Math.random() < 0.5) scene.ghost(foe) })
+      hp = Math.max(1, hp - dmg)
+      hurt += dmg
+      scene.hitStop(130)
+      scene.addShake(9)
+      scene.flashScreen('#ff3020', 0.45, 5)
+      scene.canvas.animate([{ transform: 'scale(1.1)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'cubic-bezier(0.2, 1.4, 0.4, 1)' })
+      scene.fx('hit', me.x, me.y - 30, { fps: 20, scale: 3 })
+      scene.burst(me.x, me.y - 30, 16, { colors: ['#fff', '#ff5040'], speed: 4, size: 3, max: 380 })
+      sfx.thump(0.8); sfx.bigHit()
+      scene.play(me, 'Hurt')
+      me.tint = ['#ff5040', 0.8]
+      void scene.tween(360, (t) => { me.tint[1] = 0.8 * (1 - t); me.ox = -14 * (1 - t) })
+      pop(`−${dmg} PS`, me.x, me.y - 80, 'dmg')
+      pop('¡Te ha visto venir!', wx, wy - 100, 'weak')
+      restartClass(q('.capwho'), 'hurt')
+      refresh()
+      void scene.tween(320, (t) => { foe.ox = reachX * (1 - easeOut(t)); foe.oy = reachY * (1 - easeOut(t)) - Math.sin(t * Math.PI) * 14 }).then(() => scene.play(foe, 'Idle', true))
+      await scene.wait(640)
+      scene.play(me, 'Idle', true)
+      if (hp <= 1) { // no puede seguir: se retira y el salvaje se queda donde estaba
+        pop('¡No puede más! Se retira…', CW / 2, CH * 0.42, 'dmg')
+        sfx.error()
+        await scene.wait(1100)
+        break
+      }
+      continue
+    }
+
+    if (press.kind === 'miss' || press.kind === 'lap' || (press.kind === 'ball' && left() < BALLS[ball].cost)) { // al aire, o se te pasó la vuelta
+      patience--
+      pop(press.kind === 'lap' ? 'Se impacienta…' : press.kind === 'ball' ? '¡Sin dinero para una Ball!' : '¡Al aire!', wx, wy - 100, 'weak')
+      sfx.error()
+      scene.play(foe, 'Hop')
+      void scene.tween(300, (t) => { foe.oy = -Math.sin(t * Math.PI) * 10 }).then(() => scene.play(foe, 'Idle', true))
+      refresh()
+      await scene.wait(press.kind === 'lap' ? 380 : 560)
+    } else { // en dorado: va la Ball
+      dial = false
+      const chance = chanceNow() + (press.exact > 0.6 ? 0.1 : 0)
+      spent += BALLS[ball].cost
+      refresh()
+      pop(press.exact > 0.6 ? '¡EXCELENTE!' : '¡Ball va!', wx, wy - 100, 'good')
+      scene.play(me, 'Attack')
+      sfx.lunge()
+      const from = { x: me.x + 14, y: me.y - 30 }
+      held = { x: from.x, y: from.y, rot: 0, ball }
+      await scene.tween(460, (t) => {
+        held!.x = from.x + (wx - from.x) * t
+        held!.y = from.y + (wy - 34 - from.y) * t - Math.sin(t * Math.PI) * 70
+        held!.rot = t * 14
+        if (Math.random() < 0.6) scene.add({ x: held!.x, y: held!.y, max: 260, size: 3, color: '#fff', behind: true })
+      })
+      scene.play(me, 'Idle', true)
+      // Lo absorbe: destello y el Pokémon se encoge hacia la Ball
+      scene.flashScreen('#fff', 0.7, 6)
+      scene.addShake(4)
+      sfx.hit()
+      scene.add({ ring: 46, size: 5, color: '#fff', x: wx, y: wy - 34, max: 300 })
+      foe.tint = ['#fff', 1]
+      await scene.tween(260, (t) => { foe.sx = foe.sy = 1 - t; foe.oy = -34 * t })
+      foe.visible = false
+      await scene.tween(320, (t) => { held!.y = wy - 34 + (34 - 6) * easeIn(t); held!.rot = 14 + t * 6 })
+      sfx.land()
+      scene.burst(wx, wy - 4, 8, { colors: ['#e8f0d8', '#c8d0b8'], speed: 1.8, up: 1, max: 380, size: 3 })
+      await scene.tween(220, (t) => { held!.y = wy - 6 - Math.sin(t * Math.PI) * 12 })
+      held.rot = 0
+      // Se menea: uno, dos, tres… o se abre antes
+      caught = !!c.sure || Math.random() < chance
+      const shakes = caught ? 3 : Math.random() < chance ? 2 : Math.random() < 0.6 ? 1 : 0
+      await scene.wait(260)
+      for (let i = 0; i < shakes; i++) {
+        sfx.ball()
+        await scene.tween(440, (t) => { held!.rot = Math.sin(t * Math.PI * 2) * 0.5 * (1 - t * 0.3); held!.x = wx + Math.sin(t * Math.PI * 2) * 4 })
+        held.rot = 0; held.x = wx
+        await scene.wait(380)
+      }
+      if (caught) {
+        sfx.confirm()
+        scene.add({ ring: 40, size: 4, color: '#ffd84a', x: wx, y: wy - 6, max: 400 })
+        for (let i = 0; i < 14; i++) scene.add({ img: 'gold_stars', x: wx, y: wy - 8, vx: Math.cos(i * 0.45) * 3.2, vy: Math.sin(i * 0.45) * 3.2 - 2, g: 0.08, drag: 0.95, max: 800, scale: 2 })
+        await scene.wait(420)
+        music.play('')
+        sfx.caught()
+        scene.flashScreen('#fff', 0.6, 5)
+        for (let i = 0; i < 60; i++) scene.add({ img: 'confetti', frame: Math.floor(rnd(0, 12)), x: wx + rnd(-50, 50), y: wy - 60, vx: rnd(-4, 4), vy: rnd(-6.5, -2), g: 0.16, drag: 0.98, max: rnd(1000, 1600), scale: 2, vr: 0.2 })
+        const banner = document.createElement('div')
+        banner.className = `capbanner t${c.team}`
+        banner.innerHTML = `<b>${[...'¡ATRAPADO!'].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')}</b><span>${w.name} espera en su Ball: suéltalo cuando y donde quieras · ${spent}₽ en Balls${hurt ? ` · −${hurt} PS` : ''}</span>`
+        ui.classList.add('won')
+        ui.append(banner)
+        scene.play(me, 'Hop')
+        await scene.tween(900, (t) => { me.oy = -Math.abs(Math.sin(t * Math.PI * 2)) * 16 })
+        await scene.wait(1000)
+        break
+      }
+      // Se abre la Ball y sale de un salto, más enfadado
       sfx.error()
       scene.flashScreen('#fff', 0.5, 7)
       scene.addShake(5)
       for (let i = 0; i < 12; i++) scene.add({ x: wx, y: wy - 8, vx: Math.cos(i * 0.52) * 3, vy: Math.sin(i * 0.52) * 3 - 1.5, max: 360, size: 4, colors: ['#fff', '#ff5a48'] })
       held = null
       foe.visible = true
-      foe.tint = c.weak ? ['#6878a0', 0.25] : ['#fff', 0]
+      foe.tint = stamina <= 0 ? ['#6878a0', 0.3] : ['#fff', 0]
       scene.play(foe, 'Hop')
       void scene.tween(300, (t) => { foe.sx = foe.sy = easeBack(t); foe.oy = -34 * (1 - t) - Math.sin(t * Math.PI) * 18 })
       sfx.cry(w.species, 1.1, 0.5)
-      pop('¡Se ha liberado!', wx, wy - 96, 'dmg')
+      pop('¡Se ha liberado! Está furioso', wx, wy - 100, 'dmg')
+      rage++
+      patience--
+      refresh()
       await scene.wait(900)
       scene.play(foe, 'Idle', true)
-      if (tries === 0 || Math.random() < (c.weak ? 0.15 : 0.35)) { // huye entre la hierba
-        pop('¡Ha huido!', wx, wy - 96, 'weak')
-        foe.dir = DIR.right
-        scene.play(foe, 'Walk', true)
-        await scene.tween(520, (t) => { foe.ox = CW * 0.5 * easeIn(t); foe.alpha = 1 - t })
-        fled = true
-        break
-      }
+    }
+    if (patience <= 0) { // se harta y huye entre la hierba
+      dial = false
+      pop('¡Ha huido!', wx, wy - 100, 'weak')
+      foe.dir = DIR.right
+      scene.play(foe, 'Walk', true)
+      await scene.tween(600, (t) => { foe.ox = t * (CW - wx + 40) })
+      fled = true
     }
   }
   clearInterval(dizzyTimer)
-  catchInput = null
+  catchInput = settle = null
+  scene.canvas.onpointerdown = null
+  live = dial = false
   await close()
   ui.remove()
   scene.resize(W, H)
-  return { caught, spent, fled }
+  return { caught, spent, fled, hurt }
 }

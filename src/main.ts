@@ -10,7 +10,7 @@ import {
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
   PHASES, STATUS_NAME, Status, WEATHER_NAME, canSee, flankers, footprint, freezable, freeze, isRecovery, phaseOf, recruitCost, resolvePath,
   BERRY_HEAL, COIN_VALUE, catchable, weatherBonus, wildAt, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
-  EVOLVE_HEAL, KO_XP, XP_LEVEL, canEvolve, evolve, xpGoal,
+  BELT_MAX, EVOLVE_HEAL, KO_XP, XP_LEVEL, canEvolve, edgeOver, evolve, release, releaseSpot, xpGoal,
 } from './game'
 import { Place, XpGain, initCutscenes, playBattle, playCapture, playCatch, playEvolve, sceneKey, setSceneLight } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
@@ -360,7 +360,7 @@ function resize() {
 /** Un Pokémon y lo que puede llegar a ser: sus hojas se piden juntas para que la evolución no aparezca a medias. */
 const line = (kind: string): string[] => { const out: string[] = []; for (let k: string | undefined = kind; k && KINDS[k]; k = KINDS[k].evolves) out.push(KINDS[k].species); return out }
 /** Las especies que hacen falta para jugar esa partida: los dos equipos enteros, lo que haya en el campo y los salvajes. */
-const speciesOf = (game: Game) => [...game.co.flatMap((c) => rosterOf(c)), ...game.units.map((u) => u.kind), ...game.wild.map((w) => w.kind)].flatMap(line)
+const speciesOf = (game: Game) => [...game.co.flatMap((c) => rosterOf(c)), ...game.units.map((u) => u.kind), ...game.wild.map((w) => w.kind), ...game.belt.flat().map((b) => b.kind)].flatMap(line)
 
 const SAVE_KEY = 'pokewars-save'
 /** Guarda la partida (siempre en un momento en que le toca mover a una persona). */
@@ -371,6 +371,7 @@ function saveGame() {
 function loadSave(): { g: Game; isAI: [boolean, boolean]; fogOn: boolean } | null {
   try {
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY) ?? 'null')
+    if (saved?.g) saved.g.belt ??= [[], []] // partidas guardadas antes de que hubiera cinturón
     return saved && saved.g.items && saved.g.units.every((u: Unit) => KINDS[u.kind]) ? saved : null // por si cambian los equipos entre versiones
   } catch { return null }
 }
@@ -828,6 +829,8 @@ function draw(time: number) {
   for (const w of g.wild) {
     void loadSpecies(KINDS[w.kind].species) // por si luego se atrapa: que su hoja ya esté
     if (who !== null && !sight.has(key(w.x, w.y))) continue
+    // De cerca se le ve asomar entre la hierba: así se sabe quién es antes de ir a por él
+    if (knownWild(w)) drawSprite(ctx, KINDS[w.kind].species, 'Idle', DIR.down, time, w.x * T + 16, w.y * T + 13, { alpha: 0.92 })
     const jig = Math.floor(time / 130 + w.x) % 6
     const dx = jig === 0 ? -1 : jig === 2 ? 1 : 0
     for (const [ox, oy] of [[0, 0], [16, 0], [0, 16], [16, 16]]) ctx.drawImage(atlas, at.tall.x, 0, 16, 16, w.x * T + ox + dx, w.y * T + oy - (jig < 3 ? 1 : 0), 16, 16)
@@ -1040,6 +1043,13 @@ function moveCatch(game: Game, u: Unit, x: number, y: number, outcome?: boolean)
   if (ev.wild === 'weak') { label(at, '¡Salvaje debilitado!', 'gold'); fx.addShake(3); sfx.hit() }
   if (ev.wild === 'escaped' && outcome === undefined) { label(at, '¡Se ha escapado de la Ball!', 'dmg'); sfx.error() }
   if (ev.wild === 'broke') { label(at, 'Sin dinero para una Ball', 'dmg'); sfx.error() }
+  if (ev.stored) { // atrapado en el minijuego: la Ball va al cinturón, a la espera de que la suelten
+    const [cx, cy] = center(u)
+    for (let i = 0; i < 10; i++) mapFx.add({ img: 'gold_stars', x: cx, y: cy, vx: Math.cos(i) * 2.2, vy: Math.sin(i) * 2.2 - 1, drag: 0.94, max: 700, scale: 1 })
+    label(u, `¡${KINDS[ev.stored].name} en el cinturón!`, 'gold')
+    sfx.ball()
+    refreshStatus()
+  }
   const caught = ev.caught
   if (!caught) return
   // La Poké Ball cae sobre la hierba, se menea y se abre
@@ -1464,7 +1474,7 @@ function refreshStatus() {
         <div class="money"><i class="coin"></i>${shownFunds[t]}<small>+${income(g, t as Team)}</small></div>
         <div class="charge" title="${co(t).power}: ${co(t).powerHelp}">${pips}<u>★</u></div>
         <div class="balls">${balls}</div>
-      </div></div>`
+      </div>${who !== null && who !== t ? '' : `<div class="belt" title="Cinturón: atrapados que un Capturador puede soltar">${g.belt[t].map((b) => `<i><img src="${facePath(KINDS[b.kind].species)}" alt=""></i>`).join('')}${'<i></i>'.repeat(Math.max(0, (g.belt[t].length ? BELT_MAX : 0) - g.belt[t].length))}</div>`}</div>`
   }).join('')
 }
 
@@ -1496,6 +1506,11 @@ const miniBar = (value: number, max: number) => {
 }
 
 /** Tarjeta de lo que hay bajo el cursor: Pokémon (con su barra de PS), edificio o terreno. */
+/** ¿Sabe quien mira qué salvaje es ese? Sí, si tiene a alguien a dos casillas o menos, o si ya lo han debilitado. */
+const knownWild = (w: { x: number; y: number; weak?: boolean }) => {
+  const who = viewer()
+  return who === null || !!w.weak || g.units.some((u) => u.team === who && Math.abs(u.x - w.x) + Math.abs(u.y - w.y) <= 2)
+}
 /** Barra de experiencia del panel: cuánto lleva, a qué evoluciona y, si está llena, que ya puede hacerlo. */
 function xpLine(u: Unit): string {
   const k = KINDS[u.kind], goal = xpGoal(u), bar = xpBar(u)
@@ -1511,7 +1526,22 @@ function refreshInfo() {
   const { x, y } = hover
   const terrain = terrainAt(g, x, y), b = buildingOver(x, y), u = unitShownAt(x, y)
   const stars = `<span class="stars">${'★'.repeat(terrain.def)}${'☆'.repeat(4 - terrain.def)}</span>`
-  if (u) {
+  const wild = !u && wildAt(g, x, y), seen = wild && (viewer() === null || sight.has(key(x, y)))
+  if (wild && seen) { // un salvaje en la hierba: quién es (si se le ve de cerca), contra quién sirve y cómo está
+    const k = KINDS[wild.kind], known = knownWild(wild), who = viewer() ?? g.turn, rival = g.co[1 - who]
+    const edge = known ? edgeOver(wild.kind, rival) : 0
+    infoEl.className = ''
+    infoEl.innerHTML = known
+      ? `<img class="mug" src="${facePath(k.species)}">
+        <div class="who"><b>${k.name}</b>${k.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px" title="${TYPE_NAME[t]}"></i>`).join('')}<small>salvaje</small></div>
+        <div class="hpline wildline ${wild.weak ? 'weak' : ''}">${wild.weak ? 'Debilitado: empieza cansado' : 'En plena forma'}</div>
+        <div class="line"><span>${ROLES[k.role].name}</span><span class="${edge >= 4 ? 'edge' : ''}">${edge >= 4 ? `▲ Fuerte contra ${COMMANDERS[rival].name}` : edge >= 2 ? `Algo útil contra ${COMMANDERS[rival].name}` : ''}</span></div>
+        <div class="reach aid"><b>Capturador</b>◓ Ponte encima para intentar atraparlo</div>`
+      : `<span class="big">¿Pokémon salvaje?</span>
+        <div class="line two"><span>Algo se mueve en la hierba</span></div>
+        <div class="line"><span>Acércate a 2 casillas para ver quién es</span></div>`
+    infoEl.title = ''
+  } else if (u) {
     const k = KINDS[u.kind]
     infoEl.className = `t${u.team}`
     infoEl.innerHTML = `<img class="mug" src="${facePath(k.species)}">
@@ -2178,6 +2208,37 @@ function xpBar(u: Unit): number | null {
 }
 const xpGain = (u: Unit, from: number | null, ready: boolean): XpGain | null => (from === null || !g.units.includes(u) ? null : { from, to: ready ? 1 : xpBar(u) ?? 1, ready })
 
+/** La orden de soltar: la Ball sale volando del Capturador, cae al lado, se abre con un destello y aparece el Pokémon. */
+async function doRelease(u: Unit) {
+  const kind = g.belt[u.team][0]?.kind
+  if (kind) await loadSpeciesList(line(kind))
+  const fresh = release(g, u)
+  if (!fresh || AUTO) return
+  face(u, fresh)
+  setFx(u, { pop: performance.now() })
+  const hide = performance.now() + 620
+  setFx(fresh, { drop: hide }) // no se le ve hasta que se abre la Ball
+  const ball = document.createElement('i')
+  ball.className = 'ballfx throw'
+  const px = (p: Pos) => [(p.x * T + T / 2 - cam.x) * scale, (p.y * T + T / 2 - cam.y) * scale]
+  const [x0, y0] = px(u), [x1, y1] = px(fresh)
+  ball.style.left = x0 + 'px'; ball.style.top = y0 + 'px'
+  ball.style.setProperty('--dx', x1 - x0 + 'px'); ball.style.setProperty('--dy', y1 - y0 + 'px')
+  stage.append(ball)
+  sfx.lunge()
+  await sleep(520)
+  ball.remove()
+  const [cx, cy] = center(fresh)
+  mapFx.add({ ring: 30, size: 5, color: '#fff', x: cx, y: cy, max: 360 })
+  for (let i = 0; i < 14; i++) mapFx.add({ img: 'gold_stars', x: cx, y: cy, vx: Math.cos(i * 0.45) * 2.6, vy: Math.sin(i * 0.45) * 2.6 - 1, drag: 0.94, max: 700, scale: 1 })
+  fx.addShake(4)
+  sfx.ball()
+  dropIn(fresh, 100)
+  label(fresh, `¡Adelante, ${KINDS[fresh.kind].name}!`, 'gold', 150)
+  await sleep(700)
+  refreshStatus()
+}
+
 /** La orden de evolucionar, con su escena: al volver, el mapa enseña la forma nueva entre estrellas. */
 async function doEvolve(u: Unit) {
   const from = u.kind
@@ -2345,14 +2406,16 @@ async function arrive(u: Unit, x: number, y: number) {
   menuEl.hidden = forecastEl.hidden = true
   talkEl.hidden = true
   music.play('capture')
-  const res = await playCatch({ kind: u.kind, team: u.team, wild: wild.kind, weak: !!wild.weak, funds: g.funds[u.team], sure: tutorial.isOpen && !!wild.weak })
+  const res = await playCatch({ kind: u.kind, team: u.team, hp: u.hp, wild: wild.kind, weak: !!wild.weak, funds: g.funds[u.team], sure: tutorial.isOpen && !!wild.weak })
   g.funds[u.team] -= res.spent
+  u.hp = Math.max(1, u.hp - res.hurt) // lo que le haya pegado el salvaje se queda
   if (res.fled) g.wild = g.wild.filter((w) => w !== wild)
   moveCatch(g, u, x, y, res.caught)
+  if (res.hurt) { label({ x, y }, `−${res.hurt} PS`, 'dmg', 300); hurt(u) }
   themeNow()
 }
 
-const ICON: Record<string, [string, string]> = { Evolucionar: ['▲', 'evo'], Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Congelar: ['❄', 'ice'], Atrapar: ['◓', 'ball'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
+const ICON: Record<string, [string, string]> = { Soltar: ['◓', 'ball'], Evolucionar: ['▲', 'evo'], Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Congelar: ['❄', 'ice'], Atrapar: ['◓', 'ball'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
 
 /** Pasa a elegir objetivo con el cursor ya puesto en el rival al que más daño se le hace: Enter ataca sin más. */
 function aim() {
@@ -2399,6 +2462,18 @@ function openMenu() {
       mode = 'busy'
       pending = null
       if (g.units.includes(u) && canEvolve(u)) await doEvolve(u)
+      finish()
+    }])
+  }
+  if (releaseSpot(g, u, at) && !wildAt(g, at.x, at.y)) { // lleva a alguien en el cinturón (y no está encima de otro salvaje): lo saca de su Ball a la casilla de al lado
+    const next = g.belt[u.team][0], more = g.belt[u.team].length - 1
+    items.push(['Soltar', `${KINDS[next.kind].name} (${next.hp} PS) sale de su Ball aquí al lado${more ? ` · quedan ${more} más` : ''} · gasta el turno`, async () => {
+      mode = 'busy'
+      menuEl.hidden = true
+      await arrive(u, at.x, at.y)
+      mode = 'busy'
+      pending = null
+      await doRelease(u)
       finish()
     }])
   }

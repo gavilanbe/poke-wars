@@ -15,6 +15,9 @@ export interface Unit {
   tag?: 'vip' | 'boss' // en campaña: el Pokémon que no puede caer (y que a veces hay que llevar a un sitio) y el jefe a derrotar
 }
 /** Un Pokémon debilitado no desaparece: vuelve al Centro y se puede recuperar a mitad de precio, con su nivel. */
+/** Un Pokémon guardado en su Ball. */
+export interface Stored { kind: string; hp: number }
+export const BELT_MAX = 3
 export interface Fainted { kind: string; xp: number; level: number }
 export interface Building { x: number; y: number; type: BuildingType; owner: -1 | Team; cap: number }
 
@@ -55,7 +58,8 @@ export interface Game {
   fog: boolean // niebla de guerra: solo se ve lo que queda cerca de tus Pokémon y edificios
   weather: Weather
   fainted: [Fainted[], Fainted[]]
-  wild: { x: number; y: number; kind: string; weak?: boolean }[] // salvajes escondidos en la hierba alta; debilitados se atrapan seguro
+  wild: { x: number; y: number; kind: string; weak?: boolean }[] // salvajes escondidos en la hierba alta; debilitados son más fáciles de atrapar
+  belt: [Stored[], Stored[]] // el cinturón de cada equipo: Pokémon atrapados que esperan en su Ball a que un Capturador los suelte
   items: { x: number; y: number; type: ItemType }[] // bayas y monedas por el mapa
   map: number
   rules?: Rules
@@ -78,7 +82,7 @@ export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog 
   const g: Game = {
     w: MAP[0].length, h: MAP.length, tiles: [], units: [], buildings: [], items: [], map: typeof map === 'number' ? map : -1,
     turn: 0, day: 1, funds: [0, 0], winner: null, nextId: 1,
-    co, meter: [0, 0], power: [false, false], fog, weather: 'clear', fainted: [[], []], wild: [], terrainVersion: 0,
+    co, meter: [0, 0], power: [false, false], fog, weather: 'clear', fainted: [[], []], wild: [], belt: [[], []], terrainVersion: 0,
   }
   g.tiles = MAP.map((row) => [...row])
   for (const b of def.buildings) {
@@ -94,7 +98,8 @@ export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog 
   for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w / 2; x++) if (g.tiles[y][x] === '"') grass.push({ x, y })
   for (let i = 0; i < 3 && grass.length; i++) {
     const [p] = grass.splice(Math.floor(Math.random() * grass.length), 1)
-    g.wild.push({ ...p, kind: randomWild() }, { x: g.w - 1 - p.x, y: p.y, kind: randomWild() })
+    // Los de tu lado del mapa son buenos contra el comandante de enfrente; los del suyo, contra el tuyo
+    g.wild.push({ ...p, kind: wildAgainst(co[1], co[0]) }, { x: g.w - 1 - p.x, y: p.y, kind: wildAgainst(co[0], co[1]) })
   }
   // Objetos: tres en la mitad izquierda y sus espejos
   const open: Pos[] = []
@@ -112,6 +117,17 @@ export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog 
 // Los salvajes son formas base baratas de cualquier equipo que anden por tierra
 const WILD_KINDS = Object.keys(KINDS).filter((k) => KINDS[k].cost > 0 && KINDS[k].cost <= 4500 && KINDS[k].move === 'walk' && !KINDS[k].heals)
 const randomWild = () => WILD_KINDS[Math.floor(Math.random() * WILD_KINDS.length)]
+/** A cuántos Pokémon del equipo de ese comandante les pega con un ataque súper eficaz. */
+export const edgeOver = (kind: string, rival: string) => rosterOf(rival).filter((r) => moveMult(kind, bestMove(kind, r), r) > 1.05).length
+/**
+ * Un salvaje que le venga bien a quien se enfrenta a `rival`: de los que más daño le hacen a su equipo, y que no sea
+ * de ninguno de los dos comandantes (es algo que no se puede reclutar). Con algo de azar, para que no salga siempre el mismo.
+ */
+export function wildAgainst(rival: string, own: string): string {
+  const pool = WILD_KINDS.filter((k) => KINDS[k].commander !== rival && KINDS[k].commander !== own)
+  const ranked = pool.map((k) => [k, edgeOver(k, rival) + Math.random() * 1.5] as const).sort((a, b) => b[1] - a[1])
+  return ranked[Math.floor(Math.random() * Math.min(5, ranked.length))][0]
+}
 export const wildAt = (g: Game, x: number, y: number) => g.wild.find((w) => w.x === x && w.y === y)
 
 export const SECOND_PLAYER_BONUS = 4500
@@ -403,6 +419,7 @@ export function judge(g: Game) {
 
 export interface MoveEvent {
   caught?: Unit // salvaje atrapado
+  stored?: string // atrapado y guardado en el cinturón
   wild?: 'weak' | 'escaped' | 'broke' // debilitado por quien no captura, se escapó de la Ball, o no había dinero para una
   item?: ItemType // objeto recogido
 }
@@ -417,19 +434,40 @@ export const BALLS = [
 export const AUTO_CATCH = { weak: 0.85, fresh: 0.35 }
 const besideFree = (g: Game, x: number, y: number) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
   .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && !unitAt(g, p.x, p.y))
-/** El salvaje que ese Pokémon podría intentar atrapar en esa casilla (hace falta ser Capturador, sitio en el equipo y al lado, y dinero para una Ball). */
+const hasRoom = (g: Game, team: Team) => g.units.filter((o) => o.team === team).length < MAX_UNITS
+/** El salvaje que ese Pokémon podría intentar atrapar en esa casilla: hace falta ser Capturador, dinero para una Ball y sitio en el cinturón (o en el campo, al lado). */
 export function catchable(g: Game, u: Unit, x: number, y: number) {
   const wild = wildAt(g, x, y)
-  if (!wild || !KINDS[u.kind].capture || g.units.filter((o) => o.team === u.team).length >= MAX_UNITS) return null
-  return besideFree(g, x, y) && g.funds[u.team] >= BALLS[0].cost ? wild : null
+  if (!wild || !KINDS[u.kind].capture || g.funds[u.team] < BALLS[0].cost) return null
+  return g.belt[u.team].length < BELT_MAX || (hasRoom(g, u.team) && besideFree(g, x, y)) ? wild : null
+}
+/** Lo que le cuesta a un Capturador un intento fallido cuando no se juega el minijuego (la IA): el salvaje se revuelve. */
+export const ESCAPE_HURT = 2
+
+/** Dónde soltaría ese Capturador al primero de su cinturón si se plantara en `at` (null si no puede). */
+export function releaseSpot(g: Game, u: Unit, at: Pos = u): Pos | null {
+  if (!KINDS[u.kind].capture || !g.belt[u.team].length || !hasRoom(g, u.team)) return null
+  return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: at.x + dx, y: at.y + dy }))
+    .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && (!unitAt(g, p.x, p.y) || unitAt(g, p.x, p.y) === u) && !(p.x === at.x && p.y === at.y) && !wildAt(g, p.x, p.y)) ?? null
+}
+/** La orden de soltar: el primero del cinturón sale de su Ball en la casilla de al lado. Gasta el turno del Capturador; el recién salido actúa al siguiente. */
+export function release(g: Game, u: Unit): Unit | null {
+  const spot = releaseSpot(g, u)
+  if (!spot) return null
+  const stored = g.belt[u.team].shift()!
+  const fresh = addUnit(g, stored.kind, u.team, spot.x, spot.y)
+  fresh.hp = stored.hp
+  u.moved = true
+  return fresh
 }
 
 /**
  * Mueve la unidad y resuelve lo que encuentre en la casilla:
  * - un objeto: la baya cura y quita el estado; la moneda da dinero;
  * - un salvaje en la hierba: quien no captura lo debilita; quien captura le lanza una Poké Ball (que cuesta dinero)
- *   y, si lo atrapa, el salvaje se une al equipo en una casilla de al lado. `outcome` es el resultado ya decidido
- *   (y pagado) en el minijuego de lanzamiento; sin él se lanza una Poké Ball a suertes, como hace la IA.
+ *   y, si lo atrapa, el salvaje se une al equipo. `outcome` es el resultado ya decidido (y pagado) en el minijuego:
+ *   entonces va al cinturón, a esperar en su Ball. Sin él se lanza una Poké Ball a suertes, como hace la IA: si sale
+ *   bien aparece en la casilla de al lado y, si no, el salvaje se revuelve y le quita PS.
  */
 export function moveUnit(g: Game, u: Unit, x: number, y: number, outcome?: boolean): MoveEvent | null {
   if (u.x === x && u.y === y) return null
@@ -447,20 +485,24 @@ export function moveUnit(g: Game, u: Unit, x: number, y: number, outcome?: boole
   }
   const wild = wildAt(g, x, y)
   if (wild) {
+    const field = hasRoom(g, u.team) ? besideFree(g, x, y) : undefined, belt = g.belt[u.team].length < BELT_MAX
     if (!KINDS[u.kind].capture) {
       if (!wild.weak) { wild.weak = true; ev.wild = 'weak' }
-    } else if (catchable(g, u, x, y) || (outcome !== undefined && besideFree(g, x, y))) {
+    } else if (outcome !== undefined ? belt || field : field && g.funds[u.team] >= BALLS[0].cost) {
       if (outcome === undefined) g.funds[u.team] -= BALLS[0].cost
       if (outcome ?? Math.random() < (wild.weak ? AUTO_CATCH.weak : AUTO_CATCH.fresh)) {
-        const spot = besideFree(g, x, y)!
         g.wild = g.wild.filter((w) => w !== wild)
-        ev.caught = addUnit(g, wild.kind, u.team, spot.x, spot.y)
-        ev.caught.hp = wild.weak ? 5 : 8
-      } else ev.wild = 'escaped'
-    } else if (g.funds[u.team] < BALLS[0].cost && g.units.filter((o) => o.team === u.team).length < MAX_UNITS) ev.wild = 'broke'
+        const hp = wild.weak ? 6 : 9
+        if (outcome !== undefined && belt) { g.belt[u.team].push({ kind: wild.kind, hp }); ev.stored = wild.kind }
+        else { ev.caught = addUnit(g, wild.kind, u.team, field!.x, field!.y); ev.caught.hp = hp }
+      } else {
+        ev.wild = 'escaped'
+        if (outcome === undefined) u.hp = Math.max(1, u.hp - ESCAPE_HURT)
+      }
+    } else if (outcome === undefined && g.funds[u.team] < BALLS[0].cost && hasRoom(g, u.team)) ev.wild = 'broke'
   }
   judge(g)
-  return ev.caught || ev.wild || ev.item ? ev : null
+  return ev.caught || ev.stored || ev.wild || ev.item ? ev : null
 }
 
 /** ¿Puede congelar el agua de alrededor? Solo quien tenga un ataque de hielo, y si hay agua libre al lado. */
@@ -569,7 +611,10 @@ export function endTurn(g: Game) {
   if (g.turn === 0 && g.day % 4 === 0) { // cada cuatro días aparece otro salvaje en la hierba alta
     const free: Pos[] = []
     for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.tiles[y][x] === '"' && !unitAt(g, x, y) && !wildAt(g, x, y)) free.push({ x, y })
-    if (free.length && g.wild.length < 8) g.wild.push({ ...free[Math.floor(Math.random() * free.length)], kind: randomWild() })
+    if (free.length && g.wild.length < 8) { // el que aparece en una mitad es bueno contra el comandante de la otra
+      const spot = free[Math.floor(Math.random() * free.length)]
+      g.wild.push({ ...spot, kind: spot.x * 2 + 1 === g.w ? randomWild() : spot.x < g.w / 2 ? wildAgainst(g.co[1], g.co[0]) : wildAgainst(g.co[0], g.co[1]) })
+    }
   }
   g.funds[g.turn] += income(g, g.turn)
   for (const u of g.units) {
