@@ -35,6 +35,8 @@ export function planUnit(g: Game, u: Unit): Plan {
     return -Math.abs(nearest - k.range[1]) * 1.5 - (nearest < k.range[0] ? 6 : 0)
   }
 
+  // Con la caja llena, perder un Pokémon importa poco (se repone): se arriesga más y los frentes no se eternizan en los vados
+  const caution = g.funds[u.team] >= 20000 ? 0.25 : 1
   for (const spot of spots) {
     const base = (k.range[1] < 2 ? -goalDist(spot) : -goalDist(spot) * 0.25 + standoff(spot)) + (buildingAt(g, spot.x, spot.y)?.owner === u.team && u.hp < 6 ? 4 : 0)
     const consider = (score: number, plan: Plan) => {
@@ -60,7 +62,7 @@ export function planUnit(g: Game, u: Unit): Plan {
       if (k.heals) score = target.status ? -Infinity : base + value * 3 // el de apoyo duerme al rival más valioso que esté despierto
       if (dmg < target.hp && canCounter(here, target)) {
         const back = damage(g, { ...target, hp: target.hp - dmg }, here)
-        score -= back * ((KINDS[u.kind].cost || 6000) / 1000) * 1.5
+        score -= back * ((KINDS[u.kind].cost || 6000) / 1000) * 1.5 * caution
       }
       if (canCapture(g, target)) score += buildingAt(g, target.x, target.y)!.cap < 20 ? 30 : 8 // primero, los que están capturando
       consider(score, { to: spot, action: 'attack', target })

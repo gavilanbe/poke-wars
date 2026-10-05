@@ -3,8 +3,9 @@
 Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 
 ## Queda por hacer
-- En Archipiélago y Bosque Viejo las partidas de IA contra IA se alargan y alguna no termina: la IA se atasca en los
-  vados. Mientras pase, las ligas de equilibrio salen algo sesgadas.
+- En Archipiélago y Bosque Viejo alguna partida de IA contra IA no termina (el 1,9%; era el 2,8% antes de que la IA
+  arriesgara más con la caja llena). Los dos bandos llegan al tope de 16 Pokémon con dinero de sobra y el frente se
+  queda quieto en los vados; taparse la puerta del Centro no era la causa.
 - Equilibrio por cruces: tras rehacer los equipos (ver abajo) quedan tres cruces a más de 9 puntos del 50%:
   Gengar gana a Lucario el 62%, Charizard a Pikachu el 59% y Gardevoir a Venusaur el 60% (`pnpm versus 150`).
 - El fondo del combate (cielo y colinas) sigue pintado por código.
