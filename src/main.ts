@@ -2137,8 +2137,12 @@ async function engage(att: Unit, def: Unit) {
   mapFx.add({ ring: 22, size: 3, color: '#fff', x, y, max: 260 })
   setFx(def, { flash: performance.now() + 200 })
   sfx.lunge()
-  restart(stage, 'blink')
-  await sleep(330)
+  // Entrada de combate: tres destellos y la cámara se echa encima de donde va a ser, antes de la cortinilla
+  const r = canvas.getBoundingClientRect(), [ax, ay] = center(att)
+  stage.style.setProperty('--ex', `${(((x + ax) / 2 - cam.x) / canvas.width) * r.width}px`)
+  stage.style.setProperty('--ey', `${(((y + ay) / 2 - cam.y) / canvas.height) * r.height}px`)
+  restart(stage, 'encounter')
+  await sleep(560)
 }
 
 /** Edificio que ocupa esa casilla, sea la puerta o el resto del dibujo. */
@@ -2172,8 +2176,11 @@ async function battle(att: Unit, def: Unit) {
   music.play('battle')
   await playBattle({
     a, d, dmg: res.dmg, counter: res.counter, crit: res.crit, co: g.co[a.team],
+    dist: Math.abs(a.x - d.x) + Math.abs(a.y - d.y),
+    front: isAI[a.team] && !isAI[d.team] ? 'd' : 'a', // a tu Pokémon lo ves de espaldas, también cuando te atacan
     evolved: res.evolved ? (res.evolved === att ? 'a' : 'd') : null, evolvedKind: res.evolved?.kind ?? '',
   })
+  stage.classList.remove('encounter')
   themeNow()
 
   label(d, `-${res.dmg}`, 'dmg')

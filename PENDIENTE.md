@@ -8,7 +8,6 @@ Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
   queda quieto en los vados; taparse la puerta del Centro no era la causa.
 - Equilibrio por cruces: tras rehacer los equipos (ver abajo) quedan tres cruces a más de 9 puntos del 50%:
   Gengar gana a Lucario el 62%, Charizard a Pikachu el 59% y Gardevoir a Venusaur el 60% (`pnpm versus 150`).
-- El fondo del combate (cielo y colinas) sigue pintado por código.
 - Solo 16 líneas tienen tercera fase (`src/finals.json`).
 - El modo escaparate del título sigue siendo los Pokémon paseando: falta una partida de IA contra IA de fondo.
 
@@ -80,5 +79,4 @@ antes de atraparlos, la IA congela ríos y quema cobertura, zoom con + y −, y 
 - Unidades más grandes o con zoom: al lado de los edificios se ven pequeñas.
 
 ## Detalles
-- El fondo del combate (cielo y colinas) sigue pintado por código.
 - El botón de poder apagado se ve poco.
