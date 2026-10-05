@@ -573,7 +573,7 @@ function drawPathArrow(path: Pos[], time: number) {
 
 /** Selector: cuatro esquinas gruesas con relieve que laten a saltos, y un velo claro sobre la casilla. */
 function drawCursor(time: number) {
-  if (!hover || mode === 'busy' || mode === 'select') return
+  if (!hover || mode === 'select' || (mode === 'busy' && !isAI[g.turn])) return // en el turno rival, el cursor es el suyo
   cursor.x += (hover.x * T - cursor.x) * 0.45
   cursor.y += (hover.y * T - cursor.y) * 0.45
   const beat = Math.floor(time / 240) % 2 ? 2 : 0 // dos fotogramas, como un sprite
@@ -814,6 +814,8 @@ function draw(time: number) {
   for (const [, paint] of things) paint()
   fx.draw(ctx)
   if (mode === 'target') for (const t of targets) drawTarget(t, time)
+  if (aiShow?.path) drawPathArrow(aiShow.path, time) // la IA anuncia su jugada
+  if (aiShow?.target && g.units.includes(aiShow.target)) drawTarget(aiShow.target, time)
 
   // Niebla de guerra: se oscurece lo que no alcanza a ver tu equipo, con el borde deshilachado
   if (who !== null) {
@@ -2077,27 +2079,46 @@ async function arrive(u: Unit, x: number, y: number) {
   themeNow()
 }
 
-const ICON: Record<string, [string, string]> = { Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Congelar: ['❄', 'ice'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
+const ICON: Record<string, [string, string]> = { Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Congelar: ['❄', 'ice'], Atrapar: ['◓', 'ball'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
 
+/** Pasa a elegir objetivo con el cursor ya puesto en el rival al que más daño se le hace: Enter ataca sin más. */
+function aim() {
+  mode = 'target'
+  selTime = performance.now()
+  menuEl.hidden = true
+  const here = { ...sel!, ...pending! }
+  const best = [...targets].sort((p, q) => (damage(g, here, q) >= q.hp ? 100 : damage(g, here, q)) - (damage(g, here, p) >= p.hp ? 100 : damage(g, here, p)))[0]
+  hover = { x: best.x, y: best.y }
+  follow(best, 2)
+  refreshInfo()
+  showForecast()
+  sfx.confirm()
+}
+
+/** Menú de órdenes: una fila por orden con su icono, lo que va a pasar si se elige y su número de atajo. */
 function openMenu() {
   mode = 'menu'
   forecastEl.hidden = true
-  const u = sel!, at = pending!
+  const u = sel!, at = pending!, k = KINDS[u.kind]
   targets = targetsFrom(g, u, at)
-  const items: [string, () => void][] = []
-  if (targets.length) items.push(['Atacar', () => { mode = 'target'; selTime = performance.now(); menuEl.hidden = true; sfx.confirm() }])
+  const items: [string, string, () => void][] = []
+  if (targets.length) {
+    const here = { ...u, ...at }, top = Math.max(...targets.map((t) => damage(g, here, t)))
+    items.push(['Atacar', `${targets.length === 1 ? KINDS[targets[0].kind].name : targets.length + ' rivales a tiro'} · hasta −${top} PS`, aim])
+  }
   if (canCapture(g, u, at)) {
-    items.push(['Capturar', async () => {
+    const b = buildingAt(g, at.x, at.y)!
+    items.push(['Capturar', b.cap - u.hp <= 0 ? `¡${BUILDING_INFO[b.type].name} en este turno!` : `${BUILDING_INFO[b.type].name}: le quita ${u.hp} de ${b.cap}`, async () => {
       mode = 'busy'
       menuEl.hidden = true
       pending = null
       moveCatch(g, u, at.x, at.y)
-      await doCapture(u, buildingAt(g, at.x, at.y)!)
+      await doCapture(u, b)
       finish()
     }])
   }
   if (freezable(g, u, at).length) {
-    items.push(['Congelar', async () => {
+    items.push(['Congelar', 'Hiela el río de al lado para cruzarlo', async () => {
       await arrive(u, at.x, at.y)
       for (const p of freeze(g, u)) {
         mapFx.add({ ring: 20, size: 4, color: '#d6f0ff', x: p.x * T + 16, y: p.y * T + 16, max: 500 })
@@ -2108,16 +2129,23 @@ function openMenu() {
       finish()
     }])
   }
-  items.push(['Esperar', async () => { sfx.confirm(); await arrive(u, at.x, at.y); u.moved = true; finish() }])
-  items.push(['Cancelar', cancel])
-  menuEl.replaceChildren(...items.map(([text, fn], i) => {
+  // Quedarse ahí: según lo que haya en la casilla, es atrapar, debilitar, recoger o simplemente esperar
+  const wild = wildAt(g, at.x, at.y), item = g.items.find((i) => i.x === at.x && i.y === at.y)
+  const stay = async () => { sfx.confirm(); await arrive(u, at.x, at.y); u.moved = true; finish() }
+  if (wild && catchable(g, u, at.x, at.y)) items.push(['Atrapar', wild.weak ? 'Salvaje debilitado: lanza una Ball' : 'Salvaje sano: difícil, mejor debilítalo antes', stay])
+  else items.push(['Esperar', wild && !k.capture && !wild.weak ? 'Debilita al salvaje de la hierba' : item ? (item.type === 'berry' ? `Recoge la baya: +${BERRY_HEAL} PS` : `Recoge la moneda: +${COIN_VALUE}₽`) : 'Termina su jugada aquí', stay])
+  items.push(['Cancelar', 'Vuelve a elegir destino', cancel])
+  menuEl.replaceChildren(...items.map(([text, detail, fn], i) => {
     const btn = document.createElement('button')
-    btn.innerHTML = `<i class="ic ${ICON[text][1]}">${ICON[text][0]}</i>${text}`
+    btn.className = ICON[text][1]
+    btn.innerHTML = `<i class="ic ${ICON[text][1]}">${ICON[text][0]}</i><b>${text}</b><kbd>${text === 'Cancelar' ? 'Esc' : i + 1}</kbd><span>${detail}</span>`
     btn.style.animationDelay = i * 40 + 'ms'
-    btn.onmouseenter = btn.onfocus = sfx.cursor
+    btn.onmouseenter = () => { sfx.cursor(); btn.focus() }
+    btn.onfocus = sfx.cursor
     btn.onclick = fn
     return btn
   }))
+  menuEl.insertAdjacentHTML('afterbegin', `<header><img src="${facePath(k.species)}" alt=""><b>${k.name}</b><span>${ROLES[k.role].name}</span></header>`)
   placeNear(menuEl, at)
   restart(menuEl, 'open')
   menuEl.querySelector('button')!.focus()
@@ -2358,10 +2386,15 @@ function firePower() {
 
 // ---------- Turno de la IA ----------
 
+/** Lo que la IA está a punto de hacer, para pintarlo un momento antes: el camino de su Pokémon y a quién apunta. */
+let aiShow: { path?: Pos[]; target?: Unit } | null = null
+/** Pausa del turno rival: mantener Espacio (o Enter) lo acelera. */
+const beat = (ms: number) => sleep(keysDown.has(' ') || keysDown.has('enter') ? ms / 6 : ms)
+
 async function runAI() {
   mode = 'busy'
   refreshPanel()
-  await sleep(500)
+  await beat(600)
   if (canUsePower(g)) {
     await powerSequence()
     mode = 'busy'
@@ -2377,19 +2410,41 @@ async function runAI() {
     if (who !== null) sight = visibleCells(g, who)
     // Con niebla solo se enseña el movimiento si lo ves salir o llegar
     const visible = shown(u) || who === null || sight.has(key(end.x, end.y))
-    if (visible) {
-      follow(u)
-      follow(end)
-      await animateMove(u, path)
-    }
+    if (visible && !AUTO) {
+      // Se ve venir: la cámara va a su Pokémon, este da un bote, se dibuja el camino que va a seguir y entonces anda
+      panTo(u.x * T + 16, u.y * T + 16)
+      await beat(380)
+      hover = { x: u.x, y: u.y }
+      refreshInfo()
+      setFx(u, { pop: performance.now() })
+      sfx.cursor()
+      await beat(320)
+      if (path.length > 1) {
+        aiShow = { path }
+        hover = { x: end.x, y: end.y }
+        follow(end)
+        await beat(420)
+        aiShow = null
+        await animateMove(u, path)
+      }
+    } else if (visible) await animateMove(u, path)
     moveCatch(g, u, end.x, end.y)
     animPos.delete(u.id)
     if (ambushed) {
       u.moved = true
       if (visible) label(end, '¡Emboscada!', 'dmg')
     } else if (plan.action === 'attack' && g.units.includes(plan.target!)) {
-      follow(plan.target!)
-      await battle(u, plan.target!)
+      const t = plan.target!
+      if (!AUTO && (visible || shown(t))) { // la mira sobre su objetivo antes de pegar
+        follow(t)
+        aiShow = { target: t }
+        hover = { x: t.x, y: t.y }
+        refreshInfo()
+        sfx.select()
+        await beat(650)
+        aiShow = null
+      }
+      await battle(u, t)
     } else {
       if (plan.action === 'freeze') {
         const cells = freeze(g, u)
@@ -2397,19 +2452,26 @@ async function runAI() {
       }
       if (plan.action === 'capture') {
         const b = buildingAt(g, u.x, u.y)!
-        if (visible || b.owner === who) { follow(b); await doCapture(u, b); await sleep(300) } else capture(g, u)
+        if (visible || b.owner === who) { follow(b); await beat(350); await doCapture(u, b); await beat(300) } else capture(g, u)
       }
       u.moved = true
-      if (visible) await sleep(140)
     }
+    if (visible && !AUTO) await beat(420)
     refreshStatus()
   }
+  hover = null
   for (const b of g.buildings) {
     if (g.winner !== null || b.type !== 'center' || b.owner !== g.turn) continue
     const kind = planRecruit(g, b)
     if (!kind) continue
     const u = recruit(g, b, kind)
-    if (!AUTO && shown(u)) { follow(u); dropIn(u); await sleep(380) }
+    if (!AUTO && shown(u)) {
+      panTo(u.x * T + 16, u.y * T + 16)
+      await beat(300)
+      dropIn(u)
+      label(u, `¡${KINDS[u.kind].name} se une al rival!`, 'dmg', 250)
+      await beat(800)
+    }
   }
   if (g.winner !== null) return finish()
   await nextTurn()
@@ -2467,7 +2529,7 @@ const HINTS: Partial<Record<Mode, string>> = {
 }
 /** Barra de teclas del momento (la llama el bucle de pintado; solo toca el DOM cuando cambia). */
 function refreshHints() {
-  const html = (!titleOn && !isAI[g.turn] && HINTS[mode]) || ''
+  const html = titleOn ? '' : isAI[g.turn] ? (g.winner === null ? 'Turno rival · mantén <kbd>Espacio</kbd> para acelerar' : '') : HINTS[mode] ?? ''
   if (html === hintsFor) return
   hintsFor = html
   hintsEl.innerHTML = html
@@ -2542,6 +2604,7 @@ addEventListener('keydown', (e) => {
     if (dir) return moveFocus(host, dir)
     if (confirm) return (focused && host.contains(focused) ? focused : host.querySelector<HTMLButtonElement>('button.main, button:not(:disabled)'))?.click()
     if (back) return host === selectEl ? selectBack?.() : host === menuEl ? cancel() : undefined
+    if (host === menuEl && /^[1-9]$/.test(k)) return host.querySelectorAll<HTMLButtonElement>('button')[Number(k) - 1]?.click() // el número de la orden
     if (host === titleEl) {
       if (k === 'n') titleEl.querySelector<HTMLElement>('[data-opt=fog]')!.click()
       const map = titleEl.querySelectorAll<HTMLElement>('.maps button')[Number(k) - 1]
@@ -2555,7 +2618,7 @@ addEventListener('keydown', (e) => {
   }
 
   // En el mapa
-  keysDown.add(k)
+  keysDown.add(k.toLowerCase())
   if (k === '+' || k === '=') return setZoom(1)
   if (k === '-') return setZoom(-1)
   if (k === 'Tab') { e.preventDefault(); return nextUnit(e.shiftKey ? -1 : 1) }

@@ -120,9 +120,8 @@ const PAGES: Page[] = [
       await d.press('Enter')
       await menu(d)
       await d.say('Ahora el menú ofrece «Atacar», porque hay un rival a tiro.')
-      await d.press('Enter', 600)
-      await d.press('ArrowRight', 500) // salta al objetivo: sale la previsión
-      await d.say('Antes de confirmar, la previsión te dice el daño que harás y el que te devolverá.')
+      await d.press('Enter', 900) // la mira se pone sola en el rival y sale la previsión
+      await d.say('La mira va sola al rival. Antes de confirmar, la previsión te dice el daño que harás y el que te devolverá.')
       await d.wait(900)
       await d.say('Enter: ¡al combate! Si el rival sobrevive, contraataca.')
       await d.press('Enter')
@@ -208,8 +207,7 @@ const PAGES: Page[] = [
       await d.to(8, 14)
       await d.press('Enter')
       await menu(d)
-      await d.press('Enter', 600)
-      await d.press('ArrowRight', 500)
+      await d.press('Enter', 900) // Atacar: la mira va sola al rival al que más daño se le hace
       await d.say('Al de la pradera (una estrella) le harías este daño.')
       await d.wait(600)
       await d.press('ArrowRight', 500)
@@ -239,8 +237,7 @@ const PAGES: Page[] = [
       await d.to(8, 14)
       await d.press('Enter')
       await menu(d)
-      await d.press('Enter', 600)
-      await d.press('ArrowRight', 500)
+      await d.press('Enter', 900)
       await d.say('La previsión avisa: «¡K.O.!». Rematarlo dará la experiencia que falta.')
       await d.press('Enter')
       await d.idle()

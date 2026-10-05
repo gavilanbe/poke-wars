@@ -648,3 +648,38 @@ main { display: block; }
 .catchbar kbd { float: none; opacity: 1; display: inline-block; min-width: 2.6vh; margin: 0 0.4vh; padding: 0.1vh 0.8vh; font: inherit; text-align: center; color: #10141c; background: #dfe6f4; border-radius: 4px; box-shadow: 0 0.3vh 0 #6c7890; text-shadow: none; }
 .cappop.good { color: #ffd84a; font-size: 8vh; }
 .cappop.weak { color: #c8d0e0; font-size: 6vh; }
+
+/* ---------- Menú de órdenes: una fila por orden, con su icono, lo que va a pasar y su atajo ---------- */
+#menu.box { display: flex; flex-direction: column; gap: 5px; min-width: 318px; padding: 0 6px 7px; background: #10141cf4; border: 3px solid #fff; border-radius: 0; box-shadow: 0 0 0 3px #10141c, 0 8px 0 3px #0c101880;
+  color: #fff; text-shadow: none; filter: none; line-height: 1; }
+#menu header { display: flex; align-items: center; gap: 8px; margin: 0 -6px 2px; padding: 5px 10px 5px 6px; background: linear-gradient(90deg, #2c3854, #1c2230); border-bottom: 3px solid #48546c; }
+#menu header img { width: 30px; height: 30px; image-rendering: pixelated; border: 2px solid #fff; background: #c8d8e8; }
+#menu header b { font-family: var(--display); font-weight: 400; font-size: 23px; letter-spacing: 0.5px; }
+#menu header span { margin-left: auto; font-family: var(--ui); font-size: 16px; color: #a8b4cc; }
+#menu.box button { display: grid; grid-template-columns: 34px 1fr auto; grid-template-rows: auto auto; column-gap: 9px; align-items: center; width: 100%; padding: 5px 8px 6px 6px; text-align: left; color: #fff; background: #1c2230;
+  border: 2px solid #303c58; border-left: 6px solid var(--tone, #6a7488); border-radius: 0; box-shadow: none; font-family: var(--ui); font-size: 16px; text-shadow: none;
+  transition: transform 0.1s cubic-bezier(0.2, 1.6, 0.4, 1), background 0.1s, border-color 0.1s; }
+#menu.box button::before { content: none; }
+#menu.box button.atk { --tone: #e8483c; }
+#menu.box button.cap { --tone: #f0a020; }
+#menu.box button.ice { --tone: #58b8e0; }
+#menu.box button.ball { --tone: #ff5a48; }
+#menu.box button.ok { --tone: #48c868; }
+#menu.box button .ic { grid-row: span 2; width: 34px; height: 34px; font-size: 22px; border: 2px solid #10141c; box-shadow: 0 0 0 2px #ffffff30; }
+#menu .ic.ball { background: linear-gradient(#e8483c 0 46%, #10141c 46% 54%, #f0f0f0 54%); color: transparent; border-radius: 50%; }
+#menu.box button b { font-family: var(--display); font-weight: 400; font-size: 25px; letter-spacing: 0.5px; }
+#menu.box button span { grid-column: 2 / 4; color: #a8b4cc; white-space: nowrap; }
+#menu.box button kbd { float: none; opacity: 1; min-width: 20px; padding: 1px 6px; font: inherit; font-size: 14px; text-align: center; color: #10141c; background: #8090a8; border-radius: 4px; box-shadow: 0 2px 0 #48546c; }
+#menu.box button:hover, #menu.box button:focus { background: #2c3c64; border-color: #fff; border-left-color: var(--tone, #6a7488); transform: translateX(8px); outline: 0; }
+#menu.box button:hover b, #menu.box button:focus b { color: #ffd84a; }
+#menu.box button:hover span, #menu.box button:focus span { color: #fff; }
+#menu.box button:hover kbd, #menu.box button:focus kbd { background: #ffd84a; }
+#menu.box button:hover .ic, #menu.box button:focus .ic { animation: talk-bob 0.4s steps(2) infinite; }
+#menu.box button.no { background: transparent; border-color: transparent; border-left-color: #6a7488; padding-block: 2px 3px; }
+#menu.box button.no b { font-size: 19px; color: #a8b4cc; }
+#menu.box button.no .ic { width: 24px; height: 24px; font-size: 15px; justify-self: center; }
+#menu.box.open { animation: menu-in 0.2s cubic-bezier(0.2, 1.5, 0.4, 1); transform-origin: left top; }
+#menu.box.open button { animation: menu-row 0.22s cubic-bezier(0.2, 1.4, 0.4, 1) backwards; }
+@keyframes menu-in { from { transform: scale(0.7); opacity: 0; } }
+@keyframes menu-row { from { transform: translateX(-26px); opacity: 0; } }
+#menu.box[hidden] { display: none; }
