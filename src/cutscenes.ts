@@ -45,8 +45,44 @@ const LOOK: Record<string, { sky: string[]; hill: string; far: string }> = {
   B: { sky: SKY, hill: '#58b888', far: '#88c8c8' },
 }
 
+// El mapa pinta la montaña como peñas sobre hierba, así que no hay baldosa de roca que reutilizar: se hace una aquí,
+// de 64 px (para que no se note la repetición) y que encaja consigo misma, con tierra parda, vetas, grietas y guijarros a píxel gordo (2 px, como el resto).
+let rocky: HTMLCanvasElement | null = null
+function rockyGround(): HTMLCanvasElement {
+  if (rocky) return rocky
+  rocky = document.createElement('canvas')
+  rocky.width = rocky.height = 64
+  const c = rocky.getContext('2d')!
+  let seed = 7
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+  const dot = (x: number, y: number, w: number, h: number, color: string) => { // en una rejilla de 2 px y dando la vuelta por los bordes
+    c.fillStyle = color
+    for (const ox of [0, -64]) for (const oy of [0, -64]) c.fillRect(((x * 2) % 64) + ox, ((y * 2) % 64) + oy, w * 2, h * 2)
+  }
+  c.fillStyle = '#c8a070'
+  c.fillRect(0, 0, 64, 64)
+  for (let i = 0; i < 26; i++) dot(Math.floor(rand() * 32), Math.floor(rand() * 32), 3 + Math.floor(rand() * 4), 1, '#d4b080') // vetas claras
+  for (let i = 0; i < 20; i++) dot(Math.floor(rand() * 32), Math.floor(rand() * 32), 2 + Math.floor(rand() * 3), 1, '#b88c60') // y oscuras
+  for (let i = 0; i < 5; i++) { // grietas en escalera
+    let x = Math.floor(rand() * 32), y = Math.floor(rand() * 32)
+    for (let k = 0; k < 4; k++) { dot(x, y, 1, 1, '#8c6444'); x += rand() < 0.5 ? 1 : 0; y += 1 }
+  }
+  for (let i = 0; i < 9; i++) { // guijarros con su sombra y su brillo
+    const x = Math.floor(rand() * 32), y = Math.floor(rand() * 32)
+    dot(x, y + 1, 2, 1, '#8c6444')
+    dot(x, y, 2, 1, '#a89888')
+    dot(x, y, 1, 1, '#e4dcd0')
+  }
+  // Se guarda repetida con margen (96 px): así cualquier recorte de 32 px, empiece donde empiece, cae dentro
+  const wide = document.createElement('canvas')
+  wide.width = wide.height = 96
+  for (const ox of [0, 64]) for (const oy of [0, 64]) wide.getContext('2d')!.drawImage(rocky, ox, oy)
+  return (rocky = wide)
+}
+
 /** Un tile de suelo del mapa (16 px) pintado a doble tamaño, según el terreno. */
 function groundTile(ctx: CanvasRenderingContext2D, terrain: string, x: number, y: number, time: number) {
+  if (terrain === 'M') return void ctx.drawImage(rockyGround(), ((x % 64) + 64) % 64, ((y % 64) + 64) % 64, 32, 32, x, y, 32, 32)
   if (terrain === '~' || terrain === 's') {
     ctx.drawImage(water, (Math.floor(time / 110) % 32) * 48 + 16, 32, 16, 16, x, y, 32, 32)
   } else if (terrain === '=' || terrain === 'B') {
