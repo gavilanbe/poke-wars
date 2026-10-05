@@ -836,7 +836,9 @@ main { display: block; }
 .st-world footer { position: absolute; left: 0; right: 0; bottom: 2vh; text-align: center; font-size: 2.3vh; color: #dfe6f4; text-shadow: 2px 2px 0 #0c1018; }
 
 /* --- Informe previo --- */
-.st-brief { flex-direction: column; justify-content: center; align-items: center; background: #0c1018d8; animation: fade-in 0.25s; }
+.st-brief { flex-direction: column; justify-content: center; align-items: center; z-index: 6; background: #0c1018e6; animation: fade-in 0.25s; }
+/* Con el informe delante, el mapa se queda de fondo: sin pines, carteles ni ficha que se cuelen por encima */
+#story.brief .st-nodes, #story.brief .st-token, #story.brief .st-ring, #story.brief .st-fx { display: none; }
 .st-brief > * { width: min(120vh, 92vw); }
 .st-brief h2 { margin: 0.4vh 0 2vh; font-family: var(--display); font-weight: 400; font-size: 8vh; line-height: 0.95; letter-spacing: 0.2vh; text-shadow: 0.5vh 0.5vh 0 #c8281c; }
 .st-goal, .st-note, .st-pick { margin-bottom: 1.6vh; padding: 1.4vh 2vh; background: #10141cf0; border-left: 1vh solid #ffd84a; }
