@@ -683,3 +683,11 @@ main { display: block; }
 @keyframes menu-in { from { transform: scale(0.7); opacity: 0; } }
 @keyframes menu-row { from { transform: translateX(-26px); opacity: 0; } }
 #menu.box[hidden] { display: none; }
+
+/* Bajo la tarjeta del Pokémon: su rol y, bien claro, si pega cuerpo a cuerpo o a distancia */
+#info .reach { position: absolute; left: 0; right: 0; top: 100px; display: flex; align-items: center; gap: 8px; padding: 3px 10px 4px; font-size: 17px; white-space: nowrap; background: #10141ce8; border: 2px solid #48546c; border-top: 0; text-shadow: none; }
+#info .reach b { font-family: var(--ui); font-size: 17px; font-weight: 400; padding: 0 7px; color: #10141c; background: #dfe6f4; border-radius: 3px; }
+#info .reach.melee { color: #ffb0a0; }
+#info .reach.far { color: #ffd84a; }
+#info .reach.aid { color: #8cf08c; }
+#info:has(.reach) { margin-bottom: 30px; }

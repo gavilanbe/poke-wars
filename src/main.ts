@@ -259,6 +259,8 @@ let reach = new Map<number, Reach>()
 let stops = new Set<number>()
 let pending: Pos | null = null // destino elegido, aún sin confirmar
 let targets: Unit[] = []
+let threat = new Set<number>() // casillas que el Pokémon elegido puede atacar este turno (moviéndose, si es de cuerpo a cuerpo)
+let danger: Set<number> | null = null // zona de peligro (tecla R): todo lo que los rivales a la vista pueden atacar en su turno
 let hover: Pos | null = null
 let scale = 2
 let lastTime = 0
@@ -380,6 +382,8 @@ function reset() {
   targets = []
   reach = new Map()
   stops = new Set()
+  threat = new Set()
+  if (danger) danger = dangerZone()
   menuEl.hidden = true
   recruitEl.hidden = true
   forecastEl.hidden = true
@@ -449,6 +453,14 @@ function drawUnit(u: Unit, time: number) {
     mapFx.add({ img: 'ripple', fps: 7, x: x + 16, y: y + 24, max: 700, scale: 1, behind: true })
   }
 
+  if (!moving && (isRanged(u) || KINDS[u.kind].heals)) { // insignia: ataca a distancia (diana) o es de apoyo (cruz)
+    const bx = x + 22, by = y + 1
+    ctx.fillStyle = '#10141c'
+    ctx.fillRect(bx, by, 9, 9)
+    ctx.fillStyle = KINDS[u.kind].heals ? '#58e070' : '#ffd84a'
+    if (KINDS[u.kind].heals) { ctx.fillRect(bx + 3, by + 1, 3, 7); ctx.fillRect(bx + 1, by + 3, 7, 3) }
+    else { ctx.fillRect(bx + 1, by + 1, 7, 7); ctx.fillStyle = '#10141c'; ctx.fillRect(bx + 2, by + 2, 5, 5); ctx.fillStyle = '#ffd84a'; ctx.fillRect(bx + 3, by + 3, 3, 3) }
+  }
   if (u.status && !moving) { // chapa del estado
     ctx.fillStyle = '#10141c'
     ctx.fillRect(x + 1, y + 1, 9, 9)
@@ -781,6 +793,39 @@ function draw(time: number) {
     }
   }
 
+  // Zona de peligro (R): rayado rojo fijo sobre todo lo que los rivales pueden atacar en su turno
+  if (danger && mode !== 'busy') {
+    ctx.fillStyle = 'rgba(232, 60, 48, 0.27)'
+    for (const k of danger) ctx.fillRect((k % 100) * T, Math.floor(k / 100) * T, T, T)
+    ctx.fillStyle = 'rgba(255, 90, 72, 0.6)'
+    for (const k of danger) {
+      const x = (k % 100) * T, y = Math.floor(k / 100) * T
+      for (let i = 0; i < T; i += 8) for (let j = 0; j < 4; j++) ctx.fillRect(x + ((i + j * 2) % T), y + T - 2 - j * 8 - ((i / 8) % 4) * 2, 2, 2)
+      if (!danger.has(k - 100)) ctx.fillRect(x, y, T, 2)
+      if (!danger.has(k + 100)) ctx.fillRect(x, y + T - 2, T, 2)
+      if (!danger.has(k - 1) || x === 0) ctx.fillRect(x, y, 2, T)
+      if (!danger.has(k + 1) || x === (g.w - 1) * T) ctx.fillRect(x + T - 2, y, 2, T)
+    }
+  }
+  // Alcance de ataque del elegido: en rojo, las casillas a las que puede pegar y a las que no llega andando
+  if ((mode === 'move' || mode === 'inspect') && sel && threat.size) {
+    const pulse = 0.5 + 0.5 * Math.sin(time / 260)
+    for (const k of threat) {
+      const tx = k % 100, ty = Math.floor(k / 100)
+      const a = clamp01((time - selTime - (Math.abs(tx - sel.x) + Math.abs(ty - sel.y)) * 38) / 170)
+      if (a <= 0) continue
+      const x = tx * T, y = ty * T, inside = stops.has(k)
+      if (!inside) { // fuera de donde llega: casilla roja entera
+        ctx.fillStyle = `rgba(232, 60, 48, ${(0.42 + 0.1 * pulse) * a})`
+        ctx.fillRect(x + 1, y + 1, T - 2, T - 2)
+      }
+      ctx.fillStyle = `rgba(255, 140, 120, ${(inside ? 0.5 : 0.9) * a})` // el borde solo donde acaba el alcance
+      if (!threat.has(k - 100)) ctx.fillRect(x, y, T, 2)
+      if (!threat.has(k + 100)) ctx.fillRect(x, y + T - 2, T, 2)
+      if (!threat.has(k - 1) || tx === 0) ctx.fillRect(x, y, 2, T)
+      if (!threat.has(k + 1) || tx === g.w - 1) ctx.fillRect(x + T - 2, y, 2, T)
+    }
+  }
   // Casillas alcanzables: se abren como una onda desde la unidad y las recorre un brillo en diagonal
   if ((mode === 'move' || mode === 'inspect') && sel) {
     const enemy = sel.team !== g.turn
@@ -801,7 +846,19 @@ function draw(time: number) {
       ctx.fillRect(x, y + s - 2, s, 2)
       ctx.fillRect(x + s - 2, y, 2, s)
     }
-    if (mode === 'move' && hover && stops.has(key(hover.x, hover.y))) drawPathArrow(pathTo(reach, hover.x, hover.y), time)
+    if (mode === 'move' && hover && stops.has(key(hover.x, hover.y))) {
+      drawPathArrow(pathTo(reach, hover.x, hover.y), time)
+      // Desde el destino señalado: las casillas a las que pegaría desde ahí, marcadas con esquinas
+      const [min, max] = KINDS[sel.kind].range
+      if (!KINDS[sel.kind].heals && (!isRanged(sel) || (hover.x === sel.x && hover.y === sel.y))) {
+        ctx.fillStyle = Math.floor(time / 200) % 2 ? '#fff' : '#ff5a48'
+        for (let dy = -max; dy <= max; dy++) for (let dx = -max; dx <= max; dx++) {
+          const d = Math.abs(dx) + Math.abs(dy), x = (hover.x + dx) * T, y = (hover.y + dy) * T
+          if (d < min || d > max) continue
+          for (const [cx, cy] of [[x + 3, y + 3], [x + T - 9, y + 3], [x + 3, y + T - 9], [x + T - 9, y + T - 9]]) ctx.fillRect(cx, cy, 6, 6)
+        }
+      }
+    }
   }
 
   // Edificios y unidades por filas, de arriba abajo: quien está detrás de un tejado queda tapado por él
@@ -1391,7 +1448,8 @@ function refreshInfo() {
     infoEl.innerHTML = `<img class="mug" src="${facePath(k.species)}">
       <div class="who" title="${ROLES[k.role].name}: ${ROLES[k.role].help}"><b>${k.name}</b>${k.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px" title="${TYPE_NAME[t]}"></i>`).join('')}<small>Nv.${u.level}${u.status ? ` · <em style="color:${STATUS_COLOR[u.status]}">${STATUS_NAME[u.status]}</em>` : ''}</small></div>
       <div class="hpline"><div class="hpbar"><i style="width:${u.hp * 9.6}px;background-position:0 -${u.hp > 5 ? 0 : u.hp > 2 ? 8 : 16}px"></i></div>${u.hp}/10</div>
-      <div class="line"><span>ATQ ${miniBar(k.atk, 2)}</span><span>DEF ${miniBar(k.def, 2)}</span><span>MOV ${moveRange(g, u)}</span><span>${ROLES[k.role].name}</span></div>`
+      <div class="line"><span>ATQ ${miniBar(k.atk, 2)}</span><span>DEF ${miniBar(k.def, 2)}</span><span>MOV ${moveRange(g, u)}</span></div>
+      <div class="reach ${k.heals ? 'aid' : isRanged(u) ? 'far' : 'melee'}"><b>${ROLES[k.role].name}</b>${k.heals ? `✚ Cura y duerme a ${k.range[0]}–${k.range[1]}` : isRanged(u) ? `◎ A distancia: ${k.range[0]}–${k.range[1]} casillas, sin moverse` : '⚔ Cuerpo a cuerpo: mueve y pega'}</div>`
     infoEl.title = [`Ataques: ${k.moves.map((m) => ATTACK_NAME[m]).join(' y ')}`, MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.evolves ? `evoluciona a ${KINDS[k.evolves].name}` : '',
       isRanged(u) ? 'no puede moverse y atacar en el mismo turno' : ''].filter(Boolean).join(' · ')
   } else if (b) {
@@ -2040,12 +2098,38 @@ async function doCapture(u: Unit, b: Building) {
 
 // ---------- Turno del jugador ----------
 
+/**
+ * Casillas que ese Pokémon puede atacar en un turno, como el alcance de Advance Wars: los de cuerpo a cuerpo, las
+ * que rodean cualquier casilla a la que lleguen; los de distancia no pueden mover y atacar, así que solo su anillo.
+ */
+function threatOf(u: Unit, stopsAt: Iterable<Pos>): Set<number> {
+  const [min, max] = KINDS[u.kind].range, out = new Set<number>()
+  for (const o of isRanged(u) ? [u] : [u, ...stopsAt]) {
+    for (let dy = -max; dy <= max; dy++) for (let dx = -max; dx <= max; dx++) {
+      const d = Math.abs(dx) + Math.abs(dy), x = o.x + dx, y = o.y + dy
+      if (d >= min && d <= max && x >= 0 && y >= 0 && x < g.w && y < g.h) out.add(key(x, y))
+    }
+  }
+  return out
+}
+/** Unión de lo que pueden atacar los rivales que se ven: dónde no conviene acabar el turno. */
+function dangerZone(): Set<number> {
+  const me = viewer() ?? g.turn, out = new Set<number>()
+  for (const e of g.units) {
+    if (e.team === me || !shown(e) || KINDS[e.kind].heals) continue
+    for (const k of threatOf(e, stoppable(g, e, reachable(g, e)))) out.add(k)
+  }
+  return out
+}
+
 function select(u: Unit) {
   follow(u, 2)
   sel = u
   selTime = performance.now()
   reach = reachable(g, u)
-  stops = new Set(stoppable(g, u, reach).map((r) => key(r.x, r.y)))
+  const where = stoppable(g, u, reach)
+  stops = new Set(where.map((r) => key(r.x, r.y)))
+  threat = KINDS[u.kind].heals ? new Set() : threatOf(u, u.moved && u.team === g.turn ? [] : where)
   mode = u.team === g.turn && !u.moved && !isAI[g.turn] ? 'move' : 'inspect'
   setFx(u, { pop: selTime })
   unitDir.set(u.id, DIR.down)
@@ -2520,7 +2604,7 @@ function setKbd(on: boolean) {
   stage.classList.toggle('kbd', on)
 }
 const HINTS: Partial<Record<Mode, string>> = {
-  idle: '<kbd>←↑↓→</kbd> cursor · <kbd>Enter</kbd> elegir · <kbd>Tab</kbd> siguiente Pokémon · <kbd>P</kbd> poder · <kbd>E</kbd> fin del turno',
+  idle: '<kbd>←↑↓→</kbd> cursor · <kbd>Enter</kbd> elegir · <kbd>Tab</kbd> siguiente · <kbd>R</kbd> zona de peligro · <kbd>P</kbd> poder · <kbd>E</kbd> fin del turno',
   inspect: '<kbd>←↑↓→</kbd> cursor · <kbd>Enter</kbd> elegir · <kbd>Esc</kbd> soltar',
   move: '<kbd>←↑↓→</kbd> destino · <kbd>Enter</kbd> mover · <kbd>Tab</kbd> siguiente · <kbd>Esc</kbd> cancelar',
   menu: '<kbd>↑↓</kbd> orden · <kbd>Enter</kbd> aceptar · <kbd>Esc</kbd> atrás',
@@ -2625,6 +2709,7 @@ addEventListener('keydown', (e) => {
   if (back) { e.preventDefault(); return cancel() }
   if (k === 'e') return finishTurn()
   if (k === 'p') return firePower()
+  if (k === 'r') { danger = danger ? null : dangerZone(); sfx.select(); return }
   const onMap = mode === 'idle' || mode === 'inspect' || mode === 'move' || mode === 'target'
   if (!onMap) return
   if (dir || confirm) {

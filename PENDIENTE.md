@@ -32,6 +32,9 @@ Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
   Poké Ball a suertes (85% si está debilitado, 35% si no) y también la paga.
 - Bayas y monedas con los iconos de los juegos; el poder de comandante entra con retrato y nombre más grandes,
   fotograma de impacto, cara de enfado y ascuas.
+- El turno rival se ve venir (cámara, camino, mira; Espacio lo acelera), la mira va sola al mejor objetivo al atacar
+  y el menú de órdenes dice lo que va a pasar con cada una. Al elegir un Pokémon se pinta en rojo hasta dónde puede
+  pegar, R enseña la zona de peligro de los rivales, y los de distancia y los de apoyo llevan insignia.
 - `pnpm versus [rondas]`: liga en paralelo con la tabla de cruces. `pnpm matchups` (ventaja de tipos sin simular)
   se queda corto: no usarlo para decidir equipos.
 
