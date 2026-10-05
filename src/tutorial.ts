@@ -292,17 +292,17 @@ const PAGES: Page[] = [
       units: [{ kind: RED('capturador'), team: 0, x: 12, y: 12 }, { kind: RED('explorador'), team: 0, x: 4, y: 15, hp: 5 }, far],
     }),
     async play(d) {
-      await d.say('La hierba que se agita esconde un salvaje; de cerca se ve quién es. Solo un Capturador puede atraparlo.')
+      await d.say('La hierba que se agita esconde un salvaje; de cerca se ve quién es. Cualquiera de tus Pokémon puede ir a por él.')
       await d.press('Enter', 800)
       await d.to(11, 13)
       await d.press('Enter')
       await menu(d)
-      await d.press('Enter') // el Capturador se planta encima: empieza el cerco
+      await d.press('Enter') // se planta encima: empieza el cerco
       await d.wait(1800)
       await d.say('El cerco: pulsa en verde para golpearlo y cansarlo, en dorado para lanzar la Ball… y nunca en rojo, que te pega él. Aquí es todo dorado.')
       await d.press('Enter')
       await d.idle()
-      await d.say('¡Atrapado! Espera en su Ball, en tu cinturón: un Capturador lo suelta donde quieras con la orden «Soltar».')
+      await d.say('¡Atrapado! La Ball vuela a la caja de tu Centro Pokémon: allí lo sacas gratis cuando quieras.')
       await d.to(4, 15)
       await d.press('Enter', 800)
       await d.to(5, 15)

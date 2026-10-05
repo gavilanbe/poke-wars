@@ -10,10 +10,10 @@ import {
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
   PHASES, STATUS_NAME, Status, WEATHER_NAME, canSee, flankers, footprint, freezable, freeze, isRecovery, phaseOf, recruitCost, resolvePath,
   BERRY_HEAL, COIN_VALUE, catchable, weatherBonus, wildAt, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
-  BELT_MAX, EVOLVE_HEAL, KO_XP, XP_LEVEL, canEvolve, edgeOver, evolve, release, releaseSpot, xpGoal,
+  EVOLVE_HEAL, KO_XP, XP_LEVEL, canEvolve, canWithdraw, edgeOver, evolve, withdraw, xpGoal,
 } from './game'
 import { Place, XpGain, initCutscenes, playBattle, playCapture, playCatch, playEvolve, sceneKey, setSceneLight } from './cutscenes'
-import { Scene, loadFx, rnd } from './scene'
+import { Scene, loadFx, registerSheet, rnd } from './scene'
 import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
 import { goalStatus } from './campaign'
 import { finished as storyFinished, frame as storyFrame, story, turnStart as storyTurnStart } from './story'
@@ -360,7 +360,7 @@ function resize() {
 /** Un Pokémon y lo que puede llegar a ser: sus hojas se piden juntas para que la evolución no aparezca a medias. */
 const line = (kind: string): string[] => { const out: string[] = []; for (let k: string | undefined = kind; k && KINDS[k]; k = KINDS[k].evolves) out.push(KINDS[k].species); return out }
 /** Las especies que hacen falta para jugar esa partida: los dos equipos enteros, lo que haya en el campo y los salvajes. */
-const speciesOf = (game: Game) => [...game.co.flatMap((c) => rosterOf(c)), ...game.units.map((u) => u.kind), ...game.wild.map((w) => w.kind), ...game.belt.flat().map((b) => b.kind)].flatMap(line)
+const speciesOf = (game: Game) => [...game.co.flatMap((c) => rosterOf(c)), ...game.units.map((u) => u.kind), ...game.wild.map((w) => w.kind), ...game.box.flat().map((b) => b.kind)].flatMap(line)
 
 const SAVE_KEY = 'pokewars-save'
 /** Guarda la partida (siempre en un momento en que le toca mover a una persona). */
@@ -371,7 +371,7 @@ function saveGame() {
 function loadSave(): { g: Game; isAI: [boolean, boolean]; fogOn: boolean } | null {
   try {
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY) ?? 'null')
-    if (saved?.g) saved.g.belt ??= [[], []] // partidas guardadas antes de que hubiera cinturón
+    if (saved?.g) saved.g.box ??= [[], []] // partidas guardadas antes de que hubiera caja
     return saved && saved.g.items && saved.g.units.every((u: Unit) => KINDS[u.kind]) ? saved : null // por si cambian los equipos entre versiones
   } catch { return null }
 }
@@ -1026,7 +1026,7 @@ function draw(time: number) {
 }
 
 /** Mueve y enseña lo que pase en la casilla: objeto recogido, salvaje atrapado o escapado. */
-function moveCatch(game: Game, u: Unit, x: number, y: number, outcome?: boolean) {
+async function moveCatch(game: Game, u: Unit, x: number, y: number, outcome?: boolean) {
   const ev = moveUnit(game, u, x, y, outcome)
   if (!ev || titleOn || !shown(u)) return
   const at = { x, y }
@@ -1038,30 +1038,7 @@ function moveCatch(game: Game, u: Unit, x: number, y: number, outcome?: boolean)
   }
   if (ev.wild === 'escaped' && outcome === undefined) { label(at, '¡Se ha escapado de la Ball!', 'dmg'); sfx.error() }
   if (ev.wild === 'broke') { label(at, 'Sin dinero para una Ball', 'dmg'); sfx.error() }
-  if (ev.stored) { // atrapado en el minijuego: la Ball va al cinturón, a la espera de que la suelten
-    const [cx, cy] = center(u)
-    for (let i = 0; i < 10; i++) mapFx.add({ img: 'gold_stars', x: cx, y: cy, vx: Math.cos(i) * 2.2, vy: Math.sin(i) * 2.2 - 1, drag: 0.94, max: 700, scale: 1 })
-    label(u, `¡${KINDS[ev.stored].name} en el cinturón!`, 'gold')
-    sfx.ball()
-    refreshStatus()
-  }
-  const caught = ev.caught
-  if (!caught) return
-  // La Poké Ball cae sobre la hierba, se menea y se abre
-  const ball = document.createElement('i')
-  ball.className = 'ballfx'
-  ball.style.left = (caught.x * T + T / 2 - cam.x) * scale + 'px'
-  ball.style.top = (caught.y * T + T / 2 - cam.y) * scale + 'px'
-  stage.append(ball)
-  setTimeout(() => ball.remove(), 1000)
-  sfx.ball()
-  dropIn(caught, 900)
-  setTimeout(() => {
-    const [cx, cy] = center(caught)
-    for (let i = 0; i < 10; i++) mapFx.add({ img: 'gold_stars', x: cx, y: cy, vx: Math.cos(i) * 2.2, vy: Math.sin(i) * 2.2 - 1, drag: 0.94, max: 700, scale: 1 })
-    sfx.caught()
-  }, 900)
-  label(caught, `¡${KINDS[caught.kind].name} salvaje atrapado!`, 'gold', 950)
+  if (ev.stored) await toTheBox(u, ev.stored) // atrapado: la Ball viaja a la caja del Centro Pokémon
 }
 
 const STATUS_COLOR: Record<Status, string> = { burn: '#f0803c', poison: '#a040a0', para: '#f8d030', sleep: '#a8b4cc', freeze: '#7ccfd8' }
@@ -1069,6 +1046,9 @@ const STATUS_COLOR: Record<Status, string> = { burn: '#f0803c', poison: '#a040a0
 // ---------- Minimapa ----------
 
 const miniEl = $<HTMLCanvasElement>('#minimap')
+const BALL_SHEET = new Image()
+BALL_SHEET.src = 'assets/ui/ball.png'
+BALL_SHEET.onload = () => registerSheet('ball', BALL_SHEET, { w: 30, h: 30, n: 1 }) // la Ball que vuela a la caja
 const ITEM_IMG = { berry: new Image(), coin: new Image() }
 ITEM_IMG.berry.src = 'assets/ui/item_berry.png'
 ITEM_IMG.coin.src = 'assets/ui/item_coin.png'
@@ -1469,7 +1449,7 @@ function refreshStatus() {
         <div class="money"><i class="coin"></i>${shownFunds[t]}<small>+${income(g, t as Team)}</small></div>
         <div class="charge" title="${co(t).power}: ${co(t).powerHelp}">${pips}<u>★</u></div>
         <div class="balls">${balls}</div>
-      </div>${who !== null && who !== t ? '' : `<div class="belt" title="Cinturón: atrapados que un Capturador puede soltar">${g.belt[t].map((b) => `<i><img src="${facePath(KINDS[b.kind].species)}" alt=""></i>`).join('')}${'<i></i>'.repeat(Math.max(0, (g.belt[t].length ? BELT_MAX : 0) - g.belt[t].length))}</div>`}</div>`
+      </div>${who !== null && who !== t ? '' : `<div class="belt" title="La caja: atrapados que puedes sacar gratis en un Centro Pokémon">${g.box[t].map((b) => `<i><img src="${facePath(KINDS[b.kind].species)}" alt=""></i>`).join('')}</div>`}</div>`
   }).join('')
 }
 
@@ -1531,7 +1511,7 @@ function refreshInfo() {
         <div class="who"><b>${k.name}</b>${k.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px" title="${TYPE_NAME[t]}"></i>`).join('')}<small>salvaje</small></div>
         <div class="hpline wildline">Escondido en la hierba</div>
         <div class="line"><span>${ROLES[k.role].name}</span><span class="${edge >= 4 ? 'edge' : ''}">${edge >= 4 ? `▲ Fuerte contra ${COMMANDERS[rival].name}` : edge >= 2 ? `Algo útil contra ${COMMANDERS[rival].name}` : ''}</span></div>
-        <div class="reach aid"><b>Capturador</b>◓ Ponte encima para intentar atraparlo</div>`
+        <div class="reach aid"><b>Atrapar</b>◓ Ponte encima con cualquier Pokémon</div>`
       : `<span class="big">¿Pokémon salvaje?</span>
         <div class="line two"><span>Algo se mueve en la hierba</span></div>
         <div class="line"><span>Acércate a 2 casillas para ver quién es</span></div>`
@@ -2203,35 +2183,61 @@ function xpBar(u: Unit): number | null {
 }
 const xpGain = (u: Unit, from: number | null, ready: boolean): XpGain | null => (from === null || !g.units.includes(u) ? null : { from, to: ready ? 1 : xpBar(u) ?? 1, ready })
 
-/** La orden de soltar: la Ball sale volando del Capturador, cae al lado, se abre con un destello y aparece el Pokémon. */
-async function doRelease(u: Unit) {
-  const kind = g.belt[u.team][0]?.kind
-  if (kind) await loadSpeciesList(line(kind))
-  const fresh = release(g, u)
-  if (!fresh || AUTO) return
-  face(u, fresh)
-  setFx(u, { pop: performance.now() })
-  const hide = performance.now() + 620
-  setFx(fresh, { drop: hide }) // no se le ve hasta que se abre la Ball
-  const ball = document.createElement('i')
-  ball.className = 'ballfx throw'
-  const px = (p: Pos) => [(p.x * T + T / 2 - cam.x) * scale, (p.y * T + T / 2 - cam.y) * scale]
-  const [x0, y0] = px(u), [x1, y1] = px(fresh)
-  ball.style.left = x0 + 'px'; ball.style.top = y0 + 'px'
-  ball.style.setProperty('--dx', x1 - x0 + 'px'); ball.style.setProperty('--dy', y1 - y0 + 'px')
-  stage.append(ball)
-  sfx.lunge()
-  await sleep(520)
-  ball.remove()
-  const [cx, cy] = center(fresh)
-  mapFx.add({ ring: 30, size: 5, color: '#fff', x: cx, y: cy, max: 360 })
-  for (let i = 0; i < 14; i++) mapFx.add({ img: 'gold_stars', x: cx, y: cy, vx: Math.cos(i * 0.45) * 2.6, vy: Math.sin(i * 0.45) * 2.6 - 1, drag: 0.94, max: 700, scale: 1 })
-  fx.addShake(4)
+/**
+ * Recién atrapado, la Ball viaja a la caja: sale de donde estaba el salvaje, da un bote, cruza el mapa en arco con la
+ * cámara detrás y una estela de estrellas, y entra por el tejado del Centro Pokémon más cercano, que da un respingo.
+ */
+async function toTheBox(u: Unit, kind: string) {
+  const [x0, y0] = center(u), name = KINDS[kind].name
+  const home = g.buildings.filter((b) => b.type === 'center' && b.owner === u.team).sort((p, q) => Math.abs(p.x - u.x) + Math.abs(p.y - u.y) - Math.abs(q.x - u.x) - Math.abs(q.y - u.y))[0]
+  const ball = mapFx.add({ img: 'ball', x: x0, y: y0, max: 1e9, scale: 1, fade: false })
+  const stars = (x: number, y: number, n: number, v: number) => { for (let i = 0; i < n; i++) mapFx.add({ img: 'gold_stars', x, y, vx: Math.cos(i * 0.7) * v, vy: Math.sin(i * 0.7) * v - 0.6, drag: 0.94, max: 600, scale: 1 }) }
+  // Sale de la hierba y da un bote, girando
   sfx.ball()
-  dropIn(fresh, 100)
-  label(fresh, `¡Adelante, ${KINDS[fresh.kind].name}!`, 'gold', 150)
-  await sleep(700)
+  stars(x0, y0, 10, 2.2)
+  mapFx.add({ ring: 22, size: 4, color: '#ffd84a', x: x0, y: y0, max: 320 })
+  label(u, `¡${name} atrapado!`, 'gold')
+  await mapFx.tween(420, (t) => { ball.y = y0 - Math.sin(t * Math.PI) * 26 - 10 * t; ball.rot = t * 12; ball.scale = 1 + 0.4 * Math.sin(t * Math.PI) })
+  if (!home) { // sin Centro propio aún: la Ball sube y se pierde de vista; esperará en la caja
+    await mapFx.tween(380, (t) => { ball.y = y0 - 10 - t * t * 220; ball.rot = 12 + t * 14 })
+    ball.max = 0
+    label(u, 'A la caja: sácalo cuando tengas un Centro', 'heal', 100)
+    await sleep(500)
+    return void refreshStatus()
+  }
+  // Cruza el mapa: arco alto, cada vez más deprisa, y la cámara lo sigue
+  const x1 = home.x * T + T / 2, y1 = home.y * T - T * 0.6, y00 = y0 - 10, far = Math.hypot(x1 - x0, y1 - y00)
+  const ms = Math.max(650, Math.min(1500, 450 + far * 1.3)), arc = 46 + far * 0.18
+  let lastStar = 0
+  sfx.lunge()
+  await mapFx.tween(ms, (t) => {
+    const e = t * t * (3 - 2 * t)
+    ball.x = x0 + (x1 - x0) * e
+    ball.y = y00 + (y1 - y00) * e - Math.sin(e * Math.PI) * arc
+    ball.rot = 12 + e * 30
+    ball.scale = 1 + 0.5 * Math.sin(e * Math.PI)
+    panTo(ball.x, ball.y)
+    if (mapFx.time - lastStar > 34) {
+      lastStar = mapFx.time
+      mapFx.add({ img: 'gold_stars', x: ball.x + rnd(-3, 3), y: ball.y + rnd(-3, 3), vy: 0.4, max: 420, scale: 1 })
+      mapFx.add({ x: ball.x, y: ball.y, size: 3, max: 260, colors: ['#fff', '#ffd84a'] })
+    }
+  })
+  // Entra por el tejado: el Centro bota, destello, estrellas y el sonido de la máquina de curar
+  ball.max = 0
+  buildingFlash.set(home, performance.now())
+  fx.addShake(4)
+  mapFx.add({ ring: 34, size: 5, color: '#fff', x: x1, y: y1 + 8, max: 380 })
+  mapFx.add({ ring: 22, size: 4, color: '#ff8076', x: x1, y: y1 + 8, max: 300, delay: 90 })
+  stars(x1, y1 + 6, 16, 2.8)
+  for (let i = 0; i < 8; i++) mapFx.add({ x: x1 + rnd(-12, 12), y: y1 + 14, vy: rnd(-1.6, -0.6), size: 3, max: 520, delay: i * 40, colors: ['#fff', '#8cf08c'] })
+  sfx.land()
+  setTimeout(sfx.heal, 160)
+  label(home, `¡${name} a la caja!`, 'gold')
+  label(home, 'Sácalo gratis en un Centro Pokémon', 'heal', 500)
   refreshStatus()
+  await sleep(1100)
+  follow(u)
 }
 
 /** La orden de evolucionar, con su escena: al volver, el mapa enseña la forma nueva entre estrellas. */
@@ -2396,7 +2402,7 @@ function placeNear(el: HTMLElement, p: Pos) {
  */
 async function arrive(u: Unit, x: number, y: number) {
   const wild = !isAI[u.team] && !AUTO ? catchable(g, u, x, y) : null
-  if (!wild) return moveCatch(g, u, x, y)
+  if (!wild) return void (await moveCatch(g, u, x, y))
   mode = 'busy'
   menuEl.hidden = forecastEl.hidden = true
   talkEl.hidden = true
@@ -2419,8 +2425,9 @@ async function arrive(u: Unit, x: number, y: number) {
   g.funds[u.team] -= res.spent
   u.hp = Math.max(1, u.hp - res.hurt) // lo que le haya pegado el salvaje se queda
   if (res.fled) g.wild = g.wild.filter((w) => w !== wild)
-  moveCatch(g, u, x, y, res.caught)
   stage.classList.remove('encounter')
+  themeNow()
+  await moveCatch(g, u, x, y, res.caught)
   if (res.hurt) { label({ x, y }, `−${res.hurt} PS`, 'dmg', 300); hurt(u) }
   themeNow()
 }
@@ -2472,18 +2479,6 @@ function openMenu() {
       mode = 'busy'
       pending = null
       if (g.units.includes(u) && canEvolve(u)) await doEvolve(u)
-      finish()
-    }])
-  }
-  if (releaseSpot(g, u, at) && !wildAt(g, at.x, at.y)) { // lleva a alguien en el cinturón (y no está encima de otro salvaje): lo saca de su Ball a la casilla de al lado
-    const next = g.belt[u.team][0], more = g.belt[u.team].length - 1
-    items.push(['Soltar', `${KINDS[next.kind].name} (${next.hp} PS) sale de su Ball aquí al lado${more ? ` · quedan ${more} más` : ''} · gasta el turno`, async () => {
-      mode = 'busy'
-      menuEl.hidden = true
-      await arrive(u, at.x, at.y)
-      mode = 'busy'
-      pending = null
-      await doRelease(u)
       finish()
     }])
   }
@@ -2546,12 +2541,14 @@ function openRecruit(b: Building) {
   const grid = q('.grid'), hand = q('.hand'), go = q<HTMLButtonElement>('.go')
   const big = q<HTMLCanvasElement>('.spr').getContext('2d')!
   const funds = g.funds[g.turn]
-  const RECRUITABLE = rosterOf(g.co[g.turn]) // el Pokémon de cada rol de tu comandante
+  const boxed = g.box[g.turn] // los atrapados esperan aquí: sacarlos es gratis
+  const RECRUITABLE = [...boxed.map((b) => b.kind), ...rosterOf(g.co[g.turn])] // la caja y, después, el Pokémon de cada rol de tu comandante
+  const inBox = (i: number) => i < boxed.length
   const full = g.units.filter((u) => u.team === g.turn).length >= MAX_UNITS
-  const cost = (kind: string) => recruitCost(g, kind) // la mitad si es recuperar a un debilitado
-  const cells = RECRUITABLE.map((kind: string) => {
+  const cost = (kind: string, i = 99) => (inBox(i) ? 0 : recruitCost(g, kind)) // gratis de la caja; la mitad si es recuperar a un debilitado
+  const cells = RECRUITABLE.map((kind: string, i: number) => {
     const cell = document.createElement('button')
-    cell.className = 'cell' + (cost(kind) > funds ? ' locked' : '')
+    cell.className = 'cell' + (cost(kind, i) > funds ? ' locked' : '') + (inBox(i) ? ' boxed' : '')
     cell.innerHTML = '<canvas width="50" height="44"></canvas>'
     grid.append(cell)
     return { kind, cell, cx: cell.querySelector('canvas')!.getContext('2d')! }
@@ -2559,7 +2556,7 @@ function openRecruit(b: Building) {
   let current = -1
   const pickUp = (i: number) => {
     const kind = RECRUITABLE[i], k2 = KINDS[kind]
-    if (cost(kind) > funds || full || unitAt(g, b.x, b.y)) { // no llega el dinero o el equipo está completo: la caja dice que no
+    if (cost(kind, i) > funds || full || unitAt(g, b.x, b.y)) { // no llega el dinero o el equipo está completo: la caja dice que no
       sfx.error()
       restart(recruitEl.firstElementChild!, 'nope')
       return
@@ -2567,7 +2564,7 @@ function openRecruit(b: Building) {
     // La mano agarra al Pokémon y se lo lleva
     hand.className = 'hand grab'
     sfx.confirm()
-    setTimeout(() => { dropIn(recruit(g, b, kind)); finish() }, 260)
+    setTimeout(() => { dropIn(inBox(i) ? withdraw(g, b, i) : recruit(g, b, kind)); finish() }, 260)
   }
   const show = (i: number) => {
     if (i === current || i < 0 || i >= cells.length) return
@@ -2578,14 +2575,14 @@ function openRecruit(b: Building) {
     hand.style.left = cell.offsetLeft + grid.offsetLeft + 14 + 'px'
     hand.style.top = cell.offsetTop + grid.offsetTop - 26 + 'px'
     sfx.cursor()
-    const can = cost(kind) <= funds
+    const can = cost(kind, i) <= funds, free = inBox(i)
     q('.ttl').textContent = `${k2.name} · ${ROLES[k2.role].name}`
-    q('.r1').innerHTML = `<span>${isRecovery(g, kind) ? 'Recuperar' : 'Coste'}</span><b class="${can ? '' : 'bad'}">${cost(kind)}₽</b>`
+    q('.r1').innerHTML = free ? `<span>De la caja · ${boxed[i].hp} PS</span><b>GRATIS</b>` : `<span>${isRecovery(g, kind) ? 'Recuperar' : 'Coste'}</span><b class="${can ? '' : 'bad'}">${cost(kind)}₽</b>`
     q('.r2').innerHTML = `<span class="tys">${k2.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px" title="${TYPE_NAME[t]}"></i>`).join('')}</span><span>${k2.moves.map((m) => TYPE_NAME[m]).join(' + ')}</span>`
     q('.r3').innerHTML = `<span>ATQ ${miniBar(k2.atk, 2)}</span><span>DEF ${miniBar(k2.def, 2)}</span>`
     q('.r4').innerHTML = `<span>MOV ${k2.mv}</span><span>${k2.capture ? 'Captura' : k2.heals ? 'Cura' : k2.range[1] > 1 ? `Alcance ${k2.range.join('-')}` : k2.evolves ? `→ ${KINDS[k2.evolves].name}` : ''}</span>`
-    q('.hdr').textContent = ROLES[k2.role].help
-    go.innerHTML = full ? 'EQUIPO COMPLETO' : can ? `${isRecovery(g, kind) ? 'RECUPERAR' : 'RECLUTAR'} <b>${cost(kind)}₽</b>` : `FALTAN ${cost(kind) - funds}₽`
+    q('.hdr').textContent = free ? 'Atrapado: sale gratis por esta puerta' : ROLES[k2.role].help
+    go.innerHTML = full ? 'EQUIPO COMPLETO' : free ? 'SACAR DE LA CAJA <b>GRATIS</b>' : can ? `${isRecovery(g, kind) ? 'RECUPERAR' : 'RECLUTAR'} <b>${cost(kind)}₽</b>` : `FALTAN ${cost(kind) - funds}₽`
     go.classList.toggle('bad', !can || full)
     restart(q('.spr'), 'swap')
   }
@@ -2612,7 +2609,7 @@ function openRecruit(b: Building) {
       cx.imageSmoothingEnabled = false
       cx.clearRect(0, 0, 50, 44)
       const hop = i === current ? Math.abs(Math.sin(time / 170)) * 4 : 0
-      drawSprite(cx, KINDS[kind].species, i === current ? 'Walk' : 'Idle', DIR.down, time + i * 190, 25, 20 - hop, { dim: KINDS[kind].cost > funds })
+      drawSprite(cx, KINDS[kind].species, i === current ? 'Walk' : 'Idle', DIR.down, time + i * 190, 25, 20 - hop, { dim: !inBox(i) && KINDS[kind].cost > funds })
     }
     if (current >= 0) {
       big.imageSmoothingEnabled = false
@@ -2807,7 +2804,7 @@ async function runAI() {
         await animateMove(u, path)
       }
     } else if (visible) await animateMove(u, path)
-    moveCatch(g, u, end.x, end.y)
+    await moveCatch(g, u, end.x, end.y)
     animPos.delete(u.id)
     if (ambushed) {
       u.moved = true
@@ -2845,9 +2842,9 @@ async function runAI() {
   hover = null
   for (const b of g.buildings) {
     if (g.winner !== null || b.type !== 'center' || b.owner !== g.turn) continue
-    const kind = planRecruit(g, b)
-    if (!kind) continue
-    const u = recruit(g, b, kind)
+    const kind = canWithdraw(g, b) ? null : planRecruit(g, b) // primero, lo que tenga en la caja: es gratis
+    if (!kind && !canWithdraw(g, b)) continue
+    const u = kind ? recruit(g, b, kind) : withdraw(g, b)
     if (!AUTO && shown(u)) {
       panTo(u.x * T + 16, u.y * T + 16)
       await beat(300)

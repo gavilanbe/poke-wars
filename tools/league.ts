@@ -1,6 +1,6 @@
 // Liga de IA contra IA sin gráficos: la usan tools/sim.ts (informe) y tools/tune.ts (afinador).
 import { planRecruit, planUnit } from '../src/ai'
-import { attack, canUsePower, capture, createGame, endTurn, evolve, freeze, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
+import { attack, canUsePower, capture, createGame, endTurn, canWithdraw, evolve, freeze, withdraw, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
 
 import { COMMANDERS, KINDS, MAPS, ROLES } from '../src/data'
 
@@ -51,6 +51,7 @@ export function league(ROUNDS: number, only?: [string, string], mapId?: number):
       }
       for (const b of g.buildings) {
         if (g.winner !== null || b.type !== 'center' || b.owner !== g.turn) continue
+        if (canWithdraw(g, b)) { withdraw(g, b); continue } // primero, lo que tenga en la caja
         const kind = planRecruit(g, b)
         if (kind) { recruit(g, b, kind); role(kind).bought++ }
       }

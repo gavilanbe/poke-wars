@@ -15,9 +15,9 @@ export interface Unit {
   tag?: 'vip' | 'boss' // en campaña: el Pokémon que no puede caer (y que a veces hay que llevar a un sitio) y el jefe a derrotar
 }
 /** Un Pokémon debilitado no desaparece: vuelve al Centro y se puede recuperar a mitad de precio, con su nivel. */
-/** Un Pokémon guardado en su Ball. */
+/** Un Pokémon atrapado, guardado en la caja del Centro Pokémon. */
 export interface Stored { kind: string; hp: number }
-export const BELT_MAX = 3
+export const BOX_MAX = 6
 export interface Fainted { kind: string; xp: number; level: number }
 export interface Building { x: number; y: number; type: BuildingType; owner: -1 | Team; cap: number }
 
@@ -59,7 +59,7 @@ export interface Game {
   weather: Weather
   fainted: [Fainted[], Fainted[]]
   wild: { x: number; y: number; kind: string }[] // salvajes escondidos en la hierba alta
-  belt: [Stored[], Stored[]] // el cinturón de cada equipo: Pokémon atrapados que esperan en su Ball a que un Capturador los suelte
+  box: [Stored[], Stored[]] // la caja de cada equipo: los atrapados esperan en el Centro Pokémon a que los saquen
   items: { x: number; y: number; type: ItemType }[] // bayas y monedas por el mapa
   map: number
   rules?: Rules
@@ -82,7 +82,7 @@ export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog 
   const g: Game = {
     w: MAP[0].length, h: MAP.length, tiles: [], units: [], buildings: [], items: [], map: typeof map === 'number' ? map : -1,
     turn: 0, day: 1, funds: [0, 0], winner: null, nextId: 1,
-    co, meter: [0, 0], power: [false, false], fog, weather: 'clear', fainted: [[], []], wild: [], belt: [[], []], terrainVersion: 0,
+    co, meter: [0, 0], power: [false, false], fog, weather: 'clear', fainted: [[], []], wild: [], box: [[], []], terrainVersion: 0,
   }
   g.tiles = MAP.map((row) => [...row])
   for (const b of def.buildings) {
@@ -419,7 +419,7 @@ export function judge(g: Game) {
 
 export interface MoveEvent {
   caught?: Unit // salvaje atrapado
-  stored?: string // atrapado y guardado en el cinturón
+  stored?: string // atrapado: va a la caja
   wild?: 'escaped' | 'broke' // se escapó de la Ball, o no había dinero para una
   item?: ItemType // objeto recogido
 }
@@ -435,29 +435,22 @@ export const AUTO_CATCH = 0.55
 const besideFree = (g: Game, x: number, y: number) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
   .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && !unitAt(g, p.x, p.y))
 const hasRoom = (g: Game, team: Team) => g.units.filter((o) => o.team === team).length < MAX_UNITS
-/** El salvaje que ese Pokémon podría intentar atrapar en esa casilla: hace falta ser Capturador, dinero para una Ball y sitio en el cinturón (o en el campo, al lado). */
+/** El salvaje que ese Pokémon podría intentar atrapar en esa casilla: vale cualquiera, con dinero para una Ball y sitio en la caja. */
 export function catchable(g: Game, u: Unit, x: number, y: number) {
   const wild = wildAt(g, x, y)
-  if (!wild || !KINDS[u.kind].capture || g.funds[u.team] < BALLS[0].cost) return null
-  return g.belt[u.team].length < BELT_MAX || (hasRoom(g, u.team) && besideFree(g, x, y)) ? wild : null
+  return wild && g.funds[u.team] >= BALLS[0].cost && g.box[u.team].length < BOX_MAX ? wild : null
 }
-/** Lo que le cuesta a un Capturador un intento fallido cuando no se juega el minijuego (la IA): el salvaje se revuelve. */
+/** Lo que le cuesta un intento fallido a quien no juega el minijuego (la IA): el salvaje se revuelve. */
 export const ESCAPE_HURT = 2
 
-/** Dónde soltaría ese Capturador al primero de su cinturón si se plantara en `at` (null si no puede). */
-export function releaseSpot(g: Game, u: Unit, at: Pos = u): Pos | null {
-  if (!KINDS[u.kind].capture || !g.belt[u.team].length || !hasRoom(g, u.team)) return null
-  return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: at.x + dx, y: at.y + dy }))
-    .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && (!unitAt(g, p.x, p.y) || unitAt(g, p.x, p.y) === u) && !(p.x === at.x && p.y === at.y) && !wildAt(g, p.x, p.y)) ?? null
-}
-/** La orden de soltar: el primero del cinturón sale de su Ball en la casilla de al lado. Gasta el turno del Capturador; el recién salido actúa al siguiente. */
-export function release(g: Game, u: Unit): Unit | null {
-  const spot = releaseSpot(g, u)
-  if (!spot) return null
-  const stored = g.belt[u.team].shift()!
-  const fresh = addUnit(g, stored.kind, u.team, spot.x, spot.y)
+/** ¿Se puede sacar ahora a alguien de la caja por ese Centro Pokémon? Tiene que ser tuyo, con la puerta libre y sitio en el equipo. */
+export const canWithdraw = (g: Game, b: Building) =>
+  b.type === 'center' && b.owner === g.turn && g.box[g.turn].length > 0 && !unitAt(g, b.x, b.y) && hasRoom(g, g.turn)
+/** Saca de la caja a un atrapado: sale por la puerta del Centro, gratis, y actúa al turno siguiente. */
+export function withdraw(g: Game, b: Building, index = 0): Unit {
+  const [stored] = g.box[g.turn].splice(index, 1)
+  const fresh = addUnit(g, stored.kind, g.turn, b.x, b.y)
   fresh.hp = stored.hp
-  u.moved = true
   return fresh
 }
 
@@ -465,9 +458,9 @@ export function release(g: Game, u: Unit): Unit | null {
  * Mueve la unidad y resuelve lo que encuentre en la casilla:
  * - un objeto: la baya cura y quita el estado; la moneda da dinero;
  * - un salvaje en la hierba: quien captura le lanza una Poké Ball (que cuesta dinero)
- *   y, si lo atrapa, el salvaje se une al equipo. `outcome` es el resultado ya decidido (y pagado) en el minijuego:
- *   entonces va al cinturón, a esperar en su Ball. Sin él se lanza una Poké Ball a suertes, como hace la IA: si sale
- *   bien aparece en la casilla de al lado y, si no, el salvaje se revuelve y le quita PS.
+ *   y, si lo atrapa, va a la caja del Centro Pokémon, de donde se saca gratis. `outcome` es el resultado ya decidido
+ *   (y pagado) en el minijuego, que puede jugar cualquier Pokémon. Sin él lanza a suertes quien captura edificios,
+ *   que es lo que hace la IA: si falla, el salvaje se revuelve y le quita PS.
  */
 export function moveUnit(g: Game, u: Unit, x: number, y: number, outcome?: boolean): MoveEvent | null {
   if (u.x === x && u.y === y) return null
@@ -485,24 +478,21 @@ export function moveUnit(g: Game, u: Unit, x: number, y: number, outcome?: boole
   }
   const wild = wildAt(g, x, y)
   if (wild) {
-    const field = hasRoom(g, u.team) ? besideFree(g, x, y) : undefined, belt = g.belt[u.team].length < BELT_MAX
-    if (!KINDS[u.kind].capture) {
-      // quien no captura pasa de largo: cansarlo y atraparlo es cosa del Capturador
-    } else if (outcome !== undefined ? belt || field : field && g.funds[u.team] >= BALLS[0].cost) {
+    const room = g.box[u.team].length < BOX_MAX
+    if (outcome !== undefined ? room : KINDS[u.kind].capture && room && g.funds[u.team] >= BALLS[0].cost) {
       if (outcome === undefined) g.funds[u.team] -= BALLS[0].cost
       if (outcome ?? Math.random() < AUTO_CATCH) {
         g.wild = g.wild.filter((w) => w !== wild)
-        const hp = 9
-        if (outcome !== undefined && belt) { g.belt[u.team].push({ kind: wild.kind, hp }); ev.stored = wild.kind }
-        else { ev.caught = addUnit(g, wild.kind, u.team, field!.x, field!.y); ev.caught.hp = hp }
+        g.box[u.team].push({ kind: wild.kind, hp: 9 })
+        ev.stored = wild.kind
       } else {
         ev.wild = 'escaped'
         if (outcome === undefined) u.hp = Math.max(1, u.hp - ESCAPE_HURT)
       }
-    } else if (outcome === undefined && g.funds[u.team] < BALLS[0].cost && hasRoom(g, u.team)) ev.wild = 'broke'
+    } else if (outcome === undefined && KINDS[u.kind].capture && room && g.funds[u.team] < BALLS[0].cost) ev.wild = 'broke'
   }
   judge(g)
-  return ev.caught || ev.stored || ev.wild || ev.item ? ev : null
+  return ev.stored || ev.wild || ev.item ? ev : null
 }
 
 /** ¿Puede congelar el agua de alrededor? Solo quien tenga un ataque de hielo, y si hay agua libre al lado. */

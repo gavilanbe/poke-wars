@@ -3,7 +3,7 @@
 import { planRecruit, planUnit } from '../src/ai'
 import { MISSIONS, WORLD, happenings, missionGame } from '../src/campaign'
 import { BUILDING_INFO, KINDS, TERRAIN } from '../src/data'
-import { Game, attack, canUsePower, capture, endTurn, footprint, evolve, freeze, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
+import { Game, attack, canUsePower, capture, endTurn, footprint, canWithdraw, evolve, freeze, withdraw, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
 
 declare const process: { argv: string[] }
 const N = Number(process.argv[2] ?? 20), only = process.argv[3]
@@ -73,7 +73,7 @@ function play(m: (typeof MISSIONS)[number], hero: string) {
       else if (plan.action === 'evolve') evolve(g, u)
       else u.moved = true
     }
-    for (const b of g.buildings) { if (g.winner !== null || b.type !== 'center' || b.owner !== g.turn) continue; const kind = planRecruit(g, b); if (kind) recruit(g, b, kind) }
+    for (const b of g.buildings) { if (g.winner !== null || b.type !== 'center' || b.owner !== g.turn) continue; if (canWithdraw(g, b)) { withdraw(g, b); continue } const kind = planRecruit(g, b); if (kind) recruit(g, b, kind) }
     if (g.winner === null) endTurn(g)
     turns++
   }

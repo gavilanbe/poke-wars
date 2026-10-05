@@ -1737,7 +1737,7 @@ export async function playCatch(c: CatchData): Promise<CatchResult> {
         for (let i = 0; i < 60; i++) scene.add({ img: 'confetti', frame: Math.floor(rnd(0, 12)), x: wx + rnd(-50, 50), y: wy - 60, vx: rnd(-4, 4), vy: rnd(-6.5, -2), g: 0.16, drag: 0.98, max: rnd(1000, 1600), scale: 2, vr: 0.2 })
         const banner = document.createElement('div')
         banner.className = `capbanner t${c.team}`
-        banner.innerHTML = `<b>${[...'¡ATRAPADO!'].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')}</b><span>${w.name} espera en su Ball: suéltalo cuando y donde quieras · ${spent}₽ en Balls${hurt ? ` · −${hurt} PS` : ''}</span>`
+        banner.innerHTML = `<b>${[...'¡ATRAPADO!'].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')}</b><span>${w.name} va a la caja de tu Centro Pokémon · ${spent}₽ en Balls${hurt ? ` · −${hurt} PS` : ''}</span>`
         ui.classList.add('won')
         ui.append(banner)
         scene.play(me, 'Hop')
