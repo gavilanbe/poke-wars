@@ -16,7 +16,7 @@ import { Scene, loadFx, rnd } from './scene'
 import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
 import { Lesson, tutorial } from './tutorial'
 import { cover, fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, uncover, versus, victory } from './ui'
-import { Anim, DIR, animDuration, dirFrom, drawSprite, facePath, loadUnits } from './units'
+import { Anim, DIR, animDuration, dirFrom, drawSprite, facePath, loadSpecies, loadSpeciesList, loadUnits } from './units'
 
 const T = 32 // píxeles por casilla: 2x2 metatiles de Esmeralda
 const TEAM_NAME = ['Rojo', 'Azul']
@@ -341,6 +341,11 @@ function resize() {
   if (g) panTo(cam.tx + canvas.width / 2, cam.ty + canvas.height / 2, true)
 }
 
+/** Un Pokémon y lo que puede llegar a ser: sus hojas se piden juntas para que la evolución no aparezca a medias. */
+const line = (kind: string): string[] => { const out: string[] = []; for (let k: string | undefined = kind; k && KINDS[k]; k = KINDS[k].evolves) out.push(KINDS[k].species); return out }
+/** Las especies que hacen falta para jugar esa partida: los dos equipos enteros, lo que haya en el campo y los salvajes. */
+const speciesOf = (game: Game) => [...game.co.flatMap((c) => rosterOf(c)), ...game.units.map((u) => u.kind), ...game.wild.map((w) => w.kind)].flatMap(line)
+
 const SAVE_KEY = 'pokewars-save'
 /** Guarda la partida (siempre en un momento en que le toca mover a una persona). */
 function saveGame() {
@@ -358,6 +363,7 @@ function startGame(cos: [string, string], intro = 0, saved?: Game) {
   titleOn = false
   stage.classList.remove('titling')
   g = saved ?? createGame(cos, fogOn, mapChoice)
+  void loadSpeciesList(speciesOf(g))
   terrainLayer = makeTerrainLayer(g)
   fx.clear()
   for (const m of [unitFx, unitDir, unitAnim, animPos]) m.clear()
@@ -782,6 +788,7 @@ function draw(time: number) {
   }
   // Hierba que se agita: ahí se esconde un Pokémon salvaje
   for (const w of g.wild) {
+    void loadSpecies(KINDS[w.kind].species) // por si luego se atrapa: que su hoja ya esté
     if (who !== null && !sight.has(key(w.x, w.y))) continue
     const jig = Math.floor(time / 130 + w.x) % 6
     const dx = jig === 0 ? -1 : jig === 2 ? 1 : 0
@@ -1573,6 +1580,7 @@ function chooseCommanders(): Promise<[string, string] | null> {
       q('.stats').innerHTML = `<div><span>Ataque</span>${pips(level(c.atk[0], 0.05))}</div><div><span>Defensa</span>${pips(level(c.def[0], 0.04))}</div>
         <div><span>Movimiento</span>${pips(3 + c.mv[0] * 2)}</div><div><span>Con poder</span>${pips(level((c.atk[1] + c.def[1]) / 2 + c.mv[1] * 0.1, 0.07))}</div>`
       squad = rosterOf(id)
+      void loadSpeciesList(squad.map((k) => KINDS[k].species))
       const types = [...new Set(squad.flatMap((k) => KINDS[k].types))]
       q('.tipos').innerHTML = `<span>Tipos del equipo</span><div>${types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 38}px" title="${TYPE_NAME[t]}"></i>`).join('')}</div>`
       q('.roles').innerHTML = squad.map((kind, i) => {
@@ -1732,6 +1740,7 @@ function loadDemo() {
       break
     }
   })
+  void loadSpeciesList(cast.map((k) => KINDS[k].species))
   g = demo
   terrainLayer = makeTerrainLayer(g)
   fx.clear()
@@ -1910,6 +1919,7 @@ tutorial.init({
     game.funds = lesson.funds ?? [0, 0]
     game.meter = lesson.meter ?? [0, 0]
     isAI[0] = false; isAI[1] = true
+    void loadSpeciesList(speciesOf(game))
     enterGame(game)
     shownFunds[0] = game.funds[0]; shownMeter[0] = game.meter[0]
     hover = { x: lesson.cursor[0], y: lesson.cursor[1] }
@@ -1959,7 +1969,9 @@ async function newGame() {
   const intro = versus(cos)
   setTimeout(() => sfx.cry(cos[0], 1, 0.7), 250)
   setTimeout(() => sfx.cry(cos[1], 1, 0.7), 900)
+  const sprites = loadSpeciesList(cos.flatMap((c) => rosterOf(c)).flatMap(line)) // los dos equipos, mientras dura la presentación
   await sleep(600)
+  await Promise.race([sprites, sleep(2500)])
   sfx.bigHit()
   startGame(cos, 1500)
   await intro
@@ -2796,5 +2808,7 @@ async function boot() {
   })
   if (AUTO) newGame()
   else showTitle()
+  // Caché local de imágenes y sonidos (public/sw.js); en desarrollo no, para ver siempre lo último
+  if ('serviceWorker' in navigator && location.hostname !== 'localhost') void navigator.serviceWorker.register('sw.js')
 }
 boot()

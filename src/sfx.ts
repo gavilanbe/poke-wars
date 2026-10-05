@@ -19,6 +19,17 @@ let loops: Record<string, number> = {} // segundo al que vuelve cada tema al rep
 // Los archivos ya vienen nivelados (interfaz bajita, golpes fuertes); esto solo afina
 const VOLUME: Record<string, number> = { select: 0.5, confirm: 0.5, cancel: 0.5, step: 0.45, talk: 0.5, coin: 0.5, land: 0.6, lunge: 0.6, cast: 0.6 }
 
+const fetching = new Map<string, Promise<void>>()
+/** Trae y descodifica un archivo (una sola vez). */
+function fetchSample(a: BaseAudioContext, name: string): Promise<void> {
+  let job = fetching.get(name)
+  if (!job) {
+    job = fetch(`audio/${name}.mp3`).then((r) => r.arrayBuffer()).then((data) => a.decodeAudioData(data)).then((b) => void buffers.set(name, b)).catch(() => {})
+    fetching.set(name, job)
+  }
+  return job
+}
+
 /** Carga el índice y va descodificando los archivos en segundo plano. */
 export async function loadAudio() {
   try {
@@ -30,8 +41,8 @@ export async function loadAudio() {
   }
   const a = new AudioContext()
   for (const name of available) {
-    if (name.startsWith('music_')) continue // la música va en streaming
-    fetch(`audio/${name}.mp3`).then((r) => r.arrayBuffer()).then((data) => a.decodeAudioData(data)).then((b) => buffers.set(name, b)).catch(() => {})
+    if (name.startsWith('music_') || name.startsWith('cry_')) continue // la música va en streaming y los gritos (más de doscientos) se traen al usarlos
+    void fetchSample(a, name)
   }
 }
 
@@ -46,7 +57,13 @@ function out(a: AudioContext): AudioNode {
 /** Reproduce una muestra si está cargada; devuelve false si hay que tirar del sintetizador. */
 function sample(name: string, { vol = VOLUME[name] ?? 0.7, delay = 0, rate = 1 } = {}): boolean {
   const buffer = buffers.get(name)
-  if (!buffer) return false
+  if (!buffer) {
+    // Un grito que aún no se ha traído: se pide ahora y suena en cuanto llega, si no ha pasado ya el momento
+    if (!name.startsWith('cry_') || !available.has(name)) return false
+    const a = ctx(), asked = performance.now()
+    if (a) void fetchSample(a, name).then(() => { if (performance.now() - asked < 600 && buffers.has(name)) sample(name, { vol, delay, rate }) })
+    return true
+  }
   const a = ctx()
   if (!a) return true
   const src = a.createBufferSource(), gain = a.createGain()

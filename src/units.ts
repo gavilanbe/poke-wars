@@ -14,17 +14,32 @@ export const dirFrom = (dx: number, dy: number) =>
 
 export const facePath = (name: string, face = 'Normal') => `assets/pmd/face-${name}-${face}.png`
 
+// Las hojas se cargan por especie y solo cuando hacen falta: son nueve imágenes por Pokémon y hay más de doscientos,
+// así que traerlas todas al arrancar eran casi dos mil peticiones.
+const pending = new Map<string, Promise<void>>()
+const ready = new Set<string>()
+
+/** Lee el índice de animaciones (tamaños y tiempos de todas las especies). Las imágenes vienen después. */
 export async function loadUnits() {
   meta = await fetch('assets/pmd/anims.json').then((r) => r.json())
-  await Promise.all(Object.keys(meta).flatMap((species) =>
-    (Object.keys(meta[species]) as Anim[]).map((anim) => new Promise<void>((resolve, reject) => {
+}
+
+/** Carga, una sola vez, las hojas de una especie. */
+export function loadSpecies(species: string): Promise<void> {
+  let job = pending.get(species)
+  if (!job) {
+    job = Promise.all((Object.keys(meta[species] ?? {}) as Anim[]).map((anim) => new Promise<void>((resolve) => {
       const img = new Image()
-      img.onload = () => resolve()
-      img.onerror = reject
+      img.onload = img.onerror = () => resolve()
       img.src = `assets/pmd/${species}-${anim}.png`
       images.set(`${species}-${anim}`, img)
-    }))))
+    }))).then(() => void ready.add(species))
+    pending.set(species, job)
+  }
+  return job
 }
+/** Deja listas varias especies (las de una partida, las de una lección…) para que no aparezcan a medias. */
+export const loadSpeciesList = (list: Iterable<string>) => Promise.all([...new Set(list)].map(loadSpecies))
 
 /** Altura del fotograma en reposo: sirve para decidir a qué escala cabe en una escena. */
 export const spriteHeight = (species: string) => meta[species].Idle.h
@@ -67,6 +82,7 @@ export function drawSprite(
   ctx: CanvasRenderingContext2D, species: string, anim: Anim, dir: number, elapsed: number,
   x: number, y: number, { dim, white, sx = 1, sy = 1, loop = true, tint, rot = 0, alpha = 1 }: SpriteOpts = {},
 ) {
+  if (!ready.has(species)) return void loadSpecies(species) // aún no ha llegado: se pide y se pinta cuando esté
   const m = meta[species][anim]
   const total = m.d.reduce((a, b) => a + b, 0)
   let t = (Math.max(0, elapsed) * 60) / 1000
