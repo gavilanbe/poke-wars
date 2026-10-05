@@ -21,7 +21,7 @@ import { Lesson, tutorial } from './tutorial'
 import { initPwa } from './pwa'
 import { buzz, initMobile, isTouch, onTouchChange, setTouch } from './mobile'
 import { cover, fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, uncover, versus, victory } from './ui'
-import { Anim, DIR, animDuration, dirFrom, drawSprite, facePath, loadSpecies, loadSpeciesList, loadUnits } from './units'
+import { Anim, DIR, animDuration, dirFrom, drawSprite, facePath, loadImage, loadSpecies, loadSpeciesList, loadUnits } from './units'
 
 const T = 32 // píxeles por casilla: 2x2 metatiles de Esmeralda
 const TEAM_NAME = ['Rojo', 'Azul']
@@ -48,13 +48,6 @@ const nextFrame = () => new Promise<number>(requestAnimationFrame)
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 const easeOutBack = (t: number) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2)
 const pick = <V>(list: V[]) => list[Math.floor(Math.random() * list.length)]
-const loadImage = (src: string) =>
-  new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = src
-  })
 const restart = (el: Element, cls: string) => {
   el.classList.remove(cls)
   void (el as HTMLElement).offsetWidth

@@ -1222,3 +1222,14 @@ button { touch-action: manipulation; }
 .pc .cell { position: relative; }
 .pc .cell.boxed { outline: 2px solid #ffd84a; outline-offset: -2px; background-color: #fff6c8; }
 .pc .cell.boxed::after { content: 'CAJA'; position: absolute; left: 1px; top: 1px; padding: 0 2px; font: 8px/1.2 var(--ui); color: #10141c; background: #ffd84a; }
+
+/* ---------- Móvil: lo que cuesta pintar ----------
+   Animar la posición de un fondo obliga a repintar toda su superficie en cada fotograma, y un desenfoque que se mueve,
+   también. En un monitor no se nota; en un móvil se come los fotogramas del resto. Con el dedo, esos adornos se
+   quedan quietos (o se van) y lo que importa —el mapa, los combates, los golpes— va fluido. */
+.touch #title .beams::before, .touch #title .beams::after, .touch .st-backdrop, .touch #select .bg .stripes { animation: none; }
+.touch .logo2::before { animation-duration: 140s; will-change: transform; }
+.touch .logo2 span[data-ch]::before { animation: none; }
+.touch .st-sky i { filter: none; opacity: 0.1; }
+.touch .logo2 .poke { filter: none; }
+.touch #map, .touch #mapfx, .touch #scene canvas { will-change: transform; }

@@ -24,16 +24,29 @@ export async function loadUnits() {
   meta = await fetch('assets/pmd/anims.json').then((r) => r.json())
 }
 
+/**
+ * Trae una imagen, reintentando si falla: en un móvil con mala cobertura una petición se pierde de vez en cuando, y
+ * antes esa hoja se daba por cargada y el Pokémon se quedaba invisible toda la partida.
+ */
+export function loadImage(src: string, tries = 4): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const attempt = (left: number) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = () => (left > 1 ? setTimeout(() => attempt(left - 1), 400 * (tries - left + 1)) : reject(new Error('no se pudo cargar ' + src)))
+      img.src = src
+    }
+    attempt(tries)
+  })
+}
+
 /** Carga, una sola vez, las hojas de una especie. */
 export function loadSpecies(species: string): Promise<void> {
   let job = pending.get(species)
   if (!job) {
-    job = Promise.all((Object.keys(meta[species] ?? {}) as Anim[]).map((anim) => new Promise<void>((resolve) => {
-      const img = new Image()
-      img.onload = img.onerror = () => resolve()
-      img.src = `assets/pmd/${species}-${anim}.png`
-      images.set(`${species}-${anim}`, img)
-    }))).then(() => void ready.add(species))
+    job = Promise.all((Object.keys(meta[species] ?? {}) as Anim[]).map(async (anim) => {
+      images.set(`${species}-${anim}`, await loadImage(`assets/pmd/${species}-${anim}.png`))
+    })).then(() => void ready.add(species), () => void pending.delete(species)) // si aun así falla, se volverá a pedir la próxima vez que haga falta
     pending.set(species, job)
   }
   return job

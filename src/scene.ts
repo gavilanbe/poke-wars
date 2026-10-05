@@ -1,6 +1,6 @@
 // Motor de las escenas animadas (combate, captura, efectos sobre el mapa): un lienzo de píxel gordo con
 // actores (sprites de Mundo Misterioso), partículas (sprites de efectos de Esmeralda) y parada de impacto.
-import { Anim, drawSprite } from './units'
+import { Anim, drawSprite, loadImage } from './units'
 
 interface FxMeta { w: number; h: number; n: number; cols?: number } // sin `cols`, los fotogramas van apilados en vertical
 let fxMeta: Record<string, FxMeta> = {}
@@ -8,13 +8,7 @@ const fxImages = new Map<string, HTMLImageElement>()
 
 /** `track` deja contar cada hoja para la barra de carga. */
 export async function loadFx(track = <V>(job: Promise<V>) => job) {
-  const load = (name: string, file: string) => track(new Promise<void>((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve()
-    img.onerror = reject
-    img.src = `assets/fx/${file}`
-    fxImages.set(name, img)
-  }))
+  const load = (name: string, file: string) => track(loadImage(`assets/fx/${file}`).then((img) => void fxImages.set(name, img)))
   // Efectos de Esmeralda (fotogramas apilados) y hojas de la comunidad (en rejilla)
   const [emerald, sheets] = await Promise.all(['fx.json', 'sheets.json'].map((f) => fetch('assets/fx/' + f).then((r) => r.json())))
   fxMeta = { ...fxMeta, ...emerald, ...sheets } // sin pisar las hojas que se hayan registrado antes (registerSheet)

@@ -41,7 +41,7 @@ export async function loadAudio() {
   } catch {
     return
   }
-  const a = new AudioContext()
+  const a = audio() // el mismo contexto que luego suena: los móviles dan muy pocos
   for (const name of available) {
     if (name.startsWith('music_') || name.startsWith('cry_')) continue // la música va en streaming y los gritos (más de doscientos) se traen al usarlos
     void fetchSample(a, name)
@@ -51,6 +51,7 @@ export async function loadAudio() {
 function out(a: AudioContext): AudioNode {
   if (!master) {
     master = a.createGain()
+    master.gain.value = muted ? 0 : 1 // la música también pasa por aquí
     master.connect(a.destination)
   }
   return master
@@ -78,97 +79,116 @@ function sample(name: string, { vol = VOLUME[name] ?? 0.7, delay = 0, rate = 1 }
 }
 
 // ---------- Música y ambiente ----------
+// La música suena por WebAudio, igual que los efectos: cada tema se descodifica una vez y se reproduce desde memoria.
+// Antes era un <audio> por tema, con otro nuevo en cada vuelta del bucle, y en el móvil eso fallaba por tres sitios:
+// el iPhone no deja arrancar un <audio> nuevo sin un toque (la música se callaba al acabar la primera vuelta), no
+// deja cambiarle el volumen (sonaba al triple y tapaba los efectos) y lo corta al cambiar de aplicación.
 
-const tracks = new Map<string, HTMLAudioElement>()
-let currentMusic = '', currentAmbience = ''
-const MUSIC_VOLUME = 0.32
+interface Voice { name: string; volume: number; gain: GainNode; src: AudioBufferSourceNode; startedAt: number; offset: number }
+const voices = new Map<string, Voice>() // por canal: 'music' y 'ambience'
+const wanted: Record<string, [string, number]> = { music: ['', 0], ambience: ['', 0] } // lo que debería estar sonando en cada canal
+const songs = new Map<string, AudioBuffer>() // temas descodificados (los últimos; cada uno son unos 15 MB)
+const MUSIC_VOLUME = 0.32, CROSS = 1.6
 
-function fade(el: HTMLAudioElement, to: number, ms = 700) {
-  const from = el.volume, start = performance.now()
-  const step = () => {
-    const t = Math.min(1, (performance.now() - start) / ms)
-    el.volume = Math.max(0, Math.min(1, from + (to - from) * t))
-    if (t < 1) requestAnimationFrame(step)
-    else if (to === 0) el.pause()
+/** El contexto de audio, exista o no sonido activado (el silencio lo pone `master`). */
+function audio(): AudioContext {
+  ac ??= new AudioContext()
+  return ac
+}
+async function song(name: string): Promise<AudioBuffer | null> {
+  const hit = songs.get(name)
+  if (hit) return hit
+  try {
+    const data = await fetch(`audio/${name}.mp3`).then((r) => r.arrayBuffer())
+    const buffer = await audio().decodeAudioData(data)
+    songs.set(name, buffer)
+    for (const old of songs.keys()) { if (songs.size <= 4) break; if (![...voices.values()].some((v) => v.name === old)) songs.delete(old) }
+    return buffer
+  } catch { return null } // sin red y sin copia: ese tema no suena, y ya está
+}
+/** Arranca una voz: el tema desde `offset`, entrando con un fundido. */
+function voice(a: AudioContext, name: string, buffer: AudioBuffer, volume: number, offset: number, fadeIn: number): Voice {
+  const src = a.createBufferSource(), gain = a.createGain()
+  src.buffer = buffer
+  gain.gain.setValueAtTime(0, a.currentTime)
+  gain.gain.linearRampToValueAtTime(volume, a.currentTime + fadeIn)
+  src.connect(gain).connect(out(a))
+  src.start(0, offset)
+  return { name, volume, gain, src, startedAt: a.currentTime, offset }
+}
+function hush(a: AudioContext, v: Voice, seconds: number) {
+  v.gain.gain.cancelScheduledValues(a.currentTime)
+  v.gain.gain.setValueAtTime(v.gain.gain.value, a.currentTime)
+  v.gain.gain.linearRampToValueAtTime(0, a.currentTime + seconds)
+  try { v.src.stop(a.currentTime + seconds + 0.05) } catch { /* ya estaba parada */ }
+}
+/** Pone en un canal el tema que toca (o lo calla): funde el que hubiera y arranca el nuevo cuando esté descodificado. */
+async function tune(channel: string, name: string, volume: number) {
+  if (wanted[channel][0] === name) return
+  wanted[channel] = [name, volume]
+  const a = audio(), old = voices.get(channel)
+  if (old) { voices.delete(channel); hush(a, old, 0.7) }
+  if (!name || !available.has(name)) return
+  const buffer = await song(name)
+  if (!buffer || wanted[channel][0] !== name || voices.has(channel)) return // mientras se descodificaba ya se pidió otro
+  voices.set(channel, voice(a, name, buffer, volume, 0, 0.7))
+}
+// El bucle: poco antes del final entra una segunda copia que empieza justo después de la entrada del tema, y se funden.
+// Se mira con el reloj del propio audio, que se para cuando el navegador lo suspende: así no se desfasa al volver.
+setInterval(() => {
+  if (!ac || ac.state !== 'running') return
+  for (const [channel, v] of voices) {
+    const buffer = v.src.buffer!, at = ac.currentTime - v.startedAt + v.offset
+    if (at < buffer.duration - CROSS - 0.2) continue
+    hush(ac, v, CROSS)
+    voices.set(channel, voice(ac, v.name, buffer, v.volume, loops[v.name] ?? 0, CROSS))
   }
-  step()
-}
-
-/**
- * Arranca un tema en bucle. Los temas tienen una entrada que solo suena la primera vez: poco antes del final se
- * funde con una segunda copia que empieza justo después de la entrada, así el bucle no se nota.
- */
-function startLoop(name: string, volume: number, from = 0): HTMLAudioElement {
-  const el = new Audio(`audio/${name}.mp3`)
-  const loopStart = loops[name]
-  el.loop = loopStart === undefined
-  el.muted = muted
-  el.volume = 0
-  if (from) el.currentTime = from
-  if (loopStart !== undefined) {
-    el.ontimeupdate = () => {
-      if (!el.duration || el.currentTime < el.duration - 1.8 || tracks.get(name) !== el) return
-      el.ontimeupdate = null
-      const next = startLoop(name, volume, loopStart)
-      tracks.set(name, next)
-      fade(el, 0, 1600)
-    }
-  }
-  tracks.set(name, el)
-  el.play().then(() => fade(el, volume, from ? 1600 : 700)).catch(() => {}) // sin gesto del usuario aún: se reintenta al primer clic
-  return el
-}
-
-function loopTrack(name: string, volume: number, current: string): string {
-  if (name === current) return current
-  const old = tracks.get(current)
-  if (old) { tracks.delete(current); fade(old, 0) }
-  if (!name || !available.has(name)) return name
-  startLoop(name, volume)
-  return name
-}
+}, 200)
 
 export const music = {
   /** Cambia de tema con fundido; '' para silencio. */
-  play(name: string) { currentMusic = loopTrack(name ? 'music_' + name : '', MUSIC_VOLUME, currentMusic) },
-  ambience(name: string) { currentAmbience = loopTrack(name ? 'amb_' + name : '', 0.3, currentAmbience) },
+  play(name: string) { void tune('music', name ? 'music_' + name : '', MUSIC_VOLUME) },
+  ambience(name: string) { void tune('ambience', name ? 'amb_' + name : '', 0.3) },
   /** Baja la música un momento (para un cartel o un efecto largo). */
   duck(ms: number) {
-    const el = tracks.get(currentMusic)
-    if (!el) return
-    fade(el, MUSIC_VOLUME * 0.25, 200)
-    setTimeout(() => fade(el, MUSIC_VOLUME, 600), ms)
+    const v = voices.get('music')
+    if (!v || !ac) return
+    const g = v.gain.gain, now = ac.currentTime
+    g.cancelScheduledValues(now)
+    g.setValueAtTime(g.value, now)
+    g.linearRampToValueAtTime(v.volume * 0.25, now + 0.2)
+    g.setValueAtTime(v.volume * 0.25, now + ms / 1000)
+    g.linearRampToValueAtTime(v.volume, now + ms / 1000 + 0.6)
   },
-  sync() { for (const el of tracks.values()) el.muted = muted },
+  sync() { if (master) master.gain.value = muted ? 0 : 1 },
 }
-// Si el navegador bloqueó la música al cargar, arranca con el primer gesto
-addEventListener('pointerdown', () => {
-  const el = tracks.get(currentMusic)
-  if (el && el.paused && !muted) { el.volume = 0; el.play().then(() => fade(el, MUSIC_VOLUME)).catch(() => {}) }
-  else if (!el && currentMusic && available.has(currentMusic)) startLoop(currentMusic, MUSIC_VOLUME)
-})
 
-// En un móvil, al cambiar de aplicación o apagar la pantalla el juego se calla; al volver, sigue donde estaba
-const resumeOnReturn = new Set<HTMLAudioElement>()
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    for (const el of tracks.values()) if (!el.paused) { resumeOnReturn.add(el); el.pause() }
-    void ac?.suspend()
-  } else {
-    for (const el of resumeOnReturn) if ([...tracks.values()].includes(el)) void el.play().catch(() => {})
-    resumeOnReturn.clear()
-    if (!muted) void ac?.resume()
+// En el iPhone, el interruptor de silencio corta los efectos (WebAudio) pero no la música: se pide el modo de
+// reproducción normal, el de un juego, para que suene todo o nada.
+try { (navigator as unknown as { audioSession?: { type: string } }).audioSession && ((navigator as unknown as { audioSession: { type: string } }).audioSession.type = 'playback') } catch { /* navegador sin esa API */ }
+
+/** Despierta el audio: los navegadores lo dejan dormido hasta el primer gesto, y el móvil lo vuelve a dormir cada vez que se sale de la aplicación. */
+function wake() {
+  if (!ac) { if (muted) return; audio() }
+  if (ac!.state !== 'running') void ac!.resume().catch(() => {})
+  for (const [channel, [name, volume]] of Object.entries(wanted)) { // un tema que no pudo arrancar en su momento
+    if (name && !voices.has(channel) && available.has(name)) { wanted[channel] = ['', 0]; void tune(channel, name, volume) }
   }
+}
+for (const type of ['pointerdown', 'pointerup', 'touchend', 'keydown']) addEventListener(type, wake, true)
+// Al cambiar de aplicación o apagar la pantalla el juego se calla; al volver, sigue donde estaba
+document.addEventListener('visibilitychange', () => {
+  if (!ac) return
+  if (document.hidden) void ac.suspend().catch(() => {})
+  else void ac.resume().catch(() => {}) // si el sistema no deja sin un toque, lo hará `wake` en el siguiente
 })
 
 function ctx(): AudioContext | null {
   if (muted) return null
-  ac ??= new AudioContext()
-  if (ac.state === 'suspended') ac.resume()
-  return ac
+  const a = audio()
+  if (a.state !== 'running') void a.resume().catch(() => {})
+  return a
 }
-// Los navegadores no dejan sonar nada hasta el primer gesto del usuario
-addEventListener('pointerdown', () => ctx(), { once: true })
 
 interface ToneOpts { type?: OscillatorType; vol?: number; to?: number; delay?: number }
 

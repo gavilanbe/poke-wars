@@ -45,7 +45,10 @@ const pending = new Map()
 function store(key) {
   let job = pending.get(key)
   if (!job) {
-    job = fetch(key).then(async (res) => {
+    // Con mala cobertura una petición se pierde de vez en cuando: se reintenta un par de veces antes de darla por perdida
+    const attempt = (left) => fetch(key).then((res) => (res.ok || left <= 1 ? res : Promise.reject(new Error('estado ' + res.status))))
+      .catch((err) => (left > 1 ? new Promise((resolve) => setTimeout(resolve, 350 * (4 - left))).then(() => attempt(left - 1)) : Promise.reject(err)))
+    job = attempt(3).then(async (res) => {
       if (res.ok) await (await caches.open(ASSETS)).put(key, res.clone())
       return res
     }).finally(() => pending.delete(key))
