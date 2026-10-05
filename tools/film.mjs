@@ -33,6 +33,7 @@ const SCENES = {
   artillero: [`lab.battle(${JSON.stringify(fight('houndour', 'aron', { dmg: 7, counter: null, dist: 4 }, 'M'))})`, 4200],
   defensa: [`lab.battle(${JSON.stringify(fight('poochyena', 'mareep', { dmg: 4, counter: 3, front: 'd' }, '"'))})`, 5200],
   remate: [`lab.battle(${JSON.stringify(fight('machop', 'zigzagoon', { dmg: 10, counter: null }, 'M'))})`, 4600],
+  estado: [`lab.battle(${JSON.stringify(fight('torchic', 'zigzagoon', { dmg: 7, counter: 1, status: 'burn' }, '"'))})`, 5600],
   captura: [`lab.capture({ kind: 'zigzagoon', team: 0, building: { type: 'center', owner: 1 }, capBefore: 9, capAfter: 0, done: true, total: 20 })`, 6400],
   captura2: [`lab.capture({ kind: 'chikorita', team: 1, building: { type: 'gym', owner: -1 }, capBefore: 20, capAfter: 10, done: false, total: 20 })`, 3200],
   atrapar: [`lab.catch({ kind: 'mareep', team: 0, wild: 'poochyena', weak: true, funds: 2400, sure: true }); setTimeout(() => dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })), 1900); setTimeout(() => dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })), 3050)`, 9500],

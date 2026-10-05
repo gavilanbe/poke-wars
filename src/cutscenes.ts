@@ -115,6 +115,7 @@ function stamp(text: string, x: number, y: number, cls = '') {
   el.textContent = text
   root.append(el)
   setTimeout(() => el.remove(), 1500)
+  return el
 }
 
 function setPlate(el: HTMLElement, kind: string, team: number, hp: number, xp: number | null = null) {
@@ -126,6 +127,7 @@ function setPlate(el: HTMLElement, kind: string, team: number, hp: number, xp: n
   if (!el.querySelector('.xp')) el.querySelector('.hp')!.insertAdjacentHTML('afterend', '<div class="xp"><i></i></div>')
   el.querySelector<HTMLElement>('.xp')!.hidden = xp === null
   el.querySelector<HTMLElement>('.xp i')!.style.width = Math.min(1, xp ?? 0) * 100 + '%'
+  el.classList.remove('low', 'evo')
   setHp(el, hp)
 }
 
@@ -134,6 +136,20 @@ function setHp(el: HTMLElement, hp: number) {
   el.querySelector<HTMLElement>('.hp i')!.style.width = el.querySelector<HTMLElement>('.hp u')!.style.width = hp * 10 + '%'
   el.querySelector<HTMLElement>('.hp i')!.style.background = hp > 5 ? '#58d058' : hp > 2 ? '#f0c030' : '#e84838'
   el.querySelector('.hpnum')!.textContent = `${hp}`
+}
+
+/** Los PS bajan con espectáculo: la barra cae dejando un tramo blanco detrás y el número va contando hacia abajo. */
+function dropHp(el: HTMLElement, from: number, to: number) {
+  const num = el.querySelector<HTMLElement>('.hpnum')!
+  setHp(el, to)
+  num.textContent = `${from}`
+  let n = from
+  const tick = setInterval(() => {
+    n--
+    num.textContent = `${Math.max(to, n)}`
+    restartClass(num, 'tick')
+    if (n <= to) clearInterval(tick)
+  }, Math.max(40, 420 / Math.max(1, from - to)))
 }
 
 const say = (text: string) => { root.querySelector('.msg')!.textContent = text }
@@ -169,6 +185,7 @@ interface Side {
   depth: number // (siempre 1: los dos están a la misma distancia de la cámara)
   home: [number, number]
   panel: number // 0 el izquierdo, 1 el derecho
+  busy?: boolean // está atacando: que no le pise el jadeo
 }
 type Move = (a: Side, d: Side) => Promise<void> // se resuelve en el momento del impacto
 
@@ -265,7 +282,7 @@ async function dash(a: Side, d: Side, type: PType, arc = 0) {
 }
 
 /** Disparo de Artillero: sale por arriba de la pantalla, la mira se cierra sobre el objetivo y cae encima. */
-async function lob(a: Side, d: Side, type: PType) {
+async function lob(a: Side, d: Side, type: PType, shells = 1) {
   const colors = ['#fff', TYPE_COLOR[type], '#10141c']
   scene.play(a.actor, 'Shoot')
   await scene.wait(140)
@@ -281,6 +298,17 @@ async function lob(a: Side, d: Side, type: PType) {
   mark = { x: dx, y: d.actor.y, at: scene.time, k: kd }
   sfx.select()
   await scene.wait(460)
+  for (let i = 1; i < shells; i++) { // la andanada: las primeras caen alrededor, levantando polvo
+    const off = (i % 2 ? -1 : 1) * rnd(18, 30)
+    sfx.lunge()
+    await scene.tween(190, (t) => comet(dx + off - a.sign * 30 * (1 - t), -40 + (d.actor.y + 40) * easeIn(t), kd * 0.8))
+    scene.addShake(4)
+    panels[d.panel].shake = 4
+    scene.fx('ground_impact_dust', dx + off, d.actor.y - 4, { fps: 16, scale: 1.8 })
+    scene.burst(dx + off, d.actor.y - 2, 8, { colors, speed: 2.6, up: 1.8, g: 0.2, size: 4, max: 500 })
+    sfx.weakHit()
+    await scene.wait(60)
+  }
   sfx.lunge()
   await scene.tween(240, (t) => comet(dx - a.sign * 38 * (1 - t), -40 + (dy + 40) * easeIn(t), kd))
   mark = null
@@ -511,78 +539,242 @@ function callout(a: Side, type: PType) {
   setTimeout(() => el.remove(), 1300)
 }
 
-async function strike(a: Side, d: Side, dmg: number, crit = false) {
+// ---------- El golpe ----------
+// Cada ataque tiene tres tiempos: se prepara (carga, brillo y la cámara se le acerca), viaja (según quién sea: cruza
+// el campo, dispara o lanza por arriba, con alguna variante al azar) y pega. Y el golpe pesa lo que quita: de la
+// parada de impacto al tamaño del número, todo crece con el daño.
+
+const STATUS_LOOK: Record<string, [string, string]> = { burn: ['¡QUEMADO!', '#f0803c'], poison: ['¡ENVENENADO!', '#c060d0'], para: ['¡PARALIZADO!', '#f8d030'], freeze: ['¡CONGELADO!', '#7ccfd8'], sleep: ['¡DORMIDO!', '#a8b4cc'] }
+let battleId = 0
+let zoomIn: Animation | null = null
+/** La cámara hace sus acercamientos hacia este punto de la escena. */
+const focusOn = (x: number, y: number) => { scene.canvas.style.transformOrigin = `${((x + pad) / (W + pad * 2)) * 100}% ${(y / H) * 100}%` }
+
+/** Antes de atacar: se agacha, brilla del color del ataque, le llegan chispas y la cámara se le acerca. El otro se prepara. */
+async function windUp(a: Side, d: Side, type: PType, strong: boolean) {
+  const act = a.actor, [ax, ay] = body(a), color = TYPE_COLOR[type], ms = strong ? 430 : 290
+  focusOn(ax, ay)
+  zoomIn?.cancel()
+  zoomIn = scene.canvas.animate([{ transform: 'scale(1)' }, { transform: `scale(${strong ? 1.1 : 1.05})` }], { duration: ms, fill: 'forwards', easing: 'ease-out' })
+  sfx.charge(strong)
+  if (strong) music.duck(ms + 600) // un respiro de silencio antes de lo gordo
+  scene.play(act, 'Charge')
+  panels[a.panel].streak = 0.5
+  for (let i = 0; i < (strong ? 18 : 10); i++) {
+    const ang = rnd(0, Math.PI * 2), r = rnd(34, 56)
+    scene.add({ x: ax + Math.cos(ang) * r, y: ay + Math.sin(ang) * r, vx: (-Math.cos(ang) * r) / 14, vy: (-Math.sin(ang) * r) / 14, size: 4, max: 230, delay: i * (ms / 26), colors: ['#fff', color], add: true })
+  }
+  await scene.tween(ms, (t) => {
+    act.tint = [color, 0.35 * t + 0.25 * t * Math.abs(Math.sin(t * 16))]
+    act.ox = -a.sign * 7 * easeOut(t)
+    act.sx = 1 + 0.1 * t
+    act.sy = 1 - 0.12 * t
+    d.actor.ox = a.sign * 3 * t // el otro se echa un poco atrás, esperándolo
+    d.actor.sy = 1 - 0.04 * t
+  })
+  scene.add({ ring: 24, size: 4, color, x: ax, y: ay, max: 200 })
+  act.tint = [color, 0]
+  act.sx = act.sy = d.actor.sy = 1
+}
+
+/** Dos toques rápidos antes del golpe de verdad (variante del cuerpo a cuerpo). */
+async function flurry(a: Side, d: Side) {
+  for (let i = 0; i < 2; i++) {
+    hitFx(d, 'hit', { fps: 26, scale: 1.6 }, rnd(-10, 10), rnd(-12, 8))
+    scene.hitStop(34)
+    scene.addShake(2)
+    sfx.weakHit()
+    d.actor.ox = a.sign * (4 + i * 2)
+    await scene.wait(95)
+  }
+}
+/** Ráfaga corta de perdigones del color del ataque antes del disparo (variante del Tirador). */
+const pellets = (a: Side, d: Side, type: PType) => volley(a, d, 4, () => ({ x: 0, y: 0, max: 0, size: 5, color: TYPE_COLOR[type] }), { ms: 190, every: 45, bend: 6, trail: ['#fff', TYPE_COLOR[type]] })
+
+interface Scar { kind: string; x: number; at: number }
+const SCAR: Partial<Record<PType, string>> = { fire: 'burn', electric: 'burn', dragon: 'burn', water: 'puddle', ice: 'frost', poison: 'ooze', rock: 'crater', ground: 'crater', grass: 'leaves', bug: 'leaves' }
+/** La huella que deja un ataque en el suelo del panel de quien lo recibe. */
+function drawScars(ctx: CanvasRenderingContext2D, scars: Scar[], time: number) {
+  const y = FEET + 6
+  for (const s of scars) {
+    const a = Math.min(1, (time - s.at) / 220)
+    const oval = (rx: number, ry: number, color: string, dy = 0, dx = 0) => { ctx.fillStyle = color; ctx.beginPath(); ctx.ellipse(s.x + dx, y + dy, rx * a, ry * a, 0, 0, Math.PI * 2); ctx.fill() }
+    if (s.kind === 'burn') {
+      oval(30, 8, 'rgba(40, 26, 14, 0.5)'); oval(20, 5, 'rgba(20, 12, 8, 0.6)')
+      for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#ff8020' : '#ffd040'; ctx.fillRect(Math.round(s.x - 18 + i * 12 + Math.sin(time / 300 + i) * 2), Math.round(y - 2 - ((time / 40 + i * 9) % 14)), 2, 2) }
+    } else if (s.kind === 'puddle' || s.kind === 'frost') {
+      const ice = s.kind === 'frost'
+      oval(30, 7, ice ? 'rgba(216, 244, 252, 0.85)' : 'rgba(72, 148, 232, 0.7)'); oval(18, 3, ice ? '#ffffffc0' : 'rgba(184, 224, 255, 0.8)', -1, -4)
+      if (ice) for (let i = 0; i < 4; i++) { if (Math.floor(time / 180 + i) % 3 === 0) { ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(s.x - 20 + i * 13), y - 4 + (i % 2) * 4, 2, 2) } }
+    } else if (s.kind === 'ooze') {
+      oval(28, 7, 'rgba(136, 56, 152, 0.75)'); oval(12, 3, 'rgba(216, 152, 232, 0.8)', -1, -6)
+      for (let i = 0; i < 3; i++) { const r = ((time / 220 + i * 1.3) % 3) + 1; ctx.strokeStyle = '#e8c0f0'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(s.x - 14 + i * 14, y - 2 - r, r, 0, Math.PI * 2); ctx.stroke() }
+    } else if (s.kind === 'crater') {
+      oval(32, 8, 'rgba(24, 18, 12, 0.6)'); oval(24, 5, 'rgba(12, 8, 6, 0.65)', 1)
+      ctx.strokeStyle = `rgba(255, 240, 210, ${0.5 * a})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(s.x, y, 32 * a, 8 * a, 0, Math.PI, Math.PI * 2); ctx.stroke()
+      ctx.fillStyle = 'rgba(24, 18, 12, 0.6)'
+      for (const [cx, cw] of [[-44, 10], [36, 12], [-30, 6]]) ctx.fillRect(Math.round(s.x + cx * a), y + 2 + (cx % 3), cw, 1)
+    } else if (s.kind === 'leaves') {
+      for (let i = 0; i < 9; i++) { ctx.fillStyle = i % 2 ? '#58c040' : '#c8f890'; ctx.fillRect(Math.round(s.x - 30 + ((i * 37) % 60)), y - 3 + ((i * 5) % 8), 4, 2) }
+    } else { oval(26, 5, 'rgba(255, 255, 255, 0.28)'); oval(14, 3, 'rgba(8, 24, 40, 0.2)') }
+  }
+}
+/** Lo que salta del suelo con el golpe: hierba, tierra o agua, según dónde esté. */
+function debris(d: Side, power: number) {
+  const t = d.place.terrain
+  const colors = t === '~' || t === 's' ? ['#f0faff', '#88c8ff'] : t === 'M' || t === '=' || t === 'B' ? ['#e0c890', '#a88850'] : ['#a8e870', '#4ea83c']
+  for (let i = 0; i < 5 + power * 12; i++) scene.add({ x: d.actor.x + rnd(-20, 20), y: FEET + rnd(0, 6), vx: rnd(-2.6, 2.6), vy: rnd(-4.2, -1.2) * (0.6 + power), g: 0.24, size: i % 3 ? 2 : 4, max: rnd(420, 760), colors, fade: false })
+  if (t === 'T' || t === '"') for (let i = 0; i < 3 + power * 5; i++) scene.add({ img: 'leaf', fps: 16, loop: true, x: d.actor.x + rnd(-24, 24), y: FEET - rnd(0, 30), vx: rnd(-2, 2), vy: rnd(-3, -1), g: 0.1, max: 800, scale: 1 })
+}
+
+/** El estado que deja el ataque se ve sobre quien lo recibe, y se apunta en su ficha. */
+function afflict(d: Side, status: string) {
+  const [text, color] = STATUS_LOOK[status] ?? ['', '#fff'], [dx, dy] = body(d)
+  const el = stamp(text, dx, dy - 66, 'status slam')
+  el.style.color = color
+  d.plate.querySelector('.type')!.insertAdjacentHTML('beforeend', ` <span class="pill st" style="background:${color}">${text.replace(/[¡!]/g, '')}</span>`)
+  sfx.status(status)
+  if (status === 'burn') {
+    for (let i = 0; i < 6; i++) scene.fx('fire', dx + rnd(-14, 14), dy + rnd(-12, 10), { delay: i * 90, scale: 1.4, fps: 14 })
+    void scene.tween(700, (t) => { d.actor.tint = [color, 0.5 * Math.abs(Math.sin(t * 9)) * (1 - t)] })
+  } else if (status === 'poison') {
+    for (let i = 0; i < 10; i++) scene.add({ x: dx + rnd(-14, 14), y: dy + rnd(-4, 12), vy: rnd(-1.4, -0.5), vx: rnd(-0.3, 0.3), ring: rnd(2, 5), size: 2, color: i % 2 ? '#e8c0f0' : color, max: 600, delay: i * 60 })
+    void scene.tween(700, (t) => { d.actor.tint = [color, 0.55 * (1 - t)] })
+  } else if (status === 'para') {
+    for (let i = 0; i < 3; i++) scene.fx('shock', dx + rnd(-8, 8), dy + rnd(-8, 8), { delay: i * 130, fps: 18 })
+    void scene.tween(600, (t) => { d.actor.ox = Math.sin(t * 60) * 3 * (1 - t); d.actor.tint = [color, 0.4 * Math.abs(Math.sin(t * 24)) * (1 - t)] })
+  } else if (status === 'freeze') {
+    d.actor.tint = ['#c8f4fc', 0.6]
+    scene.add({ ring: 36, size: 5, color: '#fff', x: dx, y: dy, max: 320 })
+    scene.burst(dx, dy, 18, { colors: FROST, speed: 2.6, size: 4, max: 600 })
+  }
+}
+
+/** Con 3 PS o menos se queda jadeando: sube y baja, y le caen gotas. */
+function pant(s: Side) {
+  const id = battleId
+  s.plate.classList.add('low')
+  void (async () => {
+    while (id === battleId && s.hp > 0 && s.hp <= 3 && s.actor.visible) {
+      if (!s.busy) {
+        const [x, y] = body(s)
+        scene.add({ x: x - s.sign * 8, y: y - 12, vx: -s.sign * 0.7, vy: -0.7, g: 0.09, size: 2, color: '#bfe8ff', max: 460 })
+        await scene.tween(460, (t) => { if (!s.busy) { s.actor.sy = 1 - 0.07 * Math.sin(t * Math.PI); s.actor.sx = 1 + 0.05 * Math.sin(t * Math.PI) } })
+      }
+      await scene.wait(240)
+    }
+  })()
+}
+
+async function strike(a: Side, d: Side, dmg: number, crit = false, status: string | null = null) {
   const type = bestMove(a.kind, d.kind) // usa el ataque que más le conviene
   const eff = moveMult(a.kind, type, d.kind)
-  const big = eff > 1.05
+  const big = eff > 1.05, kill = dmg >= d.hp, soft = dmg <= 2
+  const power = Math.min(1, dmg / 9) // de 0 a 1: cuánto pesa el golpe
   const reach = KINDS[a.kind].range[1], far = reach > 1 && gap > 1
-  aim = d.depth / a.depth
+  const variant = Math.floor(Math.random() * 3) // el mismo ataque no sale siempre igual
+  aim = 1
+  a.busy = true
   callout(a, type)
   say(`¡${KINDS[a.kind].name} usó ${ATTACK_NAME[type]}!`)
   sfx.cry(KINDS[a.kind].species, 1, 0.6) // grita al atacar
-  setTimeout(() => sfx.move(type), 260) // y luego el sonido propio del ataque
-  if (!far) await dash(a, d, type, type === 'flying' ? 26 : 0)
-  else if (reach >= 4) await lob(a, d, type)
-  else await TECH[type].shot(a, d)
+  await windUp(a, d, type, big || crit || kill)
+  setTimeout(() => sfx.move(type), 80) // el sonido propio del ataque
+  if (!far) {
+    await dash(a, d, type, type === 'flying' || variant === 1 ? 30 : 0) // de frente o, a veces, saltándole encima
+    if (variant === 2 && !soft) await flurry(a, d)
+  } else if (reach >= 4) await lob(a, d, type, variant === 2 ? 3 : 1) // una, o una andanada de tres
+  else {
+    if (variant === 1) await pellets(a, d, type)
+    await TECH[type].shot(a, d)
+  }
   TECH[type].impact(a, d)
 
-  // Impacto: parada, destello, retroceso y números
-  const [dx, dy] = body(d), k = size(d)
+  // Impacto: la cámara salta al punto del golpe; parada, sacudida, retroceso y número, todo a la medida del daño
+  const [dx, dy] = body(d), before = d.hp
   const hpAfter = Math.max(0, d.hp - dmg)
-  scene.hitStop(big ? 170 : 100)
-  scene.canvas.animate([{ transform: `scale(${big ? 1.12 : 1.06})` }, { transform: 'scale(1)' }], { duration: big ? 380 : 260, easing: 'cubic-bezier(0.2, 1.4, 0.4, 1)' })
-  scene.addShake(big ? 10 : 5)
-  if (big) scene.flashScreen('#fff', 0.85, 7)
-  scene.fx('hit', dx, dy, { fps: 20, scale: (big ? 3.5 : 2.5) * k })
-  scene.add({ ring: (big ? 60 : 40) * k, size: 6, color: '#fff', x: dx, y: dy, max: 300 })
-  for (let i = 0; i < (big ? 22 : 12); i++) {
-    const ang = rnd(0, Math.PI * 2), v = rnd(2.5, big ? 6 : 4.5)
+  focusOn(dx, dy)
+  zoomIn?.cancel()
+  scene.hitStop(soft ? 30 : 50 + dmg * 13 + (big ? 50 : 0) + (kill ? 60 : 0))
+  scene.canvas.animate([{ transform: `scale(${1.04 + power * 0.12 + (big ? 0.04 : 0)})` }, { transform: 'scale(1)' }], { duration: 240 + power * 300, easing: 'cubic-bezier(0.2, 1.4, 0.4, 1)' })
+  scene.addShake(soft ? 2 : 2 + dmg * 0.9 + (big ? 3 : 0))
+  if (kill || crit) scene.slowMo(520, 0.3) // el remate y el crítico, a cámara lenta
+  if (big) { // súper eficaz: un fotograma en negativo, destello y líneas de impacto
+    scene.canvas.animate([{ filter: 'invert(1)' }, { filter: 'invert(1)', offset: 0.6 }, { filter: 'none' }], { duration: 130 })
+    scene.flashScreen('#fff', 0.85, 7)
+  }
+  if (big || crit) {
+    for (let i = 0; i < 26; i++) {
+      const ang = (i / 26) * Math.PI * 2 + rnd(-0.1, 0.1), v = rnd(7, 11)
+      scene.add({ x: dx + Math.cos(ang) * 14, y: dy + Math.sin(ang) * 14, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, drag: 0.94, line: [Math.cos(ang) * 26, Math.sin(ang) * 26], size: 2, max: 300, colors: [crit ? '#ffd84a' : '#fff', '#fff'] })
+    }
+  }
+  scene.fx('hit', dx, dy, { fps: 20, scale: 1.6 + power * 2.2 })
+  scene.add({ ring: 26 + power * 40, size: 6, color: '#fff', x: dx, y: dy, max: 300 })
+  for (let i = 0; i < 6 + dmg * 2; i++) {
+    const ang = rnd(0, Math.PI * 2), v = rnd(2, 2.5 + power * 4)
     scene.add({ x: dx, y: dy, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, drag: 0.9, line: [Math.cos(ang) * 10, Math.sin(ang) * 10], size: 2, max: 320, colors: ['#fff', TYPE_COLOR[type]] })
   }
-  panels[d.panel].shake = big ? 9 : 5
-  panels[d.panel].flash = big ? 1 : 0.6
+  panels[d.panel].shake = 2 + dmg * 0.8
+  panels[d.panel].flash = 0.3 + power * 0.7
   panels[d.panel].color = big ? '#fff' : TYPE_COLOR[type]
-  ;(big ? sfx.bigHit : eff < 0.9 ? sfx.weakHit : sfx.hit)()
+  debris(d, power)
+  if (!soft) { // la huella en el suelo: la del tipo del ataque o, si cayó del cielo, un cráter
+    const scars = panels[d.panel].scars
+    scars.push({ kind: far && reach >= 4 ? 'crater' : SCAR[type] ?? 'scuff', x: d.home[0], at: scene.time })
+    if (scars.length > 2) scars.shift()
+  }
+  sfx.thump(power)
+  ;(soft || eff < 0.9 ? sfx.weakHit : big ? sfx.bigHit : sfx.hit)()
   scene.play(d.actor, 'Hurt')
   d.actor.tint = ['#fff', 1]
   void scene.tween(300, (t) => { d.actor.tint[1] = Math.floor(t * 6) % 2 ? 0 : 1 - t })
-  void scene.tween(420, (t) => {
+  const push = soft ? 5 : 6 + dmg * 2.2 + (big ? 6 : 0)
+  void scene.tween(340 + power * 200, (t) => {
     const p = t < 0.15 ? t / 0.15 : 1 - easeOut((t - 0.15) / 0.85)
-    d.actor.ox = a.sign * (big ? 24 : 15) * k * p
-    d.actor.sx = 1 - 0.2 * p
+    d.actor.ox = a.sign * push * p
+    d.actor.sx = 1 - (0.08 + 0.16 * power) * p
   })
-  stamp(`-${dmg}`, dx - a.sign * 4, dy - 50, big ? 'dmg big' : 'dmg')
+  stamp(`-${dmg}`, dx - a.sign * 4, dy - 50, big ? 'dmg big' : 'dmg').style.fontSize = `${62 + dmg * 12 + (big ? 16 : 0)}px`
   if (crit) {
-    stamp('¡CRÍTICO!', W / 2, 92, 'super')
+    stamp('¡CRÍTICO!', W / 2, 92, 'super slam')
     sfx.crit()
     scene.flashScreen('#ffd84a', 0.6, 5)
     scene.addShake(12)
     scene.hitStop(120)
+    for (let i = 0; i < 10; i++) scene.add({ img: 'gold_stars', x: dx, y: dy, vx: rnd(-4, 4), vy: rnd(-5, -1), g: 0.16, max: 800, scale: 2 })
   }
-  if (big || eff < 0.9) stamp(big ? '¡SÚPER EFICAZ!' : eff < 0.4 ? 'Casi no le afecta…' : 'Poco eficaz…', d.sign < 0 ? 86 : 170, crit ? 74 : 52, big ? 'super' : 'weak')
+  if (big || eff < 0.9) stamp(big ? '¡SÚPER EFICAZ!' : eff < 0.4 ? 'Casi no le afecta…' : 'Poco eficaz…', d.sign < 0 ? 86 : 170, crit ? 74 : 52, big ? 'super slam' : 'weak')
   d.hp = hpAfter
-  setHp(d.plate, hpAfter)
+  dropHp(d.plate, before, hpAfter)
   restartClass(d.plate, 'hurt')
   say(`${KINDS[d.kind].name} pierde ${dmg} PS.`)
-  await scene.wait(760)
+  if (status && hpAfter > 0) setTimeout(() => afflict(d, status), 320)
+  await scene.wait(status && hpAfter > 0 ? 1050 : 760)
+  a.busy = false
 
-  if (hpAfter > 0) return scene.play(d.actor, 'Idle', true)
+  if (hpAfter > 0) {
+    scene.play(d.actor, 'Idle', true)
+    if (hpAfter <= 3) pant(d)
+    return
+  }
   // K.O.: sale volando
   say(`¡${KINDS[d.kind].name} se ha debilitado!`)
   sfx.ko()
   sfx.cry(KINDS[d.kind].species, 0.7, 0.7) // el grito, más grave, al caer
-  scene.fx('explosion', dx, dy, { fps: 12, scale: 3 * k })
+  scene.fx('explosion', dx, dy, { fps: 12, scale: 3 })
   scene.addShake(8)
-  stamp('K.O.', dx, dy - 24 * k, 'ko')
+  stamp('K.O.', dx, dy - 30, 'ko slam')
+  d.plate.classList.remove('low')
   d.actor.shadow = false
   let lastStar = 0
   await scene.tween(700, (t) => {
     d.actor.ox = a.sign * t * 170
-    d.actor.oy = -Math.sin(t * Math.PI * 0.8) * 90 * k
+    d.actor.oy = -Math.sin(t * Math.PI * 0.8) * 90
     d.actor.rot = a.sign * t * 14
     if (scene.time - lastStar > 40) {
       lastStar = scene.time
-      scene.add({ img: 'gold_stars', x: d.actor.x + d.actor.ox, y: d.actor.y + d.actor.oy - 20 * k, vy: 0.5, max: 400, scale: 2 * k })
+      scene.add({ img: 'gold_stars', x: d.actor.x + d.actor.ox, y: d.actor.y + d.actor.oy - 20, vy: 0.5, max: 400, scale: 2 })
     }
   })
   d.actor.visible = false
@@ -656,11 +848,12 @@ export interface BattleData {
   xp?: { a: XpGain | null; d: XpGain | null } // lo que sube la barra de experiencia de cada uno al acabar
   co?: string // comandante de quien ataca: su fanfarria abre el combate
   dist?: number // casillas entre los dos: de lejos, el ataque se dispara en vez de cruzar el campo
+  status?: string | null // estado que el ataque deja en quien lo recibe: se ve en la escena
   front?: 'a' | 'd' // quién va a la izquierda (el de quien mira la pantalla); por defecto, quien ataca
 }
 
 // Lo que le pasa a cada panel (0 el izquierdo, 1 el derecho): sacudida, destello del golpe y rayas de velocidad
-const panels = [{ shake: 0, flash: 0, streak: 0, color: '#fff' }, { shake: 0, flash: 0, streak: 0, color: '#fff' }]
+const panels = [{ shake: 0, flash: 0, streak: 0, color: '#fff', scars: [] as Scar[] }, { shake: 0, flash: 0, streak: 0, color: '#fff', scars: [] as Scar[] }]
 
 export async function playBattle(b: BattleData) {
   // A pantalla completa: el lienzo se ensancha hasta la proporción de la ventana y la escena de siempre queda centrada
@@ -669,7 +862,8 @@ export async function playBattle(b: BattleData) {
   scene.camera.x = -pad
   gap = b.dist ?? 1
   mark = null
-  for (const p of panels) p.shake = p.flash = p.streak = 0
+  for (const p of panels) { p.shake = p.flash = p.streak = 0; p.scars = [] }
+  battleId++
   await open('battle')
   const plates = root.querySelectorAll<HTMLElement>('.plate')
   const apart = Math.round(pad * 0.45) // con más sitio, cada uno se va un poco hacia su lado
@@ -703,6 +897,7 @@ export async function playBattle(b: BattleData) {
     ctx.closePath()
     ctx.clip()
     panorama(ctx, s.place, s.home[0], time, dir * slide * 80 + (p.streak > 0 ? -s.sign * p.streak * 10 : 0))
+    drawScars(ctx, p.scars, time)
     if (p.streak > 0) { // rayas de velocidad mientras carga contra el otro
       ctx.fillStyle = `rgba(255, 255, 255, ${0.55 * p.streak})`
       for (let k = 0; k < 16; k++) {
@@ -795,10 +990,11 @@ export async function playBattle(b: BattleData) {
     for (let i = 0; i < 6; i++) scene.add({ x: s.home[0] + rnd(-14, 14), y: FEET + 2, vx: rnd(-1.6, 1.6), vy: rnd(-1.4, -0.3), size: 4, max: 360, delay: 260, colors: ['#fff', '#d8d0c0'], behind: true })
   }
   root.classList.add('ready')
+  scene.canvas.animate([{ scale: 1 }, { scale: 1.05 }], { duration: 7000, fill: 'forwards', easing: 'ease-out' }) // la cámara se va acercando, despacio
   if (gap > 1) stamp(`A ${gap} casillas`, edge(40), 40, 'weak')
   await scene.wait(520)
 
-  await strike(att, def, b.dmg, b.crit)
+  await strike(att, def, b.dmg, b.crit, b.status)
   if (def.hp > 0 && b.counter !== null) {
     await scene.wait(200)
     await strike(def, att, b.counter)
@@ -809,6 +1005,8 @@ export async function playBattle(b: BattleData) {
     const to = winner.panel ? -(W + pad + 80) : W + pad + 80, [wx, wy] = body(winner)
     sfx.lunge()
     await scene.tween(320, (t) => { seam = to * easeIn(t) })
+    winner.actor.dir = DIR.down // se gira hacia ti
+    sfx.sting()
     void scene.tween(520, (t) => { winner.actor.oy = -Math.abs(Math.sin(t * Math.PI * 2)) * 16 * (1 - t * 0.5) })
     for (let i = 0; i < 16; i++) { const ang = (i / 16) * Math.PI * 2; scene.add({ img: 'gold_stars', x: wx, y: wy, vx: Math.cos(ang) * 3, vy: Math.sin(ang) * 3, drag: 0.95, max: 700, scale: 2 }) }
     sfx.cry(KINDS[winner.kind].species, 1, 0.5)
@@ -837,7 +1035,11 @@ export async function playBattle(b: BattleData) {
   }
   await scene.wait(waitXp)
   await close()
-  for (const s of [left, right]) s.plate.classList.remove('evo')
+  for (const s of [left, right]) s.plate.classList.remove('evo', 'low')
+  for (const anim of scene.canvas.getAnimations()) anim.cancel()
+  zoomIn = null
+  scene.canvas.style.transformOrigin = ''
+  battleId++
   scene.camera.x = pad = 0
   scene.resize(W, H)
 }

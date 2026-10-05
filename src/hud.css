@@ -1161,3 +1161,16 @@ button { touch-action: manipulation; }
 .evocard > div em { width: 16px; font-style: normal; color: #58d870; }
 .evocard p { margin: 8px 0 0; font-size: 18px; color: #8cf08c; animation: fade-in 0.3s 1.5s backwards; }
 #info .xpline.ready .xpbar { display: none; }
+
+/* ---------- Combate: más peso en cada golpe ---------- */
+/* Rótulos que entran de golpe (súper eficaz, crítico, K.O., estados) */
+.stamp.slam { animation: stamp-slam 1.4s forwards; }
+@keyframes stamp-slam { 0% { transform: translate(-50%, -50%) scale(3.4) rotate(-8deg); opacity: 0; } 9% { transform: translate(-50%, -50%) scale(0.86) rotate(2deg); opacity: 1; } 14% { transform: translate(-50%, -50%) scale(1.12) rotate(-1deg); } 20%, 78% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 100% { transform: translate(-50%, -80%) scale(1); opacity: 0; } }
+.stamp.status { font-size: 40px; }
+.plate .pill.st { animation: card-in 0.3s cubic-bezier(0.2, 1.6, 0.4, 1); }
+/* El número de PS da un botecito con cada punto que baja; con 3 o menos, la ficha late en rojo */
+.plate .hpnum.tick { animation: hp-tick 0.12s; }
+@keyframes hp-tick { 40% { transform: translateY(3px) scale(1.2); color: #e84838; } }
+.plate.low { animation: plate-low 0.7s steps(2) infinite; }
+.plate.low .hpnum { color: #e84838; }
+@keyframes plate-low { 50% { box-shadow: 0 0 0 4px #e84838, 5px 5px 0 #0006; } }

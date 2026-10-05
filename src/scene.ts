@@ -97,6 +97,7 @@ export class Scene {
     this.tweens = []
     this.flash[1] = 0
     this.freeze = this.shake = 0
+    this.slow = [0, 1]
     if (this.running) return
     this.running = true
     this.last = performance.now()
@@ -158,6 +159,9 @@ export class Scene {
   }
 
   hitStop(ms: number) { this.freeze = Math.max(this.freeze, ms) }
+  /** Cámara lenta durante `ms` (de reloj): el tiempo de la escena corre a `k` veces lo normal. */
+  slowMo(ms: number, k = 0.3) { this.slow = [ms, k] }
+  private slow: [number, number] = [0, 1]
   addShake(amount: number) { this.shake = Math.max(this.shake, amount) }
   flashScreen(color: string, alpha = 0.9, decay = 6) { this.flash = [color, alpha, decay] }
 
@@ -170,6 +174,10 @@ export class Scene {
     if (this.freeze > 0) {
       this.freeze -= real
       dt = 0
+    }
+    else if (this.slow[0] > 0) {
+      this.slow[0] -= real
+      dt = real * this.slow[1]
     }
     this.time += dt
     this.update(dt, real)

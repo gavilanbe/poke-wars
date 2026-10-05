@@ -2225,6 +2225,7 @@ async function battle(att: Unit, def: Unit) {
   await playBattle({
     a, d, dmg: res.dmg, counter: res.counter, crit: res.crit, co: g.co[a.team],
     dist: Math.abs(a.x - d.x) + Math.abs(a.y - d.y),
+    status: res.status,
     front: isAI[a.team] && !isAI[d.team] ? 'd' : 'a', // tu Pokémon va siempre a la izquierda, también cuando te atacan
     xp: { a: xpGain(att, xpBefore[0], res.ready === att), d: xpGain(def, xpBefore[1], res.ready === def) },
   })
