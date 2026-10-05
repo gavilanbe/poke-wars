@@ -310,7 +310,7 @@ main { display: block; }
 @keyframes rival-l { from { transform: translateX(-60vh); } }
 @keyframes rival-r { from { transform: translateX(60vh) scaleX(-1); } }
 @keyframes say-in { from { transform: scale(0.4); opacity: 0; } }
-@media (max-aspect-ratio: 3/2) { #title .duel, #title .beams { display: none; } }
+@media (max-aspect-ratio: 17/10) { #title .duel, #title .beams { display: none; } }
 
 /* Opciones (arriba a la derecha) y pie */
 #title .toggles { position: absolute; top: 2.2vh; right: 2.4vh; display: flex; gap: 10px; transition: opacity 0.5s; }
