@@ -123,27 +123,27 @@ async function close() {
 const scaleOf = (kind: string) => (spriteHeight(KINDS[kind].species) > 48 ? 2 : 3)
 
 // ---------- Combate ----------
-// El plano es el de los combates de Pokémon: el de quien mira, de espaldas y grande, abajo a la izquierda; el otro,
-// de frente y más pequeño, arriba a la derecha, cada uno en una plataforma del terreno que pisa. El ataque depende
-// de quién lo hace: cuerpo a cuerpo cruza el campo y golpea; un Tirador dispara de lado a lado; un Artillero lanza
-// por encima, fuera de la pantalla, y cae sobre la marca.
+// Como en Advance Wars: la pantalla partida en dos paneles en diagonal, cada uno con el paisaje de su casilla, y los
+// dos Pokémon de perfil, frente a frente. El ataque depende de quién lo hace: cuerpo a cuerpo cruza la costura y
+// golpea; un Tirador dispara de panel a panel; un Artillero lanza por arriba y cae sobre la marca.
 
 interface Side {
   actor: Actor; kind: string; team: number; hp: number; plate: HTMLElement; place: Place
-  sign: number // hacia dónde mira en horizontal: 1 el de cerca, -1 el del fondo
-  depth: number // tamaño relativo por la distancia: 1 el de cerca, 0.5 el del fondo
+  sign: number // hacia dónde mira: 1 el de la izquierda, -1 el de la derecha
+  depth: number // (siempre 1: los dos están a la misma distancia de la cámara)
   home: [number, number]
+  panel: number // 0 el izquierdo, 1 el derecho
 }
 type Move = (a: Side, d: Side) => Promise<void> // se resuelve en el momento del impacto
 
-const NEAR_Y = 150, FAR_Y = 96, SKYLINE = 70
+const HORIZON = 100, FEET = 142
 const body = (s: Side): [number, number] => [s.actor.x + s.actor.ox, s.actor.y + s.actor.oy - 10 * s.actor.scale]
 /** Tamaño de los efectos sobre alguien, según lo cerca que esté de la cámara. */
-const size = (s: Side) => (s.depth < 1 ? 0.75 : 1.2)
+const size = (_s: Side) => 1
 
 // Lo que vuela de uno a otro crece o encoge por el camino (se acerca o se aleja de la cámara)
 let aim = 1
-const shoot = (p: Part) => scene.add({ ...p, scale: (p.scale ?? 1) * (aim < 1 ? 1.2 : 0.75), grow: (p.grow ?? 1) * (aim < 1 ? 0.62 : 1.6) })
+const shoot = (p: Part) => scene.add(aim === 1 ? p : { ...p, scale: (p.scale ?? 1) * (aim < 1 ? 1.2 : 0.75), grow: (p.grow ?? 1) * (aim < 1 ? 0.62 : 1.6) })
 /** Efecto animado sobre el objetivo, a su tamaño. */
 const hitFx = (d: Side, img: string, opts: Partial<Part> = {}, ox = 0, oy = 0) => {
   const [dx, dy] = body(d), k = size(d)
@@ -191,9 +191,10 @@ async function volley(a: Side, d: Side, n: number, make: (i: number) => Part, { 
 async function dash(a: Side, d: Side, type: PType, arc = 0) {
   const act = a.actor, k = d.depth / a.depth, color = TYPE_COLOR[type]
   scene.play(act, 'Attack')
+  panels[a.panel].streak = 1.6 // su panel se llena de rayas de velocidad
   await scene.tween(140, (t) => { act.ox = -a.sign * 10 * easeOut(t); act.sx = 1 + 0.15 * t; act.sy = 1 - 0.15 * t })
   const [hx, hy] = a.home
-  const tx = d.actor.x - a.sign * 11 * d.actor.scale, ty = d.actor.y + (a.depth > d.depth ? 5 : -3)
+  const tx = d.actor.x - a.sign * 11 * d.actor.scale, ty = d.actor.y + (a.depth === d.depth ? 0 : a.depth > d.depth ? 5 : -3)
   sfx.lunge()
   let lastGhost = 0
   await scene.tween(180, (t) => {
@@ -241,7 +242,7 @@ async function lob(a: Side, d: Side, type: PType) {
   scene.addShake(3)
   scene.burst(ax, ay, 10, { colors, speed: 2.5, size: 4, max: 300 })
   await scene.tween(330, (t) => comet(ax + a.sign * 46 * t, ay - (ay + 40) * easeIn(t), ka))
-  mark = { x: dx, y: d.actor.y - d.actor.scale * 4, at: scene.time, k: kd }
+  mark = { x: dx, y: d.actor.y, at: scene.time, k: kd }
   sfx.select()
   await scene.wait(460)
   sfx.lunge()
@@ -302,7 +303,7 @@ const rocks: Tech = {
   },
 }
 const spikes = (colors: string[]): Tech => ({
-  shot: (a, d) => volley(a, d, 5, () => ({ x: 0, y: 0, max: 0, line: [-a.sign * 16, a.depth > d.depth ? 7 : -7], size: 3, color: colors[0] }), { ms: 220, every: 60, bend: 10, trail: colors }),
+  shot: (a, d) => volley(a, d, 5, () => ({ x: 0, y: 0, max: 0, line: [-a.sign * 16, 0], size: 3, color: colors[0] }), { ms: 220, every: 60, bend: 10, trail: colors }),
   impact: (a, d) => {
     for (let i = 0; i < 3; i++) hitFx(d, 'claw_slash', { delay: i * 45, fps: 24, flipX: a.sign < 0, scale: 2.5 }, -12 + i * 12, -8 + i * 8)
     hitFx(d, 'p:ironhead', { frame: 0, count: 2, fps: 8, scale: 1.5, delay: 80 })
@@ -467,7 +468,7 @@ const TECH: Record<PType, Tech> = {
 /** El nombre del ataque, en un rótulo del color de su tipo que sale del lado de quien ataca. */
 function callout(a: Side, type: PType) {
   const el = document.createElement('div')
-  el.className = `callout ${a.depth < 1 ? 'far' : 'near'}`
+  el.className = `callout ${a.panel ? 'far' : 'near'}`
   el.style.setProperty('--c', TYPE_COLOR[type])
   el.innerHTML = `<small>${TYPE_NAME[type]}</small>${ATTACK_NAME[type]}`
   root.append(el)
@@ -502,6 +503,9 @@ async function strike(a: Side, d: Side, dmg: number, crit = false) {
     const ang = rnd(0, Math.PI * 2), v = rnd(2.5, big ? 6 : 4.5)
     scene.add({ x: dx, y: dy, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, drag: 0.9, line: [Math.cos(ang) * 10, Math.sin(ang) * 10], size: 2, max: 320, colors: ['#fff', TYPE_COLOR[type]] })
   }
+  panels[d.panel].shake = big ? 9 : 5
+  panels[d.panel].flash = big ? 1 : 0.6
+  panels[d.panel].color = big ? '#fff' : TYPE_COLOR[type]
   ;(big ? sfx.bigHit : eff < 0.9 ? sfx.weakHit : sfx.hit)()
   scene.play(d.actor, 'Hurt')
   d.actor.tint = ['#fff', 1]
@@ -511,15 +515,15 @@ async function strike(a: Side, d: Side, dmg: number, crit = false) {
     d.actor.ox = a.sign * (big ? 24 : 15) * k * p
     d.actor.sx = 1 - 0.2 * p
   })
-  stamp(`-${dmg}`, dx - a.sign * 4, dy - 34 * k, big ? 'dmg big' : 'dmg')
+  stamp(`-${dmg}`, dx - a.sign * 4, dy - 50, big ? 'dmg big' : 'dmg')
   if (crit) {
-    stamp('¡CRÍTICO!', W / 2, 78, 'super')
+    stamp('¡CRÍTICO!', W / 2, 92, 'super')
     sfx.crit()
     scene.flashScreen('#ffd84a', 0.6, 5)
     scene.addShake(12)
     scene.hitStop(120)
   }
-  if (big || eff < 0.9) stamp(big ? '¡SÚPER EFICAZ!' : eff < 0.4 ? 'Casi no le afecta…' : 'Poco eficaz…', W / 2, crit ? 100 : 84, big ? 'super' : 'weak')
+  if (big || eff < 0.9) stamp(big ? '¡SÚPER EFICAZ!' : eff < 0.4 ? 'Casi no le afecta…' : 'Poco eficaz…', d.sign < 0 ? 86 : 170, crit ? 74 : 52, big ? 'super' : 'weak')
   d.hp = hpAfter
   setHp(d.plate, hpAfter)
   restartClass(d.plate, 'hurt')
@@ -554,103 +558,54 @@ const restartClass = (el: Element, cls: string) => {
   el.classList.add(cls)
 }
 
-/** El de cerca se ve grande, de espaldas; el del fondo, a la mitad. */
-const scaleFor = (kind: string, depth: number) => (depth < 1 ? scaleOf(kind) - 1 + (scaleOf(kind) === 2 ? 0.5 : 0) : scaleOf(kind) + 1)
-
-// Suelo de cada terreno: dos tonos que se alternan en franjas cada vez más anchas hacia la cámara (eso da la profundidad)
-const GROUND: Record<string, [string, string, string]> = { // claro, oscuro, borde de la plataforma
-  '.': ['#84d058', '#70c04c', '#3c8838'], '"': ['#78c850', '#62b444', '#34803a'], T: ['#5cae4c', '#4c9c44', '#2c6c38'],
-  M: ['#d0a878', '#bc9466', '#80583c'], '~': ['#58a4f0', '#4890e4', '#2858b0'], s: ['#70b8f4', '#5ca8ec', '#3068b8'],
-  '=': ['#e8d098', '#dcc084', '#a88850'], B: ['#d8b888', '#c8a472', '#906c44'],
-}
-
-/** Plataforma ovalada bajo un Pokémon: el terreno que pisa, con su reborde y un aro del color de su equipo. */
-function platform(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, place: Place, team: number, time: number) {
-  const tones = GROUND[place.terrain] ?? GROUND['.']
-  ctx.fillStyle = 'rgba(8, 24, 40, 0.25)'
-  ctx.beginPath(); ctx.ellipse(cx, cy + ry * 0.5, rx + 3, ry + 2, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.fillStyle = tones[2]
-  ctx.beginPath(); ctx.ellipse(cx, cy + ry * 0.28, rx, ry, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.save()
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.clip()
-  if (place.terrain === 'M') { // la montaña no tiene baldosa propia: roca lisa con algunas piedras
-    ctx.fillStyle = tones[0]
-    ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2)
-    ctx.fillStyle = tones[1]
-    for (let i = 0; i < 9; i++) ctx.fillRect(Math.round(cx - rx + ((i * 37) % (rx * 2))), Math.round(cy - ry + ((i * 23) % (ry * 2))), 5, 2)
-  } else {
-    const x0 = Math.floor((cx - rx) / 32) * 32
-    for (let y = Math.floor((cy - ry) / 32) * 32; y < cy + ry; y += 32) for (let x = x0; x < cx + rx; x += 32) groundTile(ctx, place.terrain, x, y, time)
-  }
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.16)' // luz en el borde de atrás
-  ctx.beginPath(); ctx.ellipse(cx, cy - ry * 0.55, rx * 0.86, ry * 0.5, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.restore()
-  ctx.fillStyle = 'rgba(8, 24, 40, 0.3)'
-  ctx.beginPath(); ctx.ellipse(cx, cy + ry * 0.1, rx * 0.42, ry * 0.42, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.strokeStyle = TEAM_HEX[team]
-  ctx.lineWidth = 2
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx - 1, ry - 1, 0, 0, Math.PI * 2); ctx.stroke()
-  ctx.strokeStyle = '#10141c'
-  ctx.lineWidth = 1
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx + 0.5, ry + 0.5, 0, 0, Math.PI * 2); ctx.stroke()
-}
-
-/** El paisaje del combate: cielo, sol, nubes, sierras y el suelo en perspectiva, según el terreno donde cae el golpe. */
-function battlefield(ctx: CanvasRenderingContext2D, place: Place, time: number, scroll: number) {
-  const look = LOOK[place.terrain] ?? LOOK['.'], tones = GROUND[place.terrain] ?? GROUND['.']
-  const x0 = -pad - 20, w = W + pad * 2 + 40, sea = place.terrain === '~' || place.terrain === 's'
-  look.sky.forEach((color, i) => { ctx.fillStyle = color; ctx.fillRect(x0, i ? i * 14 : -20, w, i ? 14 : 34) })
-  // Sol con su halo
-  const sx = 46 - pad * 0.5 - scroll * 0.1
-  for (const [r, color] of [[22, '#ffffff22'], [16, '#ffffff38'], [11, '#fff8d8']] as const) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(sx, 24, r, 0, Math.PI * 2); ctx.fill() }
+// Fondo de cada panel: cielo, sol, nubes, dos sierras, lo que haya en el horizonte y el suelo del mapa a doble tamaño
+function panorama(ctx: CanvasRenderingContext2D, place: Place, mid: number, time: number, drift: number) {
+  const look = LOOK[place.terrain] ?? LOOK['.'], x0 = -pad - 20, w = W + pad * 2 + 40, sea = place.terrain === '~' || place.terrain === 's'
+  look.sky.forEach((color, i) => { ctx.fillStyle = color; ctx.fillRect(x0, i ? i * 20 : -20, w, i ? 20 : 40) })
+  const sx = mid - 40 - drift * 0.1
+  for (const [r, color] of [[26, '#ffffff20'], [19, '#ffffff38'], [13, '#fff8d8']] as const) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(sx, 30, r, 0, Math.PI * 2); ctx.fill() }
   ctx.fillStyle = '#ffffffe0'
-  for (const [cx, cy, cw] of [[10, 16, 40], [96, 34, 28], [170, 12, 34], [250, 30, 44], [340, 20, 30]]) { // nubes que pasan
-    const x = x0 + ((cx + time * 0.006 + scroll * 0.3) % (w + 60)) - 50
+  for (const [cx, cy, cw] of [[10, 20, 40], [96, 44, 28], [170, 14, 34], [250, 36, 44], [340, 24, 30]]) { // nubes que pasan
+    const x = x0 + ((((cx + time * 0.006 + drift * 0.3) % (w + 60)) + w + 60) % (w + 60)) - 50
     ctx.fillRect(x, cy, cw, 6)
     ctx.fillRect(x + 6, cy - 4, cw - 14, 4)
     ctx.fillRect(x + 4, cy + 6, cw - 10, 2)
   }
-  // Dos sierras al fondo (la lejana, casi del color del cielo) y, según el sitio, árboles o peñas en la línea del horizonte
-  for (const [color, base, amp, f1, f2, drift] of [[look.far, 20, 10, 0.021, 0.057, 0.15], [look.hill, 9, 6, 0.045, 0.11, 0.3]] as const) {
+  // Dos sierras (la lejana, casi del color del cielo); en la montaña, con picos
+  for (const [color, base, amp, f1, f2, par] of [[look.far, 30, 12, 0.021, 0.057, 0.15], [look.hill, 15, 8, 0.045, 0.11, 0.35]] as const) {
     ctx.fillStyle = color
     for (let x = 0; x < w; x += 2) {
-      const u = x + x0 + scroll * drift
-      const h = sea ? 0 : base + Math.sin(u * f1) * amp + Math.sin(u * f2) * amp * 0.5 + (place.terrain === 'M' ? Math.abs(((u * 0.05) % 2) - 1) * 12 : 0)
-      ctx.fillRect(x0 + x, SKYLINE - h, 2, h)
+      const u = x + x0 + drift * par
+      const h = sea ? 0 : base + Math.sin(u * f1) * amp + Math.sin(u * f2) * amp * 0.5 + (place.terrain === 'M' ? Math.abs(((u * 0.05) % 2) - 1) * 14 : 0)
+      ctx.fillRect(x0 + x, HORIZON - h, 2, h)
     }
   }
-  if (place.terrain === 'T') for (let x = x0 - ((scroll * 0.5) % 22); x < x0 + w + 20; x += 22) small(ctx, Math.floor((x - x0) / 22) % 3 ? 'tree' : 'oak', x, SKYLINE + 5 + (Math.floor((x - x0) / 22) % 2) * 3)
-  if (place.terrain === 'M') for (let x = x0 - ((scroll * 0.5) % 46); x < x0 + w + 20; x += 46) small(ctx, 'rock', x + 10, SKYLINE + 6)
-  // Suelo: franjas de dos tonos, cada una más ancha que la anterior
-  for (let y = SKYLINE, band = 0, h = 3; y < H + 20; y += h, band++, h = 3 + band * 2.4) {
-    ctx.fillStyle = tones[band % 2]
-    ctx.fillRect(x0, Math.round(y), w, Math.ceil(h) + 1)
-  }
-  if (sea) { // destellos que se mecen sobre el agua
+  const first = Math.floor(x0 / 32) * 32
+  for (let y = HORIZON; y < H + 20; y += 32) for (let x = first; x < x0 + w; x += 32) groundTile(ctx, place.terrain, x, y, time)
+  if (sea) { // destellos sobre el agua
     ctx.fillStyle = '#ffffff90'
-    for (let i = 0; i < 26; i++) {
-      const d = (i * 37) % 100 / 100, y = SKYLINE + 3 + d * d * (H - SKYLINE), len = 4 + d * 22
-      ctx.fillRect(x0 + ((i * 97 + Math.sin(time / 600 + i) * 6 + scroll) % w + w) % w, Math.round(y), len, 1 + Math.round(d * 2))
-    }
-  } else { // matas y piedrecillas, más grandes cuanto más cerca
-    for (let i = 0; i < 30; i++) {
-      const d = ((i * 53) % 100) / 100, y = SKYLINE + 4 + d * d * (H - SKYLINE), s = 1 + Math.round(d * 3)
-      const x = x0 + (((i * 89 + scroll * (0.4 + d)) % w) + w) % w
-      ctx.fillStyle = i % 3 ? tones[2] : '#ffffff50'
-      ctx.fillRect(Math.round(x), Math.round(y), s * 2, s)
-      if (i % 3) ctx.fillRect(Math.round(x) + s, Math.round(y) - s, s, s)
-    }
+    for (let i = 0; i < 20; i++) ctx.fillRect(x0 + ((((i * 97 + Math.sin(time / 600 + i) * 6) % w) + w) % w), HORIZON + 4 + ((i * 37) % (H - HORIZON)), 6 + (i % 4) * 5, 2)
   }
-  const haze = ctx.createLinearGradient(0, SKYLINE, 0, SKYLINE + 30) // bruma en el horizonte
-  haze.addColorStop(0, 'rgba(255, 255, 255, 0.38)')
-  haze.addColorStop(1, 'rgba(255, 255, 255, 0)')
+  // Lo que hay detrás del Pokémon según el terreno
+  if (place.terrain === 'T') for (let x = first - 16; x < x0 + w + 32; x += 44) prop(ctx, (x / 44) % 2 < 1 ? 'oak' : 'tree', x - drift * 0.6, HORIZON + 14 + (Math.abs(x / 44) % 3) * 4)
+  if (place.terrain === 'M') for (const x of [mid - 70, mid - 6, mid + 64]) prop(ctx, 'rock', x - drift * 0.6, HORIZON + 10)
+  if (place.terrain === '"') for (let x = first; x < x0 + w; x += 32) tallGrass(ctx, x, HORIZON - 6)
+  if (place.building) { // el edificio real, a tamaño doble, detrás del Pokémon
+    const piece = pieceAt[place.building.type]
+    ctx.drawImage(place.building.owner < 0 ? grayPieces : pieces, piece.x, 0, piece.w, piece.h, Math.round(mid - piece.w - drift * 0.6), HORIZON + 30 - piece.h * 2, piece.w * 2, piece.h * 2)
+  }
+  const haze = ctx.createLinearGradient(0, HORIZON - 14, 0, HORIZON + 40) // bruma en el horizonte y sombra al pie
+  haze.addColorStop(0, 'rgba(255, 255, 255, 0)'); haze.addColorStop(0.3, 'rgba(255, 255, 255, 0.3)'); haze.addColorStop(0.36, 'rgba(8, 24, 40, 0.28)'); haze.addColorStop(1, 'rgba(8, 24, 40, 0)')
   ctx.fillStyle = haze
-  ctx.fillRect(x0, SKYLINE, w, 30)
-}
-/** Una pieza del mapa a su tamaño (para el horizonte), apoyada en `baseY`. */
-function small(ctx: CanvasRenderingContext2D, name: string, cx: number, baseY: number) {
-  const p = pieceAt[name]
-  ctx.drawImage(pieces, p.x, 0, p.w, p.h, Math.round(cx - p.w / 2), baseY - p.h, p.w, p.h)
+  ctx.fillRect(x0, HORIZON - 14, w, 54)
+  const low = ctx.createLinearGradient(0, H - 40, 0, H + 10) // el primer plano, algo más oscuro
+  low.addColorStop(0, 'rgba(8, 24, 40, 0)'); low.addColorStop(1, 'rgba(8, 24, 40, 0.3)')
+  ctx.fillStyle = low
+  ctx.fillRect(x0, H - 40, w, 60)
+  if (light) { // la hora del día y la lluvia tiñen la escena
+    ctx.fillStyle = light
+    ctx.fillRect(x0, -20, w, H + 40)
+  }
 }
 
 /** Barra de experiencia de 0 a 1, antes y después del combate; `ready`, si con eso queda listo para evolucionar. */
@@ -665,8 +620,11 @@ export interface BattleData {
   xp?: { a: XpGain | null; d: XpGain | null } // lo que sube la barra de experiencia de cada uno al acabar
   co?: string // comandante de quien ataca: su fanfarria abre el combate
   dist?: number // casillas entre los dos: de lejos, el ataque se dispara en vez de cruzar el campo
-  front?: 'a' | 'd' // a quién se ve de espaldas, en primer plano (quien mira la pantalla); por defecto, quien ataca
+  front?: 'a' | 'd' // quién va a la izquierda (el de quien mira la pantalla); por defecto, quien ataca
 }
+
+// Lo que le pasa a cada panel (0 el izquierdo, 1 el derecho): sacudida, destello del golpe y rayas de velocidad
+const panels = [{ shake: 0, flash: 0, streak: 0, color: '#fff' }, { shake: 0, flash: 0, streak: 0, color: '#fff' }]
 
 export async function playBattle(b: BattleData) {
   // A pantalla completa: el lienzo se ensancha hasta la proporción de la ventana y la escena de siempre queda centrada
@@ -675,109 +633,150 @@ export async function playBattle(b: BattleData) {
   scene.camera.x = -pad
   gap = b.dist ?? 1
   mark = null
+  for (const p of panels) p.shake = p.flash = p.streak = 0
   await open('battle')
   const plates = root.querySelectorAll<HTMLElement>('.plate')
-  const apart = Math.round(pad * 0.5) // con más sitio, cada uno se va un poco hacia su lado
-  const away = gap > 1 ? Math.min(3, gap - 1) : 0 // de lejos, el del fondo queda más arriba y más pequeña su plataforma
-  // El del fondo se crea antes: así se pinta detrás
-  const side = (who: BattleData['a'], near: boolean): Side => {
-    const depth = near ? 1 : 0.5, scale = scaleFor(who.kind, depth)
-    // El dibujo lleva aire bajo los pies (más cuanto más grande se pinta): se baja para que pise su plataforma
-    const home: [number, number] = near ? [66 - apart, NEAR_Y + scale * 4] : [190 + apart + away * 5, FAR_Y - away * 4 + scale * 4]
+  const apart = Math.round(pad * 0.45) // con más sitio, cada uno se va un poco hacia su lado
+  const side = (who: BattleData['a'], left: boolean): Side => {
+    const home: [number, number] = [left ? 72 - apart : 184 + apart, FEET]
     return {
-      actor: scene.actor(KINDS[who.kind].species, home[0], home[1], near ? 3 : 7, scale),
-      kind: who.kind, team: who.team, hp: who.hp, plate: plates[near ? 1 : 0], place: who.place, sign: near ? 1 : -1, depth, home,
+      actor: scene.actor(KINDS[who.kind].species, home[0], home[1], left ? DIR.right : DIR.left, scaleOf(who.kind)),
+      kind: who.kind, team: who.team, hp: who.hp, plate: plates[left ? 0 : 1], place: who.place, sign: left ? 1 : -1, depth: 1, home, panel: left ? 0 : 1,
     }
   }
-  const aNear = b.front !== 'd'
-  const farSide = side(aNear ? b.d : b.a, false), nearSide = side(aNear ? b.a : b.d, true)
-  const att = aNear ? nearSide : farSide, def = aNear ? farSide : nearSide
-  farSide.actor.shadow = nearSide.actor.shadow = false // la sombra va pintada en la plataforma
+  const aLeft = b.front !== 'd'
+  const left = side(aLeft ? b.a : b.d, true), right = side(aLeft ? b.d : b.a, false)
+  const att = aLeft ? left : right, def = aLeft ? right : left
   const xpOf = (s: Side) => (s === att ? b.xp?.a : b.xp?.d)?.from ?? null
-  setPlate(nearSide.plate, nearSide.kind, nearSide.team, nearSide.hp, xpOf(nearSide))
-  setPlate(farSide.plate, farSide.kind, farSide.team, farSide.hp, xpOf(farSide))
+  setPlate(left.plate, left.kind, left.team, left.hp, xpOf(left))
+  setPlate(right.plate, right.kind, right.team, right.hp, xpOf(right))
   say('')
 
-  // Entrada: se abren dos barras negras como párpados, el paisaje entra deslizándose y cada plataforma llega por su lado
-  let slide = 1, lids = 1
-  const span = W + pad * 2
-  const rest = (s: Side) => s.home[0] - s.sign * slide * span // el del fondo viene desde la izquierda; el de cerca, desde la derecha
+  // Dos paneles en diagonal, cada uno con el paisaje de su casilla, que entran chocando. Entre los dos, la costura:
+  // pegada si pelean cuerpo a cuerpo y una franja con flechas si el ataque es de lejos.
+  let slide = 1, seam = 0, lastTime = 0
+  const away = 150 + pad, band = gap > 1 ? 9 : 0, full = W + pad * 2 + 60
+  const edge = (y: number) => 140 + seam - (24 * (y + 20)) / (H + 40) // por dónde pasa la costura a esa altura
+  const drawPanel = (ctx: CanvasRenderingContext2D, i: number, s: Side, time: number) => {
+    const p = panels[i], dir = i ? 1 : -1
+    ctx.save()
+    ctx.translate(dir * slide * away + rnd(-1, 1) * p.shake, rnd(-1, 1) * p.shake)
+    ctx.beginPath()
+    if (i === 0) { ctx.moveTo(-full, -30); ctx.lineTo(edge(-30) - band, -30); ctx.lineTo(edge(H + 30) - band, H + 30); ctx.lineTo(-full, H + 30) }
+    else { ctx.moveTo(edge(-30) + band, -30); ctx.lineTo(full + W, -30); ctx.lineTo(full + W, H + 30); ctx.lineTo(edge(H + 30) + band, H + 30) }
+    ctx.closePath()
+    ctx.clip()
+    panorama(ctx, s.place, s.home[0], time, dir * slide * 80 + (p.streak > 0 ? -s.sign * p.streak * 10 : 0))
+    if (p.streak > 0) { // rayas de velocidad mientras carga contra el otro
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.55 * p.streak})`
+      for (let k = 0; k < 16; k++) {
+        const len = 30 + ((k * 53) % 60), y = 8 + ((k * 37) % (H - 30))
+        ctx.fillRect(-pad - 20 + ((((k * 97 - s.sign * time * 1.4) % (full + W)) + full + W) % (full + W)) - 40, y, len, 1 + (k % 3 === 0 ? 1 : 0))
+      }
+    }
+    if (p.flash > 0) { // el golpe ilumina el panel de quien lo recibe
+      ctx.fillStyle = p.color
+      ctx.globalAlpha = Math.min(0.85, p.flash)
+      ctx.fillRect(-full, -30, full * 2 + W, H + 60)
+      ctx.globalAlpha = 1
+    }
+    ctx.fillStyle = TEAM_HEX[s.team] // el color de su equipo, abajo y en el borde de la costura
+    ctx.fillRect(-full, H - 4, full * 2 + W, 6)
+    ctx.restore()
+  }
   scene.background = (ctx, time) => {
-    battlefield(ctx, b.d.place, time, slide * 90)
-    for (const s of [farSide, nearSide]) {
-      const near = s.depth === 1, rx = near ? 74 : 44 - away * 3, ry = near ? 17 : 10 - away
-      const cx = rest(s), cy = s.home[1] - s.actor.scale * 4 + (near ? 3 : 1)
-      const piece = s.place.building && pieceAt[s.place.building.type]
-      if (piece) { // el edificio que defiende (o desde el que ataca), detrás de él
-        const z = near ? 2 : 1, bx = cx + s.sign * -1 * (near ? 62 : 40)
-        ctx.drawImage(s.place.building!.owner < 0 ? grayPieces : pieces, piece.x, 0, piece.w, piece.h, Math.round(bx - (piece.w * z) / 2), Math.round(cy - (near ? 8 : 4) - piece.h * z), piece.w * z, piece.h * z)
-      }
-      platform(ctx, cx, cy, rx, ry, s.place, s.team, time)
-      if (s.place.terrain === 'T') for (const dx of [-rx - 4, rx + 6]) (near ? prop : small)(ctx, 'tree', cx + dx, cy - (near ? 2 : 1))
-      if (s.place.terrain === 'M') (near ? prop : small)(ctx, 'rock', cx - s.sign * (rx + 2), cy + 2)
+    const dt = Math.min(50, time - lastTime)
+    lastTime = time
+    for (const p of panels) {
+      p.shake = p.shake < 0.4 ? 0 : p.shake * Math.pow(0.86, dt / 16.7)
+      p.flash = Math.max(0, p.flash - dt / 260)
+      p.streak = Math.max(0, p.streak - dt / 420)
     }
-    if (gap > 1 && slide < 0.02) { // de lejos: una marca en el suelo por cada casilla que los separa
-      for (let i = 1; i < gap; i++) {
-        const t = i / gap, x = nearSide.home[0] + 50 + (farSide.home[0] - 36 - nearSide.home[0] - 50) * t, y = NEAR_Y - 14 + (farSide.home[1] + 6 - NEAR_Y + 14) * t, r = 5 - t * 3
-        ctx.fillStyle = '#10141c50'
-        ctx.beginPath(); ctx.ellipse(x, y + 1, r + 1, r * 0.45 + 1, 0, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = '#ffffffc0'
-        ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.45, 0, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = '#10141c'
+    ctx.fillRect(-20 - pad, -20, W + 40 + pad * 2, H + 40)
+    drawPanel(ctx, 0, left, time)
+    drawPanel(ctx, 1, right, time)
+    if (slide > 0.02) return
+    // La costura: borde oscuro, filo blanco que late y, de lejos, flechas que corren del que dispara al que recibe
+    const pulse = 0.6 + 0.4 * Math.sin(time / 130)
+    for (const off of band ? [-band, band] : [0]) {
+      for (const [color, w] of [['#10141c', 7], [`rgba(255, 255, 255, ${pulse})`, 3]] as const) {
+        ctx.strokeStyle = color
+        ctx.lineWidth = w
+        ctx.beginPath(); ctx.moveTo(edge(-30) + off, -30); ctx.lineTo(edge(H + 30) + off, H + 30); ctx.stroke()
       }
     }
-    if (light) { // la hora del día y la lluvia tiñen la escena
-      ctx.fillStyle = light
-      ctx.fillRect(-pad - 20, -20, W + pad * 2 + 40, H + 40)
+    if (band) {
+      ctx.fillStyle = '#ffd84a'
+      for (let y = -6 + ((time / 40) % 22); y < H + 10; y += 22) {
+        const x = edge(y), d = att.sign
+        ctx.beginPath(); ctx.moveTo(x - d * 4, y - 5); ctx.lineTo(x + d * 4, y); ctx.lineTo(x - d * 4, y + 5); ctx.fill()
+      }
     }
   }
-  scene.foreground = (ctx, time) => {
-    for (const s of [farSide, nearSide]) { // hierba alta por delante de los pies
-      if (s.place.terrain !== '"' || !s.actor.visible) continue
-      const near = s.depth === 1, cx = rest(s)
-      if (near) for (let x = cx - 64; x < cx + 48; x += 32) tallGrass(ctx, x, s.home[1] - 14)
-      else for (let x = cx - 36; x < cx + 24; x += 16) ctx.drawImage(pieces, pieceAt.tall.x, 0, 16, 16, x, s.home[1] - 9, 16, 16)
+  scene.foreground = (ctx, time) => { // hierba alta por delante de los pies, y la mira del Artillero
+    for (const s of [left, right]) {
+      if (s.place.terrain !== '"' || slide > 0.02) continue
+      const from = s.panel ? Math.ceil(edge(FEET) / 32) * 32 : -32 * Math.ceil((pad + 20) / 32), to = s.panel ? W + pad : edge(FEET) - 20
+      for (let x = from; x < to; x += 32) tallGrass(ctx, x, FEET - 18)
     }
-    if (mark) { // la mira se cierra sobre el objetivo
-      const t = Math.min(1, (time - mark.at) / 380), r = (34 - 20 * easeOut(t)) * mark.k, blink = Math.floor(time / 70) % 2
-      ctx.strokeStyle = blink ? '#fff' : '#ff5040'
+    if (mark) {
+      const t = Math.min(1, (time - mark.at) / 380), r = 34 - 20 * easeOut(t), blink = Math.floor(time / 70) % 2
+      ctx.strokeStyle = ctx.fillStyle = blink ? '#fff' : '#ff5040'
       ctx.lineWidth = 2
       ctx.beginPath(); ctx.ellipse(mark.x, mark.y, r, r * 0.42, 0, 0, Math.PI * 2); ctx.stroke()
-      ctx.fillStyle = ctx.strokeStyle
       for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.fillRect(Math.round(mark.x + dx * (r + 5) - (dx ? 4 : 1)), Math.round(mark.y + dy * (r * 0.42 + 4) - (dy ? 3 : 1)), dx ? 8 : 2, dy ? 6 : 2)
     }
-    if (lids > 0) {
-      ctx.fillStyle = '#10141c'
-      ctx.fillRect(-pad - 20, -20, W + pad * 2 + 40, 20 + (H / 2) * lids)
-      ctx.fillRect(-pad - 20, H - (H / 2) * lids, W + pad * 2 + 40, 20 + (H / 2) * lids)
-    }
   }
-  farSide.actor.x = rest(farSide)
-  nearSide.actor.x = rest(nearSide)
+
+  // Entrada: los paneles llegan de lado a lado con rayas de velocidad y chocan en el centro
+  left.actor.x = left.home[0] - away
+  right.actor.x = right.home[0] + away
+  panels[0].streak = panels[1].streak = 1
   music.duck(2600) // la música de combate baja mientras suena la fanfarria del comandante que ataca
   sfx.fanfare(b.co)
-  void scene.tween(300, (t) => { lids = 1 - easeOut(t) })
-  await scene.tween(560, (t) => {
+  await scene.tween(300, (t) => {
     slide = 1 - easeOut(t)
-    farSide.actor.x = rest(farSide)
-    nearSide.actor.x = rest(nearSide)
+    left.actor.x = left.home[0] - away * slide
+    right.actor.x = right.home[0] + away * slide
   })
-  slide = lids = 0
-  // Frenazo: polvo bajo cada plataforma y un saltito de los dos al plantarse
+  slide = 0
+  left.actor.x = left.home[0]
+  right.actor.x = right.home[0]
+  // El choque: destello, chispas a lo largo de la costura, los dos paneles tiemblan y cada Pokémon se planta con un saltito
+  scene.addShake(7)
+  scene.flashScreen('#fff', 0.75, 6)
   sfx.land()
-  scene.addShake(4)
-  for (const s of [farSide, nearSide]) {
-    const k = size(s)
-    for (let i = 0; i < 8; i++) scene.add({ x: s.home[0] + rnd(-30, 30) * k, y: s.home[1] + 4, vx: s.sign * rnd(0.5, 2.5), vy: rnd(-1.2, -0.2), size: 4 * k, max: 380, colors: ['#fff', '#d8d0c0'], behind: true })
-    void scene.tween(260, (t) => { s.actor.oy = -Math.sin(t * Math.PI) * 8 * k })
+  panels[0].shake = panels[1].shake = 5
+  for (let i = 0; i < 26; i++) {
+    const y = rnd(0, H), d = i % 2 ? 1 : -1
+    scene.add({ x: edge(y) + d * band, y, vx: d * rnd(1.5, 5), vy: rnd(-1.5, 1.5), drag: 0.92, line: [-d * 8, 0], size: 2, max: 380, colors: ['#fff', '#ffd84a', TEAM_HEX[d > 0 ? right.team : left.team]] })
+  }
+  scene.add({ ring: 46, size: 5, color: '#fff', x: edge(H / 2), y: H / 2, max: 320 })
+  for (const s of [left, right]) {
+    void scene.tween(280, (t) => { s.actor.oy = -Math.sin(t * Math.PI) * 12; s.actor.sy = 1 + 0.12 * Math.sin(t * Math.PI * 2); s.actor.sx = 1 - 0.1 * Math.sin(t * Math.PI * 2) })
+    scene.fx('ground_impact_dust', s.home[0], FEET - 4, { fps: 16, scale: 2, delay: 240 })
+    for (let i = 0; i < 6; i++) scene.add({ x: s.home[0] + rnd(-14, 14), y: FEET + 2, vx: rnd(-1.6, 1.6), vy: rnd(-1.4, -0.3), size: 4, max: 360, delay: 260, colors: ['#fff', '#d8d0c0'], behind: true })
   }
   root.classList.add('ready')
-  if (gap > 1) stamp(`A ${gap} casillas`, W / 2, 62, 'weak')
-  await scene.wait(480)
+  if (gap > 1) stamp(`A ${gap} casillas`, edge(40), 40, 'weak')
+  await scene.wait(520)
 
   await strike(att, def, b.dmg, b.crit)
   if (def.hp > 0 && b.counter !== null) {
     await scene.wait(200)
     await strike(def, att, b.counter)
+  }
+  // Si uno cae, el panel del que queda en pie se come la pantalla y él lo celebra
+  const winner = def.hp <= 0 ? att : att.hp <= 0 ? def : null
+  if (winner) {
+    const to = winner.panel ? -(W + pad + 80) : W + pad + 80, [wx, wy] = body(winner)
+    sfx.lunge()
+    await scene.tween(320, (t) => { seam = to * easeIn(t) })
+    void scene.tween(520, (t) => { winner.actor.oy = -Math.abs(Math.sin(t * Math.PI * 2)) * 16 * (1 - t * 0.5) })
+    for (let i = 0; i < 16; i++) { const ang = (i / 16) * Math.PI * 2; scene.add({ img: 'gold_stars', x: wx, y: wy, vx: Math.cos(ang) * 3, vy: Math.sin(ang) * 3, drag: 0.95, max: 700, scale: 2 }) }
+    sfx.cry(KINDS[winner.kind].species, 1, 0.5)
+    await scene.wait(420)
   }
   // Al acabar, la experiencia: la barra de cada ficha se llena y, si llega al tope, avisa de que ya puede evolucionar
   let waitXp = 380
@@ -790,18 +789,19 @@ export async function playBattle(b: BattleData) {
     waitXp = 900
     if (!gain.ready) continue
     waitXp = 1700
-    const [x, y] = body(s), k = size(s)
     setTimeout(() => {
+      const [x, y] = body(s)
       s.plate.classList.add('evo')
       sfx.ready()
-      stamp('¡PUEDE EVOLUCIONAR!', x, y - 34 * k, 'super')
-      scene.add({ ring: 50 * k, size: 5, color: '#ffd84a', x, y, max: 500 })
-      for (let i = 0; i < 14; i++) { const ang = (i / 14) * Math.PI * 2; scene.add({ img: 'gold_stars', x, y, vx: Math.cos(ang) * 2.6, vy: Math.sin(ang) * 2.6, drag: 0.95, max: 700, scale: 2 * k }) }
+      stamp('¡PUEDE EVOLUCIONAR!', x, y - 44, 'super')
+      scene.add({ ring: 50, size: 5, color: '#ffd84a', x, y, max: 500 })
+      for (let i = 0; i < 14; i++) { const ang = (i / 14) * Math.PI * 2; scene.add({ img: 'gold_stars', x, y, vx: Math.cos(ang) * 2.6, vy: Math.sin(ang) * 2.6, drag: 0.95, max: 700, scale: 2 }) }
       say(`¡${KINDS[s.kind].name} ya puede evolucionar!`)
     }, 450)
   }
   await scene.wait(waitXp)
   await close()
+  for (const s of [left, right]) s.plate.classList.remove('evo')
   scene.camera.x = pad = 0
   scene.resize(W, H)
 }

@@ -1100,19 +1100,12 @@ button { touch-action: manipulation; }
 .touch #help .x { scale: 1.5; transform-origin: right top; }
 #select nav.dedo { z-index: 2; }
 
-/* ---------- Combate: plano de Pokémon ---------- */
-/* La ficha del que está al fondo va arriba a la izquierda; la del de cerca, abajo a la derecha, sobre el texto */
-#scene.battle .plate.left { top: 16px; left: 16px; transform: translateX(-120%); }
-#scene.battle .plate.right { top: auto; right: 16px; bottom: 104px; transform: translateX(120%); }
-#scene.battle.ready .plate { transform: none; }
-#scene.battle .plate { width: 320px; border-radius: 0 14px 0 14px; }
-.touch #scene.battle .plate.left { left: calc(16px + env(safe-area-inset-left)); }
-.touch #scene.battle .plate.right { right: calc(16px + env(safe-area-inset-right)); }
+/* ---------- Combate ---------- */
 /* Rótulo con el nombre del ataque, del color de su tipo */
 .callout { position: absolute; z-index: 2; padding: 4px 26px 8px 18px; font-family: var(--display); font-size: 44px; line-height: 1; letter-spacing: 1px; color: #fff; white-space: nowrap; background: linear-gradient(#ffffff40 0 50%, transparent 50%), var(--c); border: 4px solid #fff; box-shadow: 0 0 0 4px #10141c, 0 8px 0 4px #0c101880;
   text-shadow: 3px 3px 0 #10141c, -2px -2px 0 #10141c, 2px -2px 0 #10141c, -2px 2px 0 #10141c; pointer-events: none; }
 .callout small { display: block; font-family: var(--ui); font-size: 18px; letter-spacing: 3px; text-transform: uppercase; text-shadow: 2px 2px 0 #10141c; }
-.callout.near { left: 3%; top: 38%; transform: skewX(-10deg); animation: callout-l 1.3s both; }
+.callout.near { left: 3%; top: 21%; transform: skewX(-10deg); animation: callout-l 1.3s both; }
 .callout.far { right: 3%; top: 21%; text-align: right; padding: 4px 18px 8px 26px; transform: skewX(-10deg); animation: callout-r 1.3s both; }
 @keyframes callout-l { 0% { translate: -120% 0; } 12% { translate: 4% 0; } 18%, 75% { translate: 0 0; opacity: 1; } 100% { translate: -30% 0; opacity: 0; } }
 @keyframes callout-r { 0% { translate: 120% 0; } 12% { translate: -4% 0; } 18%, 75% { translate: 0 0; opacity: 1; } 100% { translate: 30% 0; opacity: 0; } }
