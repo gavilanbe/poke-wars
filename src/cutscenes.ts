@@ -495,6 +495,7 @@ export interface BattleData {
   crit?: boolean // golpe crítico del atacante
   evolved: 'a' | 'd' | null
   evolvedKind: string
+  co?: string // comandante de quien ataca: su fanfarria abre el combate
 }
 
 export async function playBattle(b: BattleData) {
@@ -550,7 +551,8 @@ export async function playBattle(b: BattleData) {
   }
   left.actor.ox = -away
   right.actor.ox = away
-  sfx.battle()
+  music.duck(2600) // la música de combate baja mientras suena la fanfarria del comandante que ataca
+  sfx.fanfare(b.co)
   await scene.tween(300, (t) => {
     slide = 1 - easeOut(t)
     left.actor.ox = -away * slide

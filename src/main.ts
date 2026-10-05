@@ -2138,7 +2138,7 @@ async function battle(att: Unit, def: Unit) {
   setSceneLight(g.weather === 'rain' ? 'rgba(20, 40, 90, 0.22)' : ['rgba(255, 214, 150, 0.08)', '', 'rgba(255, 120, 50, 0.16)', 'rgba(16, 26, 96, 0.36)'][phaseOf(g)])
   music.play('battle')
   await playBattle({
-    a, d, dmg: res.dmg, counter: res.counter, crit: res.crit,
+    a, d, dmg: res.dmg, counter: res.counter, crit: res.crit, co: g.co[a.team],
     evolved: res.evolved ? (res.evolved === att ? 'a' : 'd') : null, evolvedKind: res.evolved?.kind ?? '',
   })
   themeNow()

@@ -197,6 +197,16 @@ const MUSIC = {
   jingle_levelup: { plan: plan(['150 BPM', 'D major', 'very short level-up jingle'], [['[Jingle] {quick ascending trumpet and chime arpeggio ending on a bright chord}', 3, ['rewarding, ends cleanly']]]) },
   jingle_catch: { plan: plan(['140 BPM', 'G major', 'short new-team-member fanfare'], [['[Fanfare] {happy brass and glockenspiel phrase with a final cymbal}', 4, ['cheerful, ends cleanly']]]) },
   jingle_turn: { plan: plan(['140 BPM', 'D major', 'very short turn-start sting'], [['[Sting] {two-bar trumpet call with snare}', 3, ['ready-set-go, ends cleanly']]]) },
+  // Fanfarria de ataque de cada comandante: suena al empezar un combate cuando ataca su equipo. Tres segundos, en la
+  // tonalidad y el carácter de su tema, y con un instrumento que solo lleva él, para que se distingan de oído.
+  jingle_atk_pikachu: { plan: plan(['152 BPM', 'C major', 'cheerful, bouncy, plucky hero attack sting'], [['[Sting] {quick rising glockenspiel and bright trumpet call, three bouncy notes then a sparkling high chord with a zap}', 3, ['playful, electric sparkle, ends cleanly on the chord']]]) },
+  jingle_atk_charizard: { plan: plan(['176 BPM', 'E minor', 'fierce, aggressive battle charge sting'], [['[Sting] {overdriven square lead rips a fast descending minor riff over pounding tom fill, ends on a crashing power chord}', 3, ['burning intensity, roaring, ends cleanly on the crash']]]) },
+  jingle_atk_blastoise: { plan: plan(['112 BPM', 'D major', 'noble, steady, naval cannon salute sting'], [['[Sting] {broad french horn fanfare of two long notes over a rolling timpani swell, ends on a deep cannon-like bass drum hit}', 3, ['majestic, weighty, ends cleanly on the hit']]]) },
+  jingle_atk_gengar: { plan: plan(['124 BPM', 'G minor', 'spooky, mischievous trickster sting'], [['[Sting] {creeping pizzicato strings tiptoe up a chromatic scale, a sliding theremin-like whistle laughs, ends on a sudden pipe organ stab}', 3, ['haunted, playful, ends cleanly on the stab']]]) },
+  jingle_atk_venusaur: { plan: plan(['132 BPM', 'G major', 'lush, warm, pastoral forest charge sting'], [['[Sting] {woody marimba roll and a fluttering flute run blossoming into a warm full string chord}', 3, ['organic, blooming, ends cleanly on the chord']]]) },
+  jingle_atk_tyranitar: { plan: plan(['100 BPM', 'D minor', 'heavy, stomping, unstoppable mountain sting'], [['[Sting] {two massive low brass and tuba blasts with stomping bass drum, rumbling like an earthquake, ends on a rock-slide cymbal crash}', 3, ['menacing, huge, ends cleanly on the crash']]]) },
+  jingle_atk_gardevoir: { plan: plan(['126 BPM', 'E-flat major', 'graceful, elegant, mysterious psychic sting'], [['[Sting] {sweeping harp glissando upward into a shimmering celesta and high string chord with a soft bell}', 3, ['ethereal, precise, ends cleanly on the bell']]]) },
+  jingle_atk_lucario: { plan: plan(['162 BPM', 'B minor', 'disciplined, focused martial arts strike sting'], [['[Sting] {three sharp taiko drum strikes with a breathy bamboo flute cry, then one decisive brass stab like a karate shout}', 3, ['honourable, razor sharp, ends cleanly on the stab']]]) },
 }
 
 async function request(url, body) {

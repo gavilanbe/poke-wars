@@ -12,6 +12,12 @@ Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 - Solo 16 líneas tienen tercera fase (`src/finals.json`).
 - El modo escaparate del título sigue siendo los Pokémon paseando: falta una partida de IA contra IA de fondo.
 
+## Sonido (5 de octubre)
+- Cada comandante tiene su fanfarria de ataque (`jingle_atk_<comandante>`, 3 s, generadas con ElevenLabs en
+  `tools/make_audio.mjs`): suena al empezar un combate cuando ataca su equipo y en la tarjeta de su capítulo.
+  Están generadas y niveladas, pero nadie las ha escuchado aún: si alguna no encaja, se regenera con
+  `node tools/make_audio.mjs jingle_atk_gengar`.
+
 ## Modo historia (5 de octubre)
 - «La Guerra de las Banderas»: ocho misiones en `src/campaign.ts` (mapa escrito como texto, piezas, objetivo, guion y
   sucesos por día); la interfaz está en `src/story.ts` (mapa del mundo con la ficha del comandante, conversaciones,

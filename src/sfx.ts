@@ -216,6 +216,8 @@ export const sfx = {
   heal: () => void (sample('jingle_heal', { vol: 0.6 }) || sample('heal') || notes([660, 880, 1100], 0.06, 0.1, { type: 'triangle', vol: 0.09 })),
   recruit: () => void (sample('recruit') || tone(180, 0.3, { to: 900, type: 'triangle', vol: 0.1 })),
   land: () => void (sample('land') || (()=>{ noise(0.1, 0.25, 0, 600); tone(110, 0.1, { to: 60, type: 'triangle', vol: 0.15 }) })()),
+  /** Fanfarria de ataque propia de cada comandante: suena al empezar un combate cuando ataca su equipo. */
+  fanfare: (commander?: string) => void ((commander && sample('jingle_atk_' + commander, { vol: 0.85 })) || sfx.battle()),
   battle: () => void (sample('battle') || (()=>{ noise(0.25, 0.12, 0, 5000); notes([196, 262, 330, 392], 0.05, 0.08, { vol: 0.05 }) })()),
   cast: () => void (sample('cast') || tone(500, 0.18, { to: 1400, type: 'triangle', vol: 0.07 })),
   shoot: () => void (sample('shoot') || (()=>{ noise(0.3, 0.14, 0, 4000); tone(900, 0.3, { to: 200, type: 'sawtooth', vol: 0.05 }) })()),

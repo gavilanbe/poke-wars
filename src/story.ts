@@ -119,8 +119,8 @@ async function chapterCard(i: number) {
     <div class="st-chap-foe"><img src="${facePath(m.foe, 'Determined')}" alt=""><span>contra</span><b>${foe.name}</b></div>`
   el.hidden = false
   restart(el, 'go')
-  sfx.battle()
-  setTimeout(() => sfx.cry(m.foe, 1, 0.5), 500)
+  sfx.fanfare(m.foe) // la fanfarria de ataque del rival de este capítulo
+  setTimeout(() => sfx.cry(m.foe, 1, 0.5), 900)
   await pause(3200)
   el.hidden = true
 }
