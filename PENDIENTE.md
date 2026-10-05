@@ -11,7 +11,6 @@ Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 - El fondo del combate (cielo y colinas) sigue pintado por código.
 - Solo 16 líneas tienen tercera fase (`src/finals.json`).
 - El modo escaparate del título sigue siendo los Pokémon paseando: falta una partida de IA contra IA de fondo.
-- La captura de Pokémon salvajes (la Poké Ball) no tiene escena propia.
 
 ## Hecho en la segunda pasada del 4 de octubre
 - Título nuevo: «pulsa cualquier tecla», fondo desenfocado, comandantes enfrentados, botón principal, mapas con
@@ -28,6 +27,11 @@ Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 - Equipos rehechos para que ningún cruce quede decidido por los tipos: 15 Pokémon nuevos y ningún tipo en más de 5 de
   11 (Normal en Pikachu y Psíquico en Gardevoir, 6). Con 8400 partidas, todos los comandantes ganan entre el 48% y el
   51% y los cruces se desvían de media 5,7 puntos (antes 11,2; el peor era 27%–73%).
+- Atrapar salvajes es un minijuego de lanzamiento: un aro se cierra sobre el salvaje y se lanza cuando está pequeño;
+  tres Balls con precio (300, 800 y 1500₽), tres intentos, y el salvaje puede liberarse o huir. La IA lanza una
+  Poké Ball a suertes (85% si está debilitado, 35% si no) y también la paga.
+- Bayas y monedas con los iconos de los juegos; el poder de comandante entra con retrato y nombre más grandes,
+  fotograma de impacto, cara de enfado y ascuas.
 - `pnpm versus [rondas]`: liga en paralelo con la tabla de cruces. `pnpm matchups` (ventaja de tipos sin simular)
   se queda corto: no usarlo para decidir equipos.
 

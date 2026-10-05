@@ -9,9 +9,9 @@ import {
   Building, Game, Pos, Reach, Team, Unit, attack, buildingAt, canCapture, canCounter, canRecruit, canUsePower,
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
   PHASES, STATUS_NAME, Status, WEATHER_NAME, canSee, flankers, footprint, freezable, freeze, isRecovery, phaseOf, recruitCost, resolvePath,
-  BERRY_HEAL, COIN_VALUE, weatherBonus, wildAt, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
+  BERRY_HEAL, COIN_VALUE, catchable, weatherBonus, wildAt, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
 } from './game'
-import { Place, initCutscenes, playBattle, playCapture, setSceneLight } from './cutscenes'
+import { Place, initCutscenes, playBattle, playCapture, playCatch, sceneKey, setSceneLight } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
 import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
 import { Lesson, tutorial } from './tutorial'
@@ -759,23 +759,13 @@ function draw(time: number) {
   const sway = Math.floor(time / 220) % 4
   for (const f of flowerSpots) ctx.drawImage(atlas, at.flowers.x + sway * 16, f.color * 16, 16, 16, f.x, f.y, 16, 16)
   ctx.drawImage(overlayLayer, 0, 0)
-  // Objetos: una baya o una moneda que flotan y brillan (iconos sencillos hechos a píxel)
+  // Objetos: una baya o una moneda (los iconos de los juegos) que flotan sobre su sombra y sueltan un destello
   for (const it of g.items) {
     if (who !== null && !sight.has(key(it.x, it.y))) continue
     const bx = it.x * T + 16, by = it.y * T + 15 + Math.round(Math.sin(time / 300 + it.x) * 2)
     ctx.fillStyle = 'rgba(16, 40, 24, 0.3)'
-    ctx.fillRect(bx - 6, it.y * T + 25, 12, 3)
-    if (it.type === 'coin') {
-      ctx.fillStyle = '#8a5c00'; ctx.fillRect(bx - 6, by - 7, 12, 14); ctx.fillRect(bx - 7, by - 5, 14, 10)
-      ctx.fillStyle = '#ffd84a'; ctx.fillRect(bx - 5, by - 6, 10, 12); ctx.fillRect(bx - 6, by - 4, 12, 8)
-      ctx.fillStyle = '#fff6c0'; ctx.fillRect(bx - 3, by - 5, 3, 8)
-      ctx.fillStyle = '#e0a020'; ctx.fillRect(bx + 1, by - 3, 2, 7)
-    } else {
-      ctx.fillStyle = '#10141c'; ctx.fillRect(bx - 6, by - 4, 12, 11); ctx.fillRect(bx - 4, by - 6, 8, 14)
-      ctx.fillStyle = '#4a78e8'; ctx.fillRect(bx - 5, by - 3, 10, 9); ctx.fillRect(bx - 3, by - 5, 6, 12)
-      ctx.fillStyle = '#a8c8ff'; ctx.fillRect(bx - 3, by - 3, 3, 3)
-      ctx.fillStyle = '#3c9c48'; ctx.fillRect(bx - 1, by - 9, 5, 3); ctx.fillRect(bx - 1, by - 8, 2, 4)
-    }
+    ctx.fillRect(bx - 6, it.y * T + 26, 12, 3)
+    ctx.drawImage(ITEM_IMG[it.type], bx - 15, by - 17)
     if (Math.floor(time / 500 + it.x) % 4 === 0) { ctx.fillStyle = '#fff'; ctx.fillRect(bx + 5, by - 8, 2, 2) }
   }
   // Hierba que se agita: ahí se esconde un Pokémon salvaje
@@ -922,8 +912,8 @@ function draw(time: number) {
 }
 
 /** Mueve y enseña lo que pase en la casilla: objeto recogido, salvaje debilitado, atrapado o escapado. */
-function moveCatch(game: Game, u: Unit, x: number, y: number) {
-  const ev = moveUnit(game, u, x, y)
+function moveCatch(game: Game, u: Unit, x: number, y: number, outcome?: boolean) {
+  const ev = moveUnit(game, u, x, y, outcome)
   if (!ev || titleOn || !shown(u)) return
   const at = { x, y }
   if (ev.item === 'coin') { label(at, `+${COIN_VALUE}₽`, 'gold'); sfx.coin(); sfx.coin(0.08) }
@@ -933,7 +923,8 @@ function moveCatch(game: Game, u: Unit, x: number, y: number) {
     sfx.heal()
   }
   if (ev.wild === 'weak') { label(at, '¡Salvaje debilitado!', 'gold'); fx.addShake(3); sfx.hit() }
-  if (ev.wild === 'escaped') { label(at, '¡Se ha escapado de la Ball!', 'dmg'); sfx.error() }
+  if (ev.wild === 'escaped' && outcome === undefined) { label(at, '¡Se ha escapado de la Ball!', 'dmg'); sfx.error() }
+  if (ev.wild === 'broke') { label(at, 'Sin dinero para una Ball', 'dmg'); sfx.error() }
   const caught = ev.caught
   if (!caught) return
   // La Poké Ball cae sobre la hierba, se menea y se abre
@@ -958,6 +949,9 @@ const STATUS_COLOR: Record<Status, string> = { burn: '#f0803c', poison: '#a040a0
 // ---------- Minimapa ----------
 
 const miniEl = $<HTMLCanvasElement>('#minimap')
+const ITEM_IMG = { berry: new Image(), coin: new Image() }
+ITEM_IMG.berry.src = '/assets/ui/item_berry.png'
+ITEM_IMG.coin.src = '/assets/ui/item_coin.png'
 const MINI_COLOR: Record<string, string> = { '.': '#8fd880', '"': '#4aa860', T: '#2c7c50', M: '#8a7060', '~': '#3878d8', s: '#9ab0c0', '=': '#e0d0a0', i: '#d6f0ff' }
 function drawMinimap() {
   const k = 6
@@ -1154,7 +1148,7 @@ async function powerFx(team: Team, affected: { unit: Unit; hp: number }[]) {
         mapFx.fx('explosion', x, y - 4, { scale: 1.5, fps: 12 })
         mapFx.fx('fire_plume', x, y - 12, { scale: 1.5, fps: 10, delay: 80 })
         setFx(unit, { pop: performance.now() })
-        label(unit, 'ATQ +50%', 'gold')
+        label(unit, `ATQ +${Math.round((c.atk[1] - 1) * 100)}%`, 'gold')
         fx.addShake(4)
         sfx.hit()
       }
@@ -2065,6 +2059,24 @@ function placeNear(el: HTMLElement, p: Pos) {
   el.style.top = Math.max(4, Math.min(sy * scale, canvas.height * scale - el.offsetHeight - 8)) + 'px'
 }
 
+/**
+ * Lleva al Pokémon a su destino y resuelve la casilla. Si es un Capturador de una persona y hay un salvaje, antes se
+ * juega el lanzamiento de Ball: lo que gaste sale de su dinero y el resultado ya va decidido.
+ */
+async function arrive(u: Unit, x: number, y: number) {
+  const wild = !isAI[u.team] && !AUTO ? catchable(g, u, x, y) : null
+  if (!wild) return moveCatch(g, u, x, y)
+  mode = 'busy'
+  menuEl.hidden = forecastEl.hidden = true
+  talkEl.hidden = true
+  music.play('capture')
+  const res = await playCatch({ kind: u.kind, team: u.team, wild: wild.kind, weak: !!wild.weak, funds: g.funds[u.team], sure: tutorial.isOpen && !!wild.weak })
+  g.funds[u.team] -= res.spent
+  if (res.fled) g.wild = g.wild.filter((w) => w !== wild)
+  moveCatch(g, u, x, y, res.caught)
+  themeNow()
+}
+
 const ICON: Record<string, [string, string]> = { Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Congelar: ['❄', 'ice'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
 
 function openMenu() {
@@ -2085,8 +2097,8 @@ function openMenu() {
     }])
   }
   if (freezable(g, u, at).length) {
-    items.push(['Congelar', () => {
-      moveCatch(g, u, at.x, at.y)
+    items.push(['Congelar', async () => {
+      await arrive(u, at.x, at.y)
       for (const p of freeze(g, u)) {
         mapFx.add({ ring: 20, size: 4, color: '#d6f0ff', x: p.x * T + 16, y: p.y * T + 16, max: 500 })
         fx.burst(p.x * T + 16, p.y * T + 16, { n: 12, colors: ['#fff', '#b8f0f8'], speed: 1.6, life: 600, size: 3 })
@@ -2096,7 +2108,7 @@ function openMenu() {
       finish()
     }])
   }
-  items.push(['Esperar', () => { moveCatch(g, u, at.x, at.y); u.moved = true; sfx.confirm(); finish() }])
+  items.push(['Esperar', async () => { sfx.confirm(); await arrive(u, at.x, at.y); u.moved = true; finish() }])
   items.push(['Cancelar', cancel])
   menuEl.replaceChildren(...items.map(([text, fn], i) => {
     const btn = document.createElement('button')
@@ -2260,7 +2272,8 @@ async function click(p: Pos) {
     mode = 'busy'
     forecastEl.hidden = true
     refreshPanel()
-    moveCatch(g, unit, pending!.x, pending!.y)
+    await arrive(unit, pending!.x, pending!.y)
+    mode = 'busy'
     pending = null
     await battle(unit, u)
     finish()
@@ -2514,6 +2527,7 @@ addEventListener('keydown', (e) => {
 
   // Con el tutorial abierto, las teclas de la persona pasan sus páginas; las que pulsa él mismo sí llegan al juego
   if (tutorial.isOpen && e.isTrusted) { e.preventDefault(); return tutorial.key(k) }
+  if (sceneKey(k)) return e.preventDefault() // lanzando una Ball: las teclas son de esa escena
   if (k === 'h' || k === '?') return void tutorial.open()
   if (k === 'm') return muteBtn.click()
 
@@ -2620,6 +2634,7 @@ async function boot() {
     lab: {
       battle: playBattle,
       capture: playCapture,
+      catch: playCatch,
       power: (id: string) => { g.co[g.turn] = id; g.meter[g.turn] = 99; firePower() },
       win: (team: Team) => { g.winner = team; finish() },
       state: () => ({ mode, sel: sel?.kind, cam: [cam.x, cam.y], stops: stops.size }),

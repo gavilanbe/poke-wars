@@ -39,7 +39,7 @@ export interface Game {
 }
 
 export type ItemType = 'berry' | 'coin'
-export const COIN_VALUE = 1500, BERRY_HEAL = 4, CATCH_CHANCE = 0.5
+export const COIN_VALUE = 1500, BERRY_HEAL = 4
 export type Weather = 'clear' | 'rain' | 'sun'
 export const WEATHER_NAME: Record<Weather, string> = { clear: 'Despejado', rain: 'Lluvia', sun: 'Sol abrasador' }
 export const PHASES = ['Mañana', 'Mediodía', 'Atardecer', 'Noche']
@@ -331,17 +331,35 @@ function checkRout(g: Game) {
 
 export interface MoveEvent {
   caught?: Unit // salvaje atrapado
-  wild?: 'weak' | 'escaped' // debilitado por un Pokémon que no captura, o se escapó de la Ball
+  wild?: 'weak' | 'escaped' | 'broke' // debilitado por quien no captura, se escapó de la Ball, o no había dinero para una
   item?: ItemType // objeto recogido
+}
+
+// Atrapar cuesta: cada lanzamiento gasta una Ball. Las mejores atrapan con más facilidad
+export const BALLS = [
+  { id: 'poke', name: 'Poké Ball', cost: 300, bonus: 0 },
+  { id: 'great', name: 'Súper Ball', cost: 800, bonus: 0.15 },
+  { id: 'ultra', name: 'Ultra Ball', cost: 1500, bonus: 0.3 },
+]
+/** Probabilidad de atrapar con una Poké Ball lanzada sin más (lo que hace la IA): mucho mejor si está debilitado. */
+export const AUTO_CATCH = { weak: 0.85, fresh: 0.35 }
+const besideFree = (g: Game, x: number, y: number) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
+  .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && !unitAt(g, p.x, p.y))
+/** El salvaje que ese Pokémon podría intentar atrapar en esa casilla (hace falta ser Capturador, sitio en el equipo y al lado, y dinero para una Ball). */
+export function catchable(g: Game, u: Unit, x: number, y: number) {
+  const wild = wildAt(g, x, y)
+  if (!wild || !KINDS[u.kind].capture || g.units.filter((o) => o.team === u.team).length >= MAX_UNITS) return null
+  return besideFree(g, x, y) && g.funds[u.team] >= BALLS[0].cost ? wild : null
 }
 
 /**
  * Mueve la unidad y resuelve lo que encuentre en la casilla:
  * - un objeto: la baya cura y quita el estado; la moneda da dinero;
- * - un salvaje en la hierba: quien no captura lo debilita; quien captura lo atrapa (seguro si está debilitado, a
- *   cara o cruz si no) y el salvaje se une al equipo en una casilla de al lado.
+ * - un salvaje en la hierba: quien no captura lo debilita; quien captura le lanza una Poké Ball (que cuesta dinero)
+ *   y, si lo atrapa, el salvaje se une al equipo en una casilla de al lado. `outcome` es el resultado ya decidido
+ *   (y pagado) en el minijuego de lanzamiento; sin él se lanza una Poké Ball a suertes, como hace la IA.
  */
-export function moveUnit(g: Game, u: Unit, x: number, y: number): MoveEvent | null {
+export function moveUnit(g: Game, u: Unit, x: number, y: number, outcome?: boolean): MoveEvent | null {
   if (u.x === x && u.y === y) return null
   const b = buildingAt(g, u.x, u.y)
   if (b) b.cap = CAPTURE_POINTS
@@ -359,15 +377,15 @@ export function moveUnit(g: Game, u: Unit, x: number, y: number): MoveEvent | nu
   if (wild) {
     if (!KINDS[u.kind].capture) {
       if (!wild.weak) { wild.weak = true; ev.wild = 'weak' }
-    } else if (g.units.filter((o) => o.team === u.team).length < MAX_UNITS) {
-      const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
-        .find((p) => p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h && TERRAIN[g.tiles[p.y][p.x]].cost.walk < 9 && !unitAt(g, p.x, p.y))
-      if (spot && (wild.weak || Math.random() < CATCH_CHANCE)) {
+    } else if (catchable(g, u, x, y) || (outcome !== undefined && besideFree(g, x, y))) {
+      if (outcome === undefined) g.funds[u.team] -= BALLS[0].cost
+      if (outcome ?? Math.random() < (wild.weak ? AUTO_CATCH.weak : AUTO_CATCH.fresh)) {
+        const spot = besideFree(g, x, y)!
         g.wild = g.wild.filter((w) => w !== wild)
         ev.caught = addUnit(g, wild.kind, u.team, spot.x, spot.y)
         ev.caught.hp = wild.weak ? 5 : 8
-      } else if (spot) ev.wild = 'escaped'
-    }
+      } else ev.wild = 'escaped'
+    } else if (g.funds[u.team] < BALLS[0].cost && g.units.filter((o) => o.team === u.team).length < MAX_UNITS) ev.wild = 'broke'
   }
   return ev.caught || ev.wild || ev.item ? ev : null
 }

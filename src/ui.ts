@@ -63,12 +63,15 @@ export function powerCutin(team: number, co: string) {
   const words = c.power.toUpperCase().split(' ')
   let n = 0
   const title = words.map((w) => `<div>${[...w].map((ch) => `<span style="--i:${n++}">${ch}</span>`).join('')}</div>`).join('')
+  // En el golpe (1 s) cambia a la cara de enfado, y durante toda la escena suben ascuas del color del comandante
+  setTimeout(() => host.querySelectorAll<HTMLImageElement>('.power .portrait img').forEach((img) => (img.src = facePath(co, 'Angry'))), 1000)
+  const embers = Array.from({ length: 22 }, (_, i) => `<i style="--x:${(i * 37 + 11) % 100}%;--d:${((i * 53) % 17) / 10}s;--s:${1.2 + ((i * 29) % 10) / 6}em;--t:${1.1 + ((i * 13) % 9) / 10}s"></i>`).join('')
   return play(`power t${team}`, `
-    <div class="dim"></div><div class="rays"></div>
+    <div class="dim"></div><div class="rays"></div><div class="embers">${embers}</div><div class="impact"></div>
     ${ticker(`★ PODER DE COMANDANTE ★ ${c.name.toUpperCase()}`, 'top')}${ticker(`★ PODER DE COMANDANTE ★ ${c.name.toUpperCase()}`, 'bottom')}
     <div class="band"><div class="stripes"></div></div>
     ${portrait(co, 'Determined')}
-    <div class="words"><small>«${c.quotes.power}»</small><b style="font-size:${Math.min(18, 118 / Math.max(...words.map((w) => w.length)))}em">${title}</b><i>${c.powerHelp}</i></div>
+    <div class="words"><small>«${c.quotes.power}»</small><b style="font-size:${Math.min(25, 150 / Math.max(...words.map((w) => w.length)))}em">${title}</b><i>${c.powerHelp}</i></div>
     <div class="shock"></div><div class="flash"></div>`, 2900)
     .then(() => host.style.removeProperty('--c'))
 }

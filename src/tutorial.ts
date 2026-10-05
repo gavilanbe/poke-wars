@@ -289,9 +289,9 @@ const PAGES: Page[] = [
   },
   {
     title: 'SALVAJES Y OBJETOS',
-    text: 'En la hierba alta se esconden <b>Pokémon salvajes</b> que puedes sumar a tu equipo gratis.',
+    text: 'En la hierba alta se esconden <b>Pokémon salvajes</b>. Atraparlos cuesta <b>Balls</b>, pero salen mucho más baratos que reclutar.',
     lesson: () => ({
-      cursor: [7, 14], items: [{ x: 5, y: 15, type: 'berry' }, { x: 8, y: 16, type: 'coin' }],
+      cursor: [7, 14], funds: [1500, 0], items: [{ x: 5, y: 15, type: 'berry' }, { x: 8, y: 16, type: 'coin' }],
       wild: [{ x: 10, y: 14, kind: typed('grass') }, { x: 11, y: 13, kind: typed('normal'), weak: true }],
       units: [{ kind: RED('luchador'), team: 0, x: 7, y: 14 }, { kind: RED('capturador'), team: 0, x: 12, y: 12 }, { kind: RED('explorador'), team: 0, x: 4, y: 15, hp: 5 }, far],
     }),
@@ -303,15 +303,18 @@ const PAGES: Page[] = [
       await menu(d)
       await d.press('Enter') // Esperar: al pisar la hierba, debilita al salvaje
       await d.idle()
-      await d.say('Debilitado, un Capturador lo atrapa seguro. Sin debilitar, es a cara o cruz.')
+      await d.say('Ahora lleva a un Capturador a un salvaje debilitado: así es mucho más fácil.')
       await d.to(12, 12)
       await d.press('Enter', 800)
       await d.to(11, 13)
       await d.press('Enter')
       await menu(d)
-      await d.press('Enter') // el Capturador lo atrapa
+      await d.press('Enter') // el Capturador se planta encima: empieza el lanzamiento
+      await d.wait(1800)
+      await d.say('Elige Ball (las caras atrapan mejor) y lanza cuando el aro esté pequeño. Tienes tres intentos.')
+      await d.press('Enter')
       await d.idle()
-      await d.say('¡Uno más en tu equipo! Y los objetos del suelo se recogen pisándolos.')
+      await d.say('¡Uno más en tu equipo! Sin debilitar, el aro va rápido y puede liberarse o huir.')
       await d.to(4, 15)
       await d.press('Enter', 800)
       await d.to(5, 15)
