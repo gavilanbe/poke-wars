@@ -3,6 +3,11 @@
 Táctica por turnos tipo Advance Wars con Pokémon: ocho comandantes con su equipo y su poder, tres mapas, captura de
 edificios y de salvajes, evoluciones, clima, día y noche, y una IA contra la que jugar.
 
+Tiene un **modo historia**, «La Guerra de las Banderas»: ocho misiones con mapa propio y objetivos distintos (ganar una
+batalla, capturar un edificio concreto, aguantar un asedio, escoltar a un mensajero entre la niebla, derrotar a un jefe,
+una carrera por edificios, un duelo sin refuerzos y un final de noche perpetua), con conversaciones, comandantes que se
+unen a ti y nota por misión. Además, partida libre contra la IA o entre dos personas en tres mapas.
+
 **▶ Jugar: https://gavilanbe.github.io/poke-wars/**
 
 Todo se maneja con ratón o con teclado (flechas, Enter, Esc; `H` abre un tutorial que juega solo). Hecho con Claude
@@ -15,6 +20,7 @@ pnpm sim          # 20 partidas IA contra IA en consola, para comprobar las regl
 pnpm versus 100   # liga en paralelo: porcentaje de victorias de cada cruce de comandantes
 pnpm duel a b     # un cruce concreto a fondo, mapa por mapa
 pnpm check        # comprobaciones de sentido común sobre mapas y equipos
+pnpm missions 20  # campaña: valida cada misión y la juega IA contra IA para ver su dificultad
 ```
 
 `?auto` en la URL pone a las dos IA a jugar solas.

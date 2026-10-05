@@ -14,6 +14,8 @@ import {
 import { Place, initCutscenes, playBattle, playCapture, playCatch, sceneKey, setSceneLight } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
 import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
+import { goalStatus } from './campaign'
+import { finished as storyFinished, frame as storyFrame, story, turnStart as storyTurnStart } from './story'
 import { Lesson, tutorial } from './tutorial'
 import { cover, fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, uncover, versus, victory } from './ui'
 import { Anim, DIR, animDuration, dirFrom, drawSprite, facePath, loadSpecies, loadSpeciesList, loadUnits } from './units'
@@ -371,7 +373,7 @@ function startGame(cos: [string, string], intro = 0, saved?: Game) {
   bannerEl.hidden = sceneEl.hidden = talkEl.hidden = selectEl.hidden = true
   reset()
   refreshPanel()
-  const home = g.buildings.find((b) => b.type === 'gym' && b.owner === (viewer() ?? 0))!
+  const home = g.buildings.find((b) => b.type === 'gym' && b.owner === (viewer() ?? 0)) ?? g.units.find((u) => u.team === (viewer() ?? 0)) ?? { x: 0, y: 0 }
   panTo(home.x * T, home.y * T, true)
   if (!AUTO && !saved) {
     g.units.forEach((u, i) => dropIn(u, intro + 200 + i * 130))
@@ -473,6 +475,14 @@ function drawUnit(u: Unit, time: number) {
     ctx.fillStyle = STATUS_COLOR[u.status]
     ctx.fillRect(x + 2, y + 2, 7, 7)
     if (u.status === 'sleep' && Math.random() < 0.03) label(u, 'z', 'heal')
+  }
+  if (u.tag && !moving) { // en campaña: el mensajero lleva una estrella y el jefe, una corona
+    const bob = Math.round(Math.sin(time / 220) * 2), mx = x + 16, my = y - 12 + bob
+    ctx.fillStyle = '#10141c'
+    ctx.fillRect(mx - 7, my - 1, 14, 11)
+    ctx.fillStyle = u.tag === 'boss' ? '#ff5a48' : '#ffd84a'
+    if (u.tag === 'boss') { ctx.fillRect(mx - 5, my + 5, 10, 3); for (const px of [-5, -1, 3]) ctx.fillRect(mx + px, my + 1, 2, 4) }
+    else { ctx.fillRect(mx - 1, my + 1, 2, 7); ctx.fillRect(mx - 5, my + 3, 10, 2); ctx.fillRect(mx - 3, my + 5, 6, 2) }
   }
   for (let i = 1; i < u.level && !moving; i++) { // galones de nivel
     ctx.fillStyle = '#10141c'
@@ -741,6 +751,7 @@ function draw(time: number) {
     const dy = (keysDown.has('w') || (mouse.inside && mouse.y < edge) ? -1 : 0) + (keysDown.has('s') || (mouse.inside && mouse.y > 1 - edge) ? 1 : 0)
     if ((dx || dy) && mode !== 'menu') panTo(cam.tx + canvas.width / 2 + dx * speed, cam.ty + canvas.height / 2 + dy * speed)
   }
+  storyFrame(time, dt)
   if (titleOn) {
     g.day = 1 + (Math.floor(time / 9000) % 4) // amanece, anochece…
     panTo(worldW() / 2 + Math.cos(time / 11000) * (worldW() / 2 - canvas.width / 2), worldH() / 2 + Math.sin(time / 7000) * (worldH() / 2 - canvas.height / 2))
@@ -877,6 +888,17 @@ function draw(time: number) {
   things.sort((a, b) => a[0] - b[0])
   for (const [, paint] of things) paint()
   fx.draw(ctx)
+  const goal = g.rules?.goal
+  if (goal && (goal.type === 'capture' || goal.type === 'reach') && g.winner === null) { // en campaña: la casilla o el edificio objetivo
+    const gx = goal.x * T, gy = goal.y * T, pulse = (time / 900) % 1, hop = Math.round(Math.abs(Math.sin(time / 260)) * 5)
+    ctx.strokeStyle = `rgba(255, 216, 74, ${1 - pulse})`
+    ctx.lineWidth = 2
+    ctx.strokeRect(gx - pulse * 8, gy - pulse * 8, T + pulse * 16, T + pulse * 16)
+    ctx.fillStyle = '#10141c'
+    ctx.fillRect(gx + 9, gy - 22 - hop, 14, 12); ctx.fillRect(gx + 12, gy - 10 - hop, 8, 4); ctx.fillRect(gx + 14, gy - 6 - hop, 4, 3)
+    ctx.fillStyle = '#ffd84a'
+    ctx.fillRect(gx + 11, gy - 20 - hop, 10, 9); ctx.fillRect(gx + 13, gy - 11 - hop, 6, 3); ctx.fillRect(gx + 15, gy - 8 - hop, 2, 3)
+  }
   if (mode === 'target') for (const t of targets) drawTarget(t, time)
   if (aiShow?.path) drawPathArrow(aiShow.path, time) // la IA anuncia su jugada
   if (aiShow?.target && g.units.includes(aiShow.target)) drawTarget(aiShow.target, time)
@@ -1391,11 +1413,15 @@ function statBar(name: string, value: number, max: number) {
 }
 
 let lastTurnShown = -1
+const goalEl = $('#goal')
 function refreshStatus() {
   const turnKey = g.day * 2 + g.turn
   const phase = phaseOf(g)
   dayEl.innerHTML = `<i class="pb"></i><small>DÍA</small><b>${g.day}</b><span class="sky p${phase} w-${g.weather}" title="${g.weather === 'sun' ? 'Fuego +20%, Agua −20%' : g.weather === 'rain' ? 'Agua +20%, Fuego −20%, se ve una casilla menos' : ''}${phase === 3 ? ' De noche se ve una casilla menos' : ''}"><i></i>${PHASES[phase]}${g.weather !== 'clear' ? ' · ' + WEATHER_NAME[g.weather] : ''}</span><span class="turn t${g.turn}">${isAI[g.turn] ? 'Turno rival' : 'Tu turno'}</span>`
   if (turnKey !== lastTurnShown) { lastTurnShown = turnKey; restart(dayEl, 'tick') }
+  const goalText = goalStatus(g) // en campaña, el objetivo y cómo va
+  goalEl.hidden = !goalText
+  if (goalText && goalEl.textContent !== goalText) { goalEl.innerHTML = `<b>OBJETIVO</b>${goalText}`; restart(goalEl, 'tick') }
   cosEl.innerHTML = [0, 1].map((t) => {
     const filled = (shownMeter[t] / POWER_COST) * 6
     const pips = Array.from({ length: 6 }, (_, i) => `<i style="--f:${g.power[t] ? 1 : clamp01(filled - i)}"></i>`).join('')
@@ -1428,6 +1454,7 @@ function refreshPanel() {
   endBtn.innerHTML = `Fin del turno <kbd>E</kbd>`
   aiBtn.textContent = `Azul: ${isAI[1] ? 'IA' : 'humano'}`
   muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`
+  $('#new').textContent = g.rules ? 'Salir al mapa' : 'Salir al título'
   refreshInfo()
 }
 
@@ -1497,6 +1524,7 @@ function finish() {
   setFace((1 - winner) as Team, 'Pain', 1e7)
   if (AUTO || tutorial.isOpen) return
   talkEl.hidden = true
+  if (g.rules) return void storyFinished(g) // en campaña, el final lo cuenta la historia
   setTimeout(() => {
     music.ambience('')
     // Si gana la IA contra un humano, suena el tema de derrota
@@ -1705,6 +1733,8 @@ let duel: string[] = []
 /** Título: el mapa vivo de fondo (la cámara pasea, los Pokémon se mueven, pasa el día) y el menú encima. */
 function showTitle() {
   hideOverlay()
+  story.close()
+  stage.classList.remove('storying')
   titleOn = true
   bannerEl.hidden = talkEl.hidden = sceneEl.hidden = selectEl.hidden = menuEl.hidden = recruitEl.hidden = true
   loadDemo()
@@ -1717,7 +1747,7 @@ function showTitle() {
   // El botón principal es el que más probablemente quieres: seguir tu partida o, si no hay, empezar una
   const saved = !!loadSave()
   titleEl.querySelector<HTMLElement>('[data-go=continue]')!.hidden = !saved
-  for (const btn of titleEl.querySelectorAll<HTMLElement>('.menu > button')) btn.classList.toggle('main', btn.dataset.go === (saved ? 'continue' : 'solo'))
+  for (const btn of titleEl.querySelectorAll<HTMLElement>('.menu > button')) btn.classList.toggle('main', btn.dataset.go === (saved ? 'continue' : 'story'))
   refreshTitle()
   music.play('title')
   music.ambience('')
@@ -1854,6 +1884,18 @@ for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
     if (btn.dataset.opt === 'help') return void tutorial.open()
     if (btn.dataset.opt === 'fog') { fogOn = !fogOn; fogBtn.textContent = `Niebla: ${fogOn ? 'sí' : 'no'}`; sfx.confirm(); return refreshTitle() }
     if (btn.dataset.opt === 'sound') { toggleMute(); music.sync(); sfx.confirm(); return refreshTitle() }
+    if (btn.dataset.go === 'story') { // modo historia: al mapa del mundo
+      sfx.confirm()
+      void (async () => {
+        btn.classList.add('chosen')
+        titleEl.classList.add('leaving')
+        await sleep(420)
+        await story.open()
+        titleEl.classList.remove('leaving')
+        btn.classList.remove('chosen')
+      })()
+      return
+    }
     const saved = btn.dataset.go === 'continue' ? loadSave() : null
     if (saved) { isAI[0] = saved.isAI[0]; isAI[1] = saved.isAI[1]; fogOn = saved.fogOn }
     else isAI[1] = btn.dataset.go === 'solo' // contra la IA o dos personas por turnos
@@ -1870,12 +1912,57 @@ for (const btn of titleEl.querySelectorAll<HTMLButtonElement>('button')) {
       titleEl.hidden = true
       titleEl.classList.remove('leaving')
       btn.classList.remove('chosen')
-      if (saved) { startGame(saved.g.co, 0, saved.g); themeNow() } else void newGame()
+      if (saved) { startGame(saved.g.co, 0, saved.g); if (saved.g.rules) story.resume(); themeNow() } else void newGame()
       await sleep(80)
       await uncover()
     })()
   }
 }
+
+// ---------- Modo historia: lo que story.ts necesita del juego ----------
+
+story.init({
+  world(game: Game) {
+    titleOn = false
+    clearInterval(duelTimer)
+    clearTimeout(idleTimer)
+    titleEl.hidden = talkEl.hidden = true
+    stage.classList.remove('titling', 'attract')
+    stage.classList.add('storying')
+    isAI[0] = false; isAI[1] = true
+    enterGame(game)
+    mode = 'select'
+    hover = null
+  },
+  mission(game: Game) {
+    stage.classList.remove('storying')
+    isAI[0] = false; isAI[1] = true
+    void loadSpeciesList(speciesOf(game))
+    enterGame(game)
+    shownFunds[0] = game.funds[0]; shownFunds[1] = game.funds[1]; shownMeter[0] = shownMeter[1] = 0
+    weatherShown = game.weather
+    const first = game.units.find((u) => u.team === 0) ?? { x: 0, y: 0 }
+    hover = { x: first.x, y: first.y }
+    cursor.x = hover.x * T; cursor.y = hover.y * T
+    panTo(first.x * T + 3 * T, first.y * T, true)
+    game.units.forEach((u, i) => dropIn(u, 500 + i * 90))
+    themeNow()
+  },
+  title() { showTitle() },
+  screen: (x: number, y: number) => [(x * T + T / 2 - cam.x) * scale, (y * T + T / 2 - cam.y) * scale],
+  tile: () => T * scale,
+  pan(x: number, y: number, snap?: boolean) { panTo(x * T + T / 2, y * T + T / 2, snap) },
+  drop(units: Unit[]) {
+    void loadSpeciesList(units.flatMap((u) => line(u.kind)))
+    if (units[0]) panTo(units[0].x * T, units[0].y * T)
+    units.forEach((u, i) => { dropIn(u, i * 130); label(u, '¡Refuerzos!', u.team === 0 ? 'heal' : 'dmg', 400 + i * 130) })
+    sfx.recruit()
+  },
+  hold(on: boolean) {
+    if (on) mode = 'busy'
+    else { reset(); refreshPanel() }
+  },
+})
 
 // ---------- Tutorial: lecciones sobre el juego de verdad ----------
 
@@ -2466,6 +2553,7 @@ async function nextTurn() {
   if (mine && !isAI[g.turn]) panTo(mine.x * T, mine.y * T)
   turnStartFx(hpBefore)
   if (isAI[g.turn]) return runAI()
+  if (g.rules && g.winner === null) await storyTurnStart(g) // refuerzos y frases del guion
   finish()
 }
 
@@ -2681,11 +2769,13 @@ addEventListener('keydown', (e) => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
   const dir = DIRS[k], confirm = k === 'Enter' || k === ' ' || k === 'z', back = k === 'Escape' || k === 'x' || k === 'Backspace'
   const focused = document.activeElement instanceof HTMLButtonElement ? document.activeElement : null
+  if (e.repeat && !dir) return // una tecla mantenida solo repite el movimiento del cursor: así, acelerar el turno rival con Espacio no confirma nada al volver
   if (dir || confirm || back || k === 'Tab') setKbd(true)
 
   // Con el tutorial abierto, las teclas de la persona pasan sus páginas; las que pulsa él mismo sí llegan al juego
   if (tutorial.isOpen && e.isTrusted) { e.preventDefault(); return tutorial.key(k) }
   if (sceneKey(k)) return e.preventDefault() // lanzando una Ball: las teclas son de esa escena
+  if (story.busy) { e.preventDefault(); story.key(k); return } // mapa del mundo, informe, resultado o conversación
   if (k === 'h' || k === '?') return void tutorial.open()
   if (k === 'm') return muteBtn.click()
 
@@ -2759,6 +2849,7 @@ fogBtn.onclick = () => {
 muteBtn.onclick = () => { toggleMute(); music.sync(); muteBtn.innerHTML = `Sonido: ${muted ? 'no' : 'sí'}`; sfx.confirm(); if (titleOn) refreshTitle() }
 $('#new').onclick = async () => {
   if (mode === 'busy') return
+  if (g.rules) return void story.open() // de una misión se vuelve al mapa del mundo
   await cover()
   showTitle()
   await uncover()

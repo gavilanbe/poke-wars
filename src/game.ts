@@ -3,6 +3,7 @@ import {
   BUILDING_INFO, BuildingType, CAPTURE_POINTS, COMMANDERS, KINDS, MAPS, MAX_UNITS, POWER_COST, ROLE_ORDER, TUNE,
   PType, ROLES, TERRAIN, Terrain, bestMove, moveMult, rosterOf,
 } from './data'
+import type { MapDef } from './data'
 
 export type Team = 0 | 1
 export type Status = 'burn' | 'poison' | 'para' | 'sleep' | 'freeze'
@@ -11,10 +12,32 @@ export interface Unit {
   id: number; kind: string; team: Team; x: number; y: number; hp: number; moved: boolean
   xp: number; level: number // nivel 1 a 3: al 2 evoluciona, al 3 es veterano
   status: Status | null; statusTurns: number
+  tag?: 'vip' | 'boss' // en campaña: el Pokémon que no puede caer (y que a veces hay que llevar a un sitio) y el jefe a derrotar
 }
 /** Un Pokémon debilitado no desaparece: vuelve al Centro y se puede recuperar a mitad de precio, con su nivel. */
 export interface Fainted { kind: string; xp: number; level: number }
 export interface Building { x: number; y: number; type: BuildingType; owner: -1 | Team; cap: number }
+
+/** Objetivo de una misión de campaña. Capturar el gimnasio rival o dejarle sin Pokémon vale siempre, además de este. */
+export type Goal =
+  | { type: 'gym' } // lo de siempre, sin nada más
+  | { type: 'capture'; x: number; y: number } // capturar ese edificio (por la casilla de su puerta)
+  | { type: 'reach'; x: number; y: number } // llevar al Pokémon marcado como 'vip' a esa casilla
+  | { type: 'survive'; days: number } // llegar al amanecer del día `days + 1`
+  | { type: 'defeat' } // debilitar al Pokémon marcado como 'boss'
+  | { type: 'own'; count: number } // tener `count` edificios
+/** Reglas de una misión (el jugador es siempre el equipo 0). Una partida libre no las lleva. */
+export interface Rules {
+  mission: string
+  goal: Goal
+  vip?: boolean // hay un Pokémon 'vip': si cae, se pierde
+  limit?: number // se pierde si amanece el día `limit + 1` sin haber ganado
+  rivalOwn?: number // se pierde si el rival llega a tener tantos edificios
+  noRecruit?: boolean // nadie recluta: se juega con lo que hay
+  night?: boolean // siempre es de noche
+  weather?: Weather // el tiempo no cambia
+  fired?: number[] // sucesos del guion que ya han ocurrido (src/campaign.ts)
+}
 export interface Game {
   w: number
   h: number
@@ -35,6 +58,7 @@ export interface Game {
   wild: { x: number; y: number; kind: string; weak?: boolean }[] // salvajes escondidos en la hierba alta; debilitados se atrapan seguro
   items: { x: number; y: number; type: ItemType }[] // bayas y monedas por el mapa
   map: number
+  rules?: Rules
   terrainVersion: number // sube cuando cambia el terreno (bosque quemado, río congelado) para repintar el mapa
 }
 
@@ -44,14 +68,15 @@ export type Weather = 'clear' | 'rain' | 'sun'
 export const WEATHER_NAME: Record<Weather, string> = { clear: 'Despejado', rain: 'Lluvia', sun: 'Sol abrasador' }
 export const PHASES = ['Mañana', 'Mediodía', 'Atardecer', 'Noche']
 /** Momento del día: avanza una fase cada día de juego. De noche se ve una casilla menos. */
-export const phaseOf = (g: Game) => (g.day - 1) % 4
+export const phaseOf = (g: Game) => (g.rules?.night ? 3 : (g.day - 1) % 4)
 const sightPenalty = (g: Game) => (phaseOf(g) === 3 ? 1 : 0) + (g.weather === 'rain' ? 1 : 0)
 export interface Pos { x: number; y: number }
 
-export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog = true, map = 0): Game {
-  const def = MAPS[map], MAP = def.rows
+/** `map` es el número de un mapa de partida libre o, en campaña, el mapa de la misión (que ya trae lo suyo colocado: `bare`). */
+export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog = true, map: number | MapDef = 0, bare = false): Game {
+  const def = typeof map === 'number' ? MAPS[map] : map, MAP = def.rows
   const g: Game = {
-    w: MAP[0].length, h: MAP.length, tiles: [], units: [], buildings: [], items: [], map,
+    w: MAP[0].length, h: MAP.length, tiles: [], units: [], buildings: [], items: [], map: typeof map === 'number' ? map : -1,
     turn: 0, day: 1, funds: [0, 0], winner: null, nextId: 1,
     co, meter: [0, 0], power: [false, false], fog, weather: 'clear', fainted: [[], []], wild: [], terrainVersion: 0,
   }
@@ -63,6 +88,7 @@ export function createGame(co: [string, string] = ['pikachu', 'charizard'], fog 
     g.buildings.push(building)
   }
   for (const u of def.starts) addUnit(g, rosterOf(co[u.team])[ROLE_ORDER.indexOf(u.role)], u.team, u.x, u.y).moved = false
+  if (bare) return g
   // Salvajes: tres en la mitad izquierda y sus espejos en la derecha
   const grass: Pos[] = []
   for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w / 2; x++) if (g.tiles[y][x] === '"') grass.push({ x, y })
@@ -105,6 +131,15 @@ export function footprint(b: { type: BuildingType; x: number; y: number }): Pos[
 }
 export const dist = (a: Pos, b: Pos) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
 
+/** Pone un Pokémon nuevo en el campo: en esa casilla o, si está ocupada o no se puede pisar, en la libre más cercana. */
+export function spawn(g: Game, kind: string, team: Team, x: number, y: number): Unit {
+  for (let r = 0; r < 8; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const px = x + dx, py = y + dy
+    if (Math.abs(dx) + Math.abs(dy) !== r || px < 0 || py < 0 || px >= g.w || py >= g.h) continue
+    if (TERRAIN[g.tiles[py][px]].cost[KINDS[kind].move] < 9 && !unitAt(g, px, py)) return addUnit(g, kind, team, px, py)
+  }
+  return addUnit(g, kind, team, x, y)
+}
 function addUnit(g: Game, kind: string, team: Team, x: number, y: number): Unit {
   const u: Unit = { id: g.nextId++, kind, team, x, y, hp: 10, moved: true, xp: 0, level: KINDS[kind].cost ? 1 : 2, status: null, statusTurns: 0 }
   g.units.push(u)
@@ -242,7 +277,8 @@ export function damage(g: Game, att: Unit, def: Unit, attHp = att.hp, crit = fal
   const stars = d.move === 'fly' ? 0 : terrainAt(g, def.x, def.y).def
   const co = (coMod(g, att.team, 'atk') * levelBonus(att)) / (coMod(g, def.team, 'def') * levelBonus(def))
   const extra = (1 + 0.1 * flankers(g, att, def)) * weatherBonus(g, move) * (crit ? 1.5 : 1)
-  const raw = co * extra * (a.atk / d.def) * 5 * moveMult(att.kind, move, def.kind) * (attHp / 10) * (1 - 0.1 * stars)
+  const boss = (att.tag === 'boss' ? 1.2 : 1) * (def.tag === 'boss' ? 0.7 : 1) // el jefe de una misión pega más y aguanta más
+  const raw = boss * co * extra * (a.atk / d.def) * 5 * moveMult(att.kind, move, def.kind) * (attHp / 10) * (1 - 0.1 * stars)
   return Math.max(0, Math.min(def.hp, Math.round(raw)))
 }
 
@@ -327,6 +363,23 @@ function checkRout(g: Game) {
   for (const team of [0, 1] as Team[]) {
     if (!g.units.some((u) => u.team === team)) g.winner = (1 - team) as Team
   }
+  judge(g)
+}
+
+/** En campaña: ¿se ha cumplido el objetivo de la misión, o alguna de las formas de perderla? */
+export function judge(g: Game) {
+  const r = g.rules
+  if (!r || g.winner !== null) return
+  const owned = (team: Team) => g.buildings.filter((b) => b.owner === team).length
+  if (r.vip && !g.units.some((u) => u.tag === 'vip')) return void (g.winner = 1)
+  if (r.rivalOwn && owned(1) >= r.rivalOwn) return void (g.winner = 1)
+  const goal = r.goal
+  if (goal.type === 'capture' && buildingAt(g, goal.x, goal.y)?.owner === 0) g.winner = 0
+  else if (goal.type === 'reach' && g.units.some((u) => u.tag === 'vip' && u.x === goal.x && u.y === goal.y)) g.winner = 0
+  else if (goal.type === 'defeat' && !g.units.some((u) => u.tag === 'boss')) g.winner = 0
+  else if (goal.type === 'own' && owned(0) >= goal.count) g.winner = 0
+  else if (goal.type === 'survive' && g.day > goal.days) g.winner = 0
+  if (g.winner === null && r.limit && g.day > r.limit) g.winner = 1
 }
 
 export interface MoveEvent {
@@ -387,6 +440,7 @@ export function moveUnit(g: Game, u: Unit, x: number, y: number, outcome?: boole
       } else ev.wild = 'escaped'
     } else if (g.funds[u.team] < BALLS[0].cost && g.units.filter((o) => o.team === u.team).length < MAX_UNITS) ev.wild = 'broke'
   }
+  judge(g)
   return ev.caught || ev.wild || ev.item ? ev : null
 }
 
@@ -420,6 +474,7 @@ export function capture(g: Game, u: Unit): boolean {
   b.owner = u.team
   b.cap = CAPTURE_POINTS
   if (b.type === 'gym') g.winner = u.team
+  judge(g)
   return true
 }
 
@@ -431,7 +486,7 @@ export const isRecovery = (g: Game, kind: string) => !!benched(g, kind)
 
 /** Solo se reclutan los Pokémon del comandante propio, con dinero, la puerta libre y sin pasar del tope de unidades. */
 export function canRecruit(g: Game, b: Building, kind: string): boolean {
-  return b.type === 'center' && b.owner === g.turn && !unitAt(g, b.x, b.y) && g.funds[g.turn] >= recruitCost(g, kind) &&
+  return !g.rules?.noRecruit && b.type === 'center' && b.owner === g.turn && !unitAt(g, b.x, b.y) && g.funds[g.turn] >= recruitCost(g, kind) &&
     KINDS[kind].commander === g.co[g.turn] && KINDS[kind].cost > 0 && g.units.filter((u) => u.team === g.turn).length < MAX_UNITS
 }
 
@@ -479,7 +534,7 @@ export function endTurn(g: Game) {
   g.turn = (1 - g.turn) as Team
   g.power[g.turn] = false
   // El tiempo cambia cada tres días
-  if (g.turn === 0 && g.day % 3 === 0) g.weather = (['clear', 'rain', 'sun', 'clear'] as Weather[])[Math.floor(Math.random() * 4)]
+  if (g.turn === 0 && g.day % 3 === 0 && !g.rules?.weather) g.weather = (['clear', 'rain', 'sun', 'clear'] as Weather[])[Math.floor(Math.random() * 4)]
   if (g.turn === 0) g.day++
   if (g.turn === 0 && g.weather === 'sun') { // el sol derrite el hielo
     let melted = false
@@ -517,4 +572,5 @@ export function endTurn(g: Game) {
   for (const u of g.units) {
     if (u.team === g.turn && !KINDS[u.kind].heals && healers.some((h) => dist(h, u) === 1)) u.hp = Math.min(10, u.hp + 2)
   }
+  judge(g) // aguantar hasta un día, o quedarse sin tiempo
 }

@@ -27,8 +27,9 @@ with open(os.path.join(CACHE, "tracker.json")) as f:
 UNITS = {sp: DEX[_norm(sp)] for roster in ROSTERS.values() for line in roster.values() for sp in line[:2] if sp}
 with open(os.path.join(ROOT, "src", "finals.json")) as f:  # terceras fases
     UNITS.update({sp: DEX[_norm(sp)] for sp in json.load(f).values()})
-# Comandantes: solo retratos, con varias caras
+# Comandantes: retratos con varias caras, y también su sprite (pasean por el mapa del mundo de la campaña)
 COMMANDERS = {name: DEX[_norm(name)] for name in ROSTERS}
+UNITS.update(COMMANDERS)
 ANIMS = ["Idle", "Walk", "Attack", "Hurt", "Charge", "Shoot", "Swing", "Hop", "Rotate"]
 FACES = ["Normal", "Happy", "Pain", "Determined", "Angry"]
 

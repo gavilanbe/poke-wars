@@ -12,6 +12,18 @@ Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 - Solo 16 líneas tienen tercera fase (`src/finals.json`).
 - El modo escaparate del título sigue siendo los Pokémon paseando: falta una partida de IA contra IA de fondo.
 
+## Modo historia (5 de octubre)
+- «La Guerra de las Banderas»: ocho misiones en `src/campaign.ts` (mapa escrito como texto, piezas, objetivo, guion y
+  sucesos por día); la interfaz está en `src/story.ts` (mapa del mundo con la ficha del comandante, conversaciones,
+  informe previo, cartel de misión, resultado con nota) y las reglas de misión en `src/game.ts` (`Rules`, `judge`).
+- Objetivos: gimnasio, capturar un edificio, aguantar días, llevar al mensajero, derrotar al jefe, carrera por
+  edificios, sin refuerzos, noche perpetua con aliados que llegan. Los comandantes vencidos se unen y se pueden elegir.
+- Dificultad medida con `pnpm missions` (IA contra IA, el jugador gana): 96%, 77%, 70%, 79%, 46%, 75%, 33% y 25%.
+  La IA que lleva al jugador no persigue objetivos especiales, así que una persona lo tiene más fácil que esas cifras;
+  ninguna misión se ha jugado entera a mano.
+- Queda: escenas propias para el final, música por misión, más sucesos a mitad de batalla y una opción de reintentar
+  sin salir al mapa.
+
 ## Hecho en la segunda pasada del 4 de octubre
 - Título nuevo: «pulsa cualquier tecla», fondo desenfocado, comandantes enfrentados, botón principal, mapas con
   miniatura, opciones como interruptores y modo escaparate tras 30 s sin tocar nada.

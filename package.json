@@ -11,6 +11,7 @@
     "duel": "tsx tools/duel.ts",
     "matchups": "tsx tools/matchups.ts",
     "versus": "node tools/versus.mjs",
+    "missions": "tsx tools/missions.ts",
     "assets": ".venv/bin/python tools/extract.py"
   },
   "devDependencies": {
