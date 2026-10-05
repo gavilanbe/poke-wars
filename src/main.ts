@@ -1517,7 +1517,7 @@ function refreshInfo() {
       <div class="hpline"><div class="hpbar"><i style="width:${u.hp * 9.6}px;background-position:0 -${u.hp > 5 ? 0 : u.hp > 2 ? 8 : 16}px"></i></div>${u.hp}/10</div>
       ${xpLine(u)}
       <div class="line"><span>ATQ ${miniBar(k.atk, 2)}</span><span>DEF ${miniBar(k.def, 2)}</span><span>MOV ${moveRange(g, u)}</span></div>
-      <div class="reach ${k.heals ? 'aid' : isRanged(u) ? 'far' : 'melee'}"><b>${ROLES[k.role].name}</b>${k.heals ? `✚ Cura y duerme a ${k.range[0]}–${k.range[1]}` : isRanged(u) ? `◎ A distancia: ${k.range[0]}–${k.range[1]} casillas, sin moverse` : '⚔ Cuerpo a cuerpo: mueve y pega'}</div>`
+      <div class="reach ${k.heals ? 'aid' : isRanged(u) ? 'far' : 'melee'}"><b>${ROLES[k.role].name}</b>${k.heals ? `✚ Cura y duerme a ${k.range[0]}–${k.range[1]}` : isRanged(u) ? `◎ Dispara a ${k.range[0]}–${k.range[1]}, sin moverse` : '⚔ Mueve y pega'}</div>`
     infoEl.title = [`Ataques: ${k.moves.map((m) => ATTACK_NAME[m]).join(' y ')}`, MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.evolves ? `con la barra de experiencia llena puede evolucionar a ${KINDS[k.evolves].name}` : '',
       isRanged(u) ? 'no puede moverse y atacar en el mismo turno' : ''].filter(Boolean).join(' · ')
   } else if (b) {
@@ -2520,7 +2520,7 @@ function openRecruit(b: Building) {
   mode = 'recruit'
   sfx.select()
   const COLS = 6
-  const k = Math.max(1, Math.min(2, Math.floor(Math.min((innerWidth - 40) / 512, (innerHeight - 40) / 384) * 2) / 2))
+  const k = Math.max(1, Math.min(2, Math.floor(Math.min((innerWidth - 40) / 512, (innerHeight - 40) / 384) * 4) / 4)) // en pasos de cuarto: en un móvil cabe a 1,25
   recruitEl.innerHTML = `<div class="pc" style="transform:translate(-50%, -50%) scale(${k})">
       <div class="ttl"></div>
       <canvas class="spr" width="158" height="162"></canvas>
@@ -2574,7 +2574,7 @@ function openRecruit(b: Building) {
     q('.r2').innerHTML = `<span class="tys">${k2.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px" title="${TYPE_NAME[t]}"></i>`).join('')}</span><span>${k2.moves.map((m) => TYPE_NAME[m]).join(' + ')}</span>`
     q('.r3').innerHTML = `<span>ATQ ${miniBar(k2.atk, 2)}</span><span>DEF ${miniBar(k2.def, 2)}</span>`
     q('.r4').innerHTML = `<span>MOV ${k2.mv}</span><span>${k2.capture ? 'Captura' : k2.heals ? 'Cura' : k2.range[1] > 1 ? `Alcance ${k2.range.join('-')}` : k2.evolves ? `→ ${KINDS[k2.evolves].name}` : ''}</span>`
-    q('.hdr').textContent = free ? 'Atrapado: sale gratis por esta puerta' : ROLES[k2.role].help
+    q('.hdr').textContent = free ? 'De la caja: sale gratis' : ROLES[k2.role].help
     go.innerHTML = full ? 'EQUIPO COMPLETO' : free ? 'SACAR DE LA CAJA <b>GRATIS</b>' : can ? `${isRecovery(g, kind) ? 'RECUPERAR' : 'RECLUTAR'} <b>${cost(kind)}₽</b>` : `FALTAN ${cost(kind) - funds}₽`
     go.classList.toggle('bad', !can || full)
     restart(q('.spr'), 'swap')

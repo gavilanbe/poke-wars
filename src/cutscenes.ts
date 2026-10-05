@@ -1143,7 +1143,7 @@ export async function playEvolve(e: EvolveData) {
   const up = (label: string, a: number, c: number, unit = '') => `<div><span>${label}</span><b>${a}${unit}</b><i>▶</i><b class="new">${c}${unit}</b><em>${c > a ? '▲' : ''}</em></div>`
   const card = document.createElement('div')
   card.className = `evocard t${e.team}`
-  card.innerHTML = `<header><img src="${facePath(old.species)}" alt=""><i>▶</i><img src="${facePath(next.species, 'Happy')}" alt=""><div><small>${ROLES[next.role].name}</small><b>${next.name}</b></div></header>
+  card.innerHTML = `<header><img src="${facePath(old.species)}" alt=""><i>▶</i><img src="${facePath(next.species)}" alt=""><div><small>${ROLES[next.role].name}</small><b>${next.name}</b></div></header>
     ${up('Ataque', Math.round(old.atk * 100), Math.round(next.atk * 100))}${up('Defensa', Math.round(old.def * 100), Math.round(next.def * 100))}${up('Movimiento', old.mv, next.mv)}
     <p>✚ Recupera ${e.heal} PS y se le pasa cualquier estado</p>`
   root.append(card)

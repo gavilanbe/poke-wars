@@ -1019,7 +1019,7 @@ button { touch-action: manipulation; }
 #touchbar button:active { translate: 0 3px; box-shadow: 0 1px 0 #0c1018; background: #303848; }
 #touchbar:is([data-mode=idle], [data-mode=inspect], [data-mode=move]) [data-do=next],
 #touchbar[data-mode=idle] [data-do=danger],
-#touchbar:is([data-mode=inspect], [data-mode=move], [data-mode=target], [data-mode=recruit]) [data-do=back] { display: flex; }
+#touchbar:is([data-mode=inspect], [data-mode=move], [data-mode=target]) [data-do=back] { display: flex; }
 #touchbar [data-do=back] { border-color: #e8483c; }
 #touchbar [data-do=back] i { color: #ff8076; }
 #touchbar.danger [data-do=danger] { border-color: #ffd84a; background: #5c3408; }
@@ -1233,3 +1233,21 @@ button { touch-action: manipulation; }
 .touch .st-sky i { filter: none; opacity: 0.1; }
 .touch .logo2 .poke { filter: none; }
 .touch #map, .touch #mapfx, .touch #scene canvas { will-change: transform; }
+
+/* ---------- Móvil: que nada tape nada ---------- */
+/* Los comentarios de los comandantes bajaban sobre el panel de información: con el dedo van arriba, bajo las fichas */
+.touch #talk { bottom: auto; top: 172px; align-items: flex-start; max-width: 46%; }
+.touch #talk img { width: 60px; height: 60px; }
+.touch #talk .box { font-size: 20px; }
+/* El panel de información no deja que su letra se salga por el borde */
+#info .xpline span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#info .reach { overflow: hidden; }
+/* Combate: el rótulo del ataque, por debajo de las fichas (que crecen con la barra de experiencia y los estados) */
+.callout.near, .callout.far { top: 31%; }
+/* El cerco: la barra de abajo, más baja, para no comerse el dial ni a tu Pokémon */
+.touch .catchbar { bottom: 1.4vh; row-gap: 0.6vh; padding-block: 1vh; }
+.touch .catchbar p { font-size: 1.9vh; }
+.touch .catchbar .quit { position: absolute; right: 0; bottom: calc(100% + 1vh); grid-column: auto; padding: 1vh 2.6vh; font-size: 3vh; background: #10141cf0; }
+.touch .catchbar .balls button { padding-block: 0.4vh; }
+/* El sello de la credencial va sobre la foto, como en un carné, y no tapa los datos */
+.st-stamp { right: auto; top: auto; left: 1.2vh; bottom: 1.4vh; font-size: 5.6vh; }
