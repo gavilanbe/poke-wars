@@ -29,9 +29,11 @@ with open(os.path.join(ROOT, "src", "finals.json")) as f:  # terceras fases
     UNITS.update({sp: DEX[_norm(sp)] for sp in json.load(f).values()})
 # Comandantes: retratos con varias caras, y también su sprite (pasean por el mapa del mundo de la campaña)
 COMMANDERS = {name: DEX[_norm(name)] for name in ROSTERS}
+# Personajes de la historia que no mandan equipo: el Gran Maestro y su ayudante
+COMMANDERS.update({name: DEX[_norm(name)] for name in ["slowking", "chatot"]})
 UNITS.update(COMMANDERS)
 ANIMS = ["Idle", "Walk", "Attack", "Hurt", "Charge", "Shoot", "Swing", "Hop", "Rotate"]
-FACES = ["Normal", "Happy", "Pain", "Determined", "Angry"]
+FACES = ["Normal", "Happy", "Pain", "Determined", "Angry", "Worried", "Surprised", "Sad"]
 
 
 def fetch(rel):

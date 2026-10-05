@@ -6,7 +6,12 @@ import { Game, Rules, Team, createGame, spawn } from './game'
 import type { ItemType } from './game'
 
 /** Una frase del guion: quién la dice ('' es el narrador), qué dice y con qué cara. */
-export type Line = [who: string, text: string, face?: 'Normal' | 'Happy' | 'Pain' | 'Determined' | 'Angry']
+export type Line = [who: string, text: string, face?: 'Normal' | 'Happy' | 'Pain' | 'Determined' | 'Angry' | 'Worried' | 'Surprised' | 'Sad']
+/** Quienes hablan sin mandar un equipo: el Gran Maestro de la Liga, que te recluta, y Chatot, su ayudante, que explica cada misión y pone la nota. */
+export const CAST: Record<string, { name: string; color: string }> = {
+  slowking: { name: 'Gran Maestro', color: '#f0a8c0' },
+  chatot: { name: 'Chatot', color: '#5fb8e8' },
+}
 /** Un Pokémon colocado al empezar: por el rol del equipo de su comandante (o del de `of`, si lo presta un aliado). */
 export interface Piece { team: Team; role: RoleId; x: number; y: number; hp?: number; stage?: 1 | 2 | 3; tag?: 'vip' | 'boss'; of?: string }
 /** Algo que pasa al amanecer de un día: llegan refuerzos, alguien habla. */
@@ -121,6 +126,29 @@ export function defeatReason(g: Game): string {
 /** Nota de una victoria: por los días que ha llevado frente a los previstos. */
 export const rank = (m: Mission, days: number) => (days <= m.par ? 'S' : days <= m.par + 2 ? 'A' : days <= m.par + 5 ? 'B' : 'C')
 
+// ---------- El prólogo ----------
+// La primera vez que se entra en la historia: de dónde viene la Tregua y cómo el Gran Maestro te hace comandante.
+export const PROLOGUE: Line[] = [
+  ['', 'Hace mucho, ocho comandantes cansados de pelear clavaron ocho banderas en ocho gimnasios y juraron no volver a enfrentarse. Lo llamaron la Tregua.'],
+  ['', 'Quien guarda una bandera manda un gimnasio. Quien las reuniera todas mandaría en todo. Por eso nadie debe reunirlas… y para eso existe la Liga.'],
+  ['', 'Villa Central lleva un año sin comandante. Su bandera sigue en el mástil, pero nadie la guarda. Hasta esta mañana.'],
+  ['chatot', '¡Paso, paso! ¡Abran paso al Gran Maestro de la Liga! ¡Y que alguien me diga quién manda en este pueblo!', 'Angry'],
+  ['pikachu', '¿Pika? Mandar, nadie. Yo solo organizo a los vecinos cuando hay lío…', 'Worried'],
+  ['slowking', 'Lo sé. Llevo un año viéndote hacerlo sin que nadie te lo pida. Eso no se enseña. Lo demás, sí.', 'Normal'],
+  ['slowking', 'Pikachu de Villa Central: la Liga necesita a alguien que guarde esta bandera. Te recluto. Desde hoy eres comandante.', 'Determined'],
+  ['pikachu', '¿¡Yo!? ¡Pika pi! …¿Y qué hace exactamente un comandante?', 'Surprised'],
+  ['chatot', '¡Firmar aquí, aquí y aquí! Y hacerme caso a mí, que soy quien explica las misiones y quien pone la nota. ¡Soy MUY exigente!', 'Happy'],
+  ['slowking', 'Mandar es cuidar de los tuyos, pequeño. Empezaremos con maniobras sencillas… si la región nos deja.', 'Happy'],
+  ['', 'No les dejó. Esa misma noche, a un día de camino, la bandera de Charizard desapareció de su mástil.'],
+]
+/** Lo que dice Chatot al poner la nota. */
+export const VERDICT: Record<string, Line> = {
+  S: ['chatot', '¡Impecable! Ni yo lo habría hecho mejor. Bueno, yo sí, pero poco.', 'Happy'],
+  A: ['chatot', '¡Muy bien, recluta! Casi de manual.', 'Happy'],
+  B: ['chatot', 'Bien… pero has tardado. Apunta: capturar antes y reclutar antes.', 'Normal'],
+  C: ['chatot', 'Por los pelos. La bandera sigue en su sitio, que es lo que cuenta. Repítela si quieres subir nota.', 'Worried'],
+}
+
 // ---------- El mapa del mundo ----------
 // La región entera, de Villa Central (abajo a la izquierda) a la Torre de la Noche (arriba a la derecha). Cada
 // edificio es una misión; el camino las une en orden.
@@ -173,19 +201,23 @@ export const MISSIONS: Mission[] = [
       { team: 1, role: 'capturador', x: 19, y: 4 }, { team: 1, role: 'luchador', x: 17, y: 5 },
     ],
     intro: [
-      ['', 'Cada gimnasio de la región guarda una Bandera de la Liga. Mientras las ocho ondean, hay tregua.'],
-      ['', 'Esta mañana, la de Charizard ha amanecido arrancada. En el mástil, enganchado, un mechón de pelo amarillo.'],
+      ['chatot', '¡Alerta, recluta! ¡Charizard viene hacia aquí echando humo! Dice que han encontrado pelo amarillo en su mástil.', 'Surprised'],
       ['charizard', '¡PIKACHU! ¡Devuélveme mi bandera o reduzco tu villa a cenizas!', 'Angry'],
-      ['pikachu', '¿¡Pika!? ¡Yo no he tocado nada! Anoche estaba durmiendo…', 'Pain'],
+      ['pikachu', '¿¡Pika!? ¡Yo no he tocado nada! ¡Si me nombraron ayer!', 'Worried'],
       ['charizard', '¡Excusas! ¡Las pruebas no mienten! ¡A POR ELLOS!', 'Angry'],
-      ['pikachu', 'No me va a escuchar hasta que se le pase el calentón. ¡Equipo, a defender Villa Central!', 'Determined'],
+      ['slowking', 'No te escuchará hasta que se le pase el calentón. Tu primera misión no es ganar una discusión: es que tu villa siga en pie.', 'Normal'],
+      ['chatot', '¡Lo básico! Los Capturadores toman edificios, los edificios dan dinero y el dinero trae refuerzos. ¡Y no me hagas quedar mal!', 'Determined'],
     ],
     outro: [
       ['charizard', 'Grrr… ¡Esto no se acaba aquí! ¡Me repliego al vado!', 'Pain'],
-      ['pikachu', '¡Espera! ¡Mira el mechón: está teñido! …Ya se ha ido.', 'Normal'],
-      ['pikachu', 'Si le quito su Centro Pokémon no podrá reponer tropas. Entonces tendrá que escucharme.', 'Determined'],
+      ['pikachu', '¡Espera! ¡Mira el mechón: está teñido! …Ya se ha ido.', 'Worried'],
+      ['slowking', 'Bien defendido, comandante. Fíjate en lo que has hecho: no le has devuelto el golpe por rabia. Guárdate eso.', 'Happy'],
+      ['chatot', 'Si le quitamos su Centro Pokémon no podrá reponer tropas, y un Charizard sin tropas… escucha. ¡Al río!', 'Determined'],
     ],
-    lost: [['charizard', '¡JA! Y ahora, mi bandera. Registrad cada casa.', 'Happy']],
+    lost: [
+      ['charizard', '¡JA! Y ahora, mi bandera. Registrad cada casa.', 'Happy'],
+      ['chatot', '¡Ay, mi expediente! Otra vez, recluta, y esta vez no pierdas de vista tu gimnasio.', 'Pain'],
+    ],
   },
   {
     id: 'vado', title: 'El vado de las brasas', place: 'Río Brasas', foe: 'charizard', hero: 'pikachu', joins: 'charizard',
@@ -218,17 +250,23 @@ export const MISSIONS: Mission[] = [
     intro: [
       ['', 'Charizard se ha hecho fuerte al otro lado del Río Brasas. Dos vados de piedra son el único paso.'],
       ['charizard', '¡Aquí no cruza ni una chispa! ¡Y cuando acabe contigo, registro tu gimnasio!', 'Angry'],
-      ['pikachu', 'Un Tirador pega desde lejos, pero no puede moverse y atacar a la vez. Lo dejaré cubriendo el vado.', 'Normal'],
+      ['chatot', 'Lección de hoy: el Tirador pega desde lejos, pero no puede moverse y atacar a la vez. Déjalo cubriendo un vado.', 'Normal'],
       ['pikachu', 'El objetivo es su Centro Pokémon. ¡Capturadores, conmigo!', 'Determined'],
     ],
     outro: [
       ['charizard', '…Sin refuerzos. Me has ganado de frente, dos veces.', 'Pain'],
       ['pikachu', '¡Porque no soy un ladrón! Mira el mechón: es pelusa teñida. Y huele a… ¿sal?', 'Normal'],
-      ['charizard', 'Grr. El ladrón vino de noche y por el agua. Y yo, quemando al vecino equivocado.', 'Normal'],
-      ['charizard', 'Agua y sal… Eso es la costa de Blastoise. ¡Voy contigo, y que nadie me diga que no!', 'Determined'],
+      ['charizard', 'Grr. El ladrón vino de noche y por el agua. Y yo, quemando al vecino equivocado.', 'Sad'],
+      ['slowking', 'Dos banderas en peligro en dos días no es una riña de vecinos. Alguien las está reuniendo. Y eso no debe pasar jamás.', 'Worried'],
+      ['slowking', 'Pikachu: no puedo encargárselo a los veteranos, porque ya no se fían unos de otros. Tendrás que ser tú. Y tendrás que reclutarlos, como yo a ti.', 'Determined'],
+      ['pikachu', 'Charizard… ¿te vienes? Agua y sal: eso es la costa de Blastoise.', 'Normal'],
+      ['charizard', '¡Voy, y que nadie me diga que no! …¿Así se recluta? Qué fácil.', 'Determined'],
       ['', 'CHARIZARD se une a ti. Desde ahora puedes elegirlo como comandante.'],
     ],
-    lost: [['charizard', '¡Nadie cruza mi río! Vuelve cuando tengas la bandera.', 'Happy']],
+    lost: [
+      ['charizard', '¡Nadie cruza mi río! Vuelve cuando tengas la bandera.', 'Happy'],
+      ['chatot', 'Los vados son un embudo, recluta: cúbrelos antes de cruzar.', 'Worried'],
+    ],
   },
   {
     id: 'muralla', title: 'La muralla', place: 'Costa de Blastoise', foe: 'blastoise', joins: 'blastoise',
@@ -259,7 +297,7 @@ export const MISSIONS: Mission[] = [
       { team: 1, role: 'volador', x: 20, y: 5 }, { team: 1, role: 'capturador', x: 17, y: 9 },
     ],
     events: [
-      { day: 4, lines: [['blastoise', 'Cuatro días y seguís en pie. Muy bien… ¡Segunda oleada, al agua!', 'Determined']],
+      { day: 4, lines: [['blastoise', 'Cuatro días y seguís en pie. Muy bien… ¡Segunda oleada, al agua!', 'Determined'], ['chatot', '¡Vienen por mar y por aire! Tiradores a los pasos estrechos y el Apoyo curando detrás.', 'Surprised']],
         spawn: [{ team: 1, role: 'nadador', x: 20, y: 6 }, { team: 1, role: 'bombardero', x: 20, y: 9 }] },
       { day: 6, lines: [['pikachu', '¡Ya casi! ¡Dos amaneceres más y se cansará de empujar!', 'Determined']] },
     ],
@@ -267,17 +305,22 @@ export const MISSIONS: Mission[] = [
       ['', 'La pista de la sal lleva a la costa. Pero alguien ha llegado antes con un rumor.'],
       ['blastoise', 'Me han avisado: un ratón amarillo y un lagarto vienen a por mi bandera. Pues aquí está mi muralla.', 'Determined'],
       ['charizard', '¿¡Lagarto!? ¡Te voy a…!', 'Angry'],
-      ['pikachu', '¡Quieto! Blastoise no ataca a lo loco: avanza, aprieta y no suelta. No podemos ganarle hoy.', 'Normal'],
-      ['pikachu', 'Pero un saqueador huye cuando la cosa se pone fea. Si aguantamos siete días sin movernos, verá que no lo somos.', 'Determined'],
+      ['chatot', '¡Ni se te ocurra! Blastoise avanza, aprieta y no suelta. Hoy no se le gana. Hoy se aguanta.', 'Worried'],
+      ['slowking', 'Un saqueador huye cuando la cosa se pone fea. Quedaos siete días sin dar un paso atrás y verá lo que sois.', 'Normal'],
     ],
     outro: [
       ['blastoise', 'Siete días. Ni un paso atrás… y ni un intento de colaros en mi gimnasio.', 'Normal'],
       ['blastoise', 'Los ladrones no aguantan asedios. Me han mentido. Y mientras os empujaba… mi bandera ha volado.', 'Pain'],
-      ['pikachu', '¡Entonces el ladrón nos usa para distraeros! ¿Dejó algo?', 'Normal'],
-      ['blastoise', 'Hojas. Hojas húmedas de un bosque muy viejo. Mi muralla camina con vosotros.', 'Determined'],
+      ['pikachu', '¡Entonces el ladrón nos usa para distraeros! ¿Dejó algo?', 'Surprised'],
+      ['blastoise', 'Hojas. Hojas húmedas de un bosque muy viejo.', 'Normal'],
+      ['pikachu', 'Blastoise… en la Liga me han enseñado que esto se pregunta. ¿Te unes a nosotros?', 'Determined'],
+      ['blastoise', 'Hm. Nadie me lo había preguntado: siempre daban por hecho que yo me quedaba en mi sitio. Mi muralla camina con vosotros.', 'Happy'],
       ['', 'BLASTOISE se une a ti.'],
     ],
-    lost: [['blastoise', 'La muralla siempre llega. Devolved lo que no es vuestro.', 'Normal']],
+    lost: [
+      ['blastoise', 'La muralla siempre llega. Devolved lo que no es vuestro.', 'Normal'],
+      ['chatot', 'No salgas a buscarlo, recluta: deja que venga y pégale cuando llegue cansado.', 'Worried'],
+    ],
   },
   {
     id: 'bosque', title: 'Niebla en el Bosque Viejo', place: 'Bosque Viejo', foe: 'venusaur', joins: 'venusaur',
@@ -310,19 +353,23 @@ export const MISSIONS: Mission[] = [
     wild: [{ x: 9, y: 9, kind: '' }, { x: 18, y: 5, kind: '' }],
     intro: [
       ['', 'El Bosque Viejo lleva días cerrado. Venusaur no deja pasar a nadie desde que desapareció su bandera.'],
-      ['blastoise', 'Con la Liga rota nadie se fía de nadie. Hace falta algo oficial: una carta con los tres sellos.', 'Normal'],
-      ['pikachu', 'La llevará mi Explorador, que es el más rápido. Pero es frágil: hay que abrirle camino.', 'Normal'],
+      ['slowking', 'Con la Tregua rota nadie se fía de nadie. Hace falta algo que no se pueda falsificar: una carta de la Liga, con mi sello y los vuestros.', 'Normal'],
+      ['chatot', 'La llevará un Explorador, que es el más rápido. ¡Pero es de papel de fumar! Si cae, adiós carta. ¡Ábrele camino y que vaya SIEMPRE detrás!', 'Worried'],
       ['venusaur', '…Oigo pasos en mi jardín. Sin prisa, hijos. Que el bosque se ocupe.', 'Normal'],
-      ['pikachu', 'Niebla y árboles: no veremos a nadie hasta tenerlo encima. ¡Con cuidado, y el mensajero siempre detrás!', 'Determined'],
+      ['pikachu', 'Niebla y árboles: no veremos a nadie hasta tenerlo encima. ¡Con cuidado!', 'Determined'],
     ],
     outro: [
-      ['venusaur', 'Tres sellos… y la letra torpe de Charizard. Esto no lo falsifica nadie.', 'Happy'],
+      ['venusaur', 'El sello del Maestro… y la letra torpe de Charizard. Esto no lo falsifica nadie.', 'Happy'],
       ['venusaur', 'También se llevaron la mía, una noche sin luna. Las raíces me dijeron algo raro: había arena. Arena de cantera.', 'Normal'],
       ['charizard', '¡Tyranitar! ¡Lo sabía! Bueno, no lo sabía, pero ahora sí.', 'Determined'],
-      ['venusaur', 'Sin prisa, dragón. Voy con vosotros: mi jardín también camina.', 'Normal'],
+      ['pikachu', 'Venusaur, ¿vienes con nosotros?', 'Normal'],
+      ['venusaur', 'Sin prisa, pequeño… pero sí. Mi jardín también camina.', 'Happy'],
       ['', 'VENUSAUR se une a ti.'],
     ],
-    lost: [['venusaur', 'Todo lo que entra en mi bosque acaba siendo abono. Volved con mejores modales.', 'Normal']],
+    lost: [
+      ['venusaur', 'Todo lo que entra en mi bosque acaba siendo abono. Volved con mejores modales.', 'Normal'],
+      ['chatot', '¡El mensajero detrás, siempre detrás! Y un Volador por delante para ver qué hay en la niebla.', 'Pain'],
+    ],
   },
   {
     id: 'cantera', title: 'El coloso de la cantera', place: 'Cantera de Tyranitar', foe: 'tyranitar', joins: 'tyranitar',
@@ -355,19 +402,24 @@ export const MISSIONS: Mission[] = [
     intro: [
       ['', 'En la cantera no hay ladrón que valga: hay un problema más grande. Mucho más grande.'],
       ['tyranitar', '¡Atrás! Mi Coloso lleva tres noches sin obedecer. Arrasa lo que ve. Hasta a los míos.', 'Pain'],
-      ['venusaur', 'Tiene la mirada turbia. Eso no es rabia: alguien le ha nublado la cabeza.', 'Normal'],
-      ['tyranitar', 'Mis tropas están hechizadas con él y os atacarán. No tengo cómo pararlo… Paradlo vosotros.', 'Normal'],
-      ['pikachu', 'Con este sol el Fuego pega más. Y antes de catorce días, o no quedará cantera. ¡A por el grande!', 'Determined'],
+      ['venusaur', 'Tiene la mirada turbia. Eso no es rabia: alguien le ha nublado la cabeza.', 'Worried'],
+      ['tyranitar', 'Mis tropas están hechizadas con él y os atacarán. No tengo cómo pararlo… Paradlo vosotros.', 'Sad'],
+      ['chatot', '¡Un jefe! Pega más y aguanta más que nadie. Rodéalo, usa los tipos y no dejes de reclutar. ¡Y con este sol el Fuego pega más!', 'Determined'],
+      ['pikachu', 'Antes de catorce días, o no quedará cantera. ¡A por el grande!', 'Determined'],
     ],
     outro: [
       ['tyranitar', 'Ha caído… y ha despertado. Dice que una voz le susurraba desde lo oscuro.', 'Normal'],
       ['tyranitar', 'Mi bandera tampoco está. La arena del bosque era mía, sí: se la llevó quien robó aquí primero.', 'Pain'],
-      ['blastoise', 'Susurros que nublan la mente. Eso lo sabe hacer alguien que yo me sé.', 'Normal'],
-      ['charizard', '¡Gardevoir! ¡La de los poderes raros! ¡Esta vez sí que sí!', 'Angry'],
+      ['slowking', 'Susurros que nublan la mente… Conozco esa manera de jugar. Pero no puede ser. Hace años que no sé de él.', 'Worried'],
+      ['charizard', '¡Susurros! ¡Poderes raros! ¡Es Gardevoir, seguro! ¡Vamos!', 'Angry'],
+      ['pikachu', 'Maestro, ¿de quién hablaba? …Se ha quedado callado. Tyranitar, ¿te apuntas?', 'Worried'],
       ['tyranitar', 'La montaña anda con vosotros. Y pisa fuerte.', 'Determined'],
       ['', 'TYRANITAR se une a ti.'],
     ],
-    lost: [['tyranitar', 'Demasiado tarde. La cantera… Sacad a los vuestros de aquí.', 'Pain']],
+    lost: [
+      ['tyranitar', 'Demasiado tarde. La cantera… Sacad a los vuestros de aquí.', 'Pain'],
+      ['chatot', '¡Todos a por él a la vez, recluta! Uno a uno os los merienda.', 'Angry'],
+    ],
   },
   {
     id: 'espejismo', title: 'El espejismo', place: 'Valle del Espejo', foe: 'gardevoir', joins: 'gardevoir',
@@ -398,19 +450,23 @@ export const MISSIONS: Mission[] = [
     intro: [
       ['', 'El Valle del Espejo está lleno de casas vacías. Gardevoir las está ocupando una a una, a toda prisa.'],
       ['charizard', '¡Ajá! ¡Se queda con todo! ¡La pillamos con las manos en la masa!', 'Angry'],
-      ['gardevoir', 'No tengo tiempo de explicaros. Algo viene a por este valle y debo tenerlo antes que él.', 'Normal'],
-      ['gardevoir', 'Ya sé cómo acaba esto: vosotros no os fiáis, y yo no puedo parar. Lo siento.', 'Pain'],
-      ['pikachu', '¡Pues corremos más que ella! ¡Ocho edificios, y que nadie se pare a pelear si puede capturar!', 'Determined'],
+      ['gardevoir', 'No tengo tiempo de explicaros. Algo viene a por este valle y debo tenerlo antes que él.', 'Worried'],
+      ['gardevoir', 'Ya sé cómo acaba esto: vosotros no os fiáis, y yo no puedo parar. Lo siento.', 'Sad'],
+      ['chatot', '¡Es una carrera! Capturadores y Asaltantes a por casas, y los demás a estorbar a los suyos. ¡Ocho edificios antes que ella!', 'Determined'],
     ],
     outro: [
-      ['gardevoir', 'Me habéis ganado la carrera… y aun así no notáis nada raro en vuestra cabeza. No sois de los suyos.', 'Normal'],
-      ['pikachu', '¿De los suyos? ¿De quién?', 'Normal'],
+      ['gardevoir', 'Me habéis ganado la carrera… y no noto nada raro en vuestra cabeza. No sois de los suyos.', 'Normal'],
+      ['pikachu', '¿De los suyos? ¿De quién?', 'Surprised'],
       ['gardevoir', 'No soy yo quien nubla mentes. Yo lo sentí: una risa en lo oscuro, detrás de cada bandera robada. «Keke…»', 'Pain'],
-      ['blastoise', 'Esa risa. Gengar.', 'Determined'],
+      ['slowking', '…Gengar. Entonces sí es él.', 'Sad'],
+      ['slowking', 'Hace años vino a pedirme un gimnasio. Le dije que no: hacía trampas. Nunca le pregunté por qué las hacía. A él no lo recluté… y ahora quiere las ocho banderas para que ya no haga falta que nadie lo haga.', 'Sad'],
       ['gardevoir', 'Su torre está tras el Paso del Aura, donde siempre es de noche. Voy un paso por delante… y esta vez, con vosotros.', 'Happy'],
       ['', 'GARDEVOIR se une a ti.'],
     ],
-    lost: [['gardevoir', 'El valle es mío. Ojalá hubierais confiado; yo tampoco supe hacerlo.', 'Pain']],
+    lost: [
+      ['gardevoir', 'El valle es mío. Ojalá hubierais confiado; yo tampoco supe hacerlo.', 'Sad'],
+      ['chatot', '¡Menos pelear y más capturar! En una carrera, cada turno parado es una casa suya.', 'Worried'],
+    ],
   },
   {
     id: 'aura', title: 'La prueba del aura', place: 'Paso del Aura', foe: 'lucario', joins: 'lucario',
@@ -442,18 +498,23 @@ export const MISSIONS: Mission[] = [
     items: [{ x: 10, y: 2, type: 'berry' }, { x: 11, y: 11, type: 'berry' }],
     intro: [
       ['', 'El único camino a la torre de Gengar cruza el Paso del Aura. Y en el paso espera Lucario, de brazos cruzados.'],
-      ['lucario', 'Siento seis auras. Cinco dudan. Quien dude, no cruza: más allá, la duda es el arma del enemigo.', 'Determined'],
+      ['lucario', 'Siento muchas auras. Casi todas dudan. Quien dude, no cruza: más allá, la duda es el arma del enemigo.', 'Determined'],
       ['pikachu', '¡No tenemos tiempo para pruebas! ¡Gengar tiene siete banderas!', 'Angry'],
       ['lucario', 'Tiene la mía también, y no fui tras él: me quedé a guardar el paso. Así que, sí: tenéis tiempo.', 'Normal'],
-      ['lucario', 'Ocho contra ocho. Sin Centros, sin dinero, sin refuerzos. Lo que traes es lo que eres.', 'Determined'],
+      ['chatot', '¡Ocho contra ocho, sin Centros, sin dinero y sin refuerzos! Recluta, aquí cada Pokémon que pierdas no vuelve. ¡Piensa cada golpe!', 'Worried'],
     ],
     outro: [
       ['lucario', 'Respira. Ya está. Ni un paso en falso cuando no había red.', 'Normal'],
-      ['lucario', 'Ahora sé que no os romperéis ahí dentro. Y que yo tampoco, si voy con vosotros.', 'Happy'],
-      ['gardevoir', 'Siete comandantes. Solo falta uno… y nos está esperando.', 'Determined'],
+      ['lucario', 'Ahora sé que no os romperéis ahí dentro. Pídemelo.', 'Happy'],
+      ['pikachu', '¡Lucario, únete a nosotros!', 'Happy'],
+      ['lucario', 'Con honor.', 'Determined'],
+      ['slowking', 'Siete comandantes que hace un mes no se hablaban. Lo has hecho tú, Pikachu, no yo. Falta uno… y ese es mi deuda.', 'Normal'],
       ['', 'LUCARIO se une a ti.'],
     ],
-    lost: [['lucario', 'La duda pesa. Vuelve cuando no te tiemble el pulso.', 'Normal']],
+    lost: [
+      ['lucario', 'La duda pesa. Vuelve cuando no te tiemble el pulso.', 'Normal'],
+      ['chatot', 'Sin refuerzos manda el orden: los frágiles detrás, el Coloso delante y el Apoyo pegado a él.', 'Normal'],
+    ],
   },
   {
     id: 'noche', title: 'La noche más larga', place: 'Torre de la Noche', foe: 'gengar', joins: 'gengar',
@@ -498,19 +559,27 @@ export const MISSIONS: Mission[] = [
       ['', 'Más allá del paso no amanece. En lo alto de la torre ondean siete banderas que no son suyas.'],
       ['gengar', 'Keke… ¡Por fin! Empezaba a aburrirme. ¿Os ha gustado mi jueguecito?', 'Happy'],
       ['pikachu', '¡Nos has enfrentado a todos! ¿¡Para qué quieres las banderas!?', 'Angry'],
-      ['gengar', 'Con ocho banderas hay tregua. Con ninguna, cada uno desconfía del vecino. Y en un mundo que desconfía… mando yo, que soy el que mejor hace trampas.', 'Determined'],
-      ['gengar', 'Solo me falta la tuya, ratoncito. Y has tenido el detalle de traérmela a casa.', 'Happy'],
-      ['pikachu', 'No he venido solo. Los demás vienen por el camino… ¡y tú no sabes lo que es pelear juntos! ¡A por la torre!', 'Determined'],
+      ['gengar', 'Con ocho banderas hay Tregua y hay Liga, y la Liga decide quién vale y quién no. Con ninguna… nadie decide nada. Y en un mundo así mando yo, que soy el que mejor hace trampas.', 'Determined'],
+      ['slowking', 'Gengar. Aquel día te dije que no. Debí preguntarte por qué.', 'Sad'],
+      ['gengar', 'Uy, el Maestro. Llegas años tarde. Solo me falta la bandera del ratoncito… y ha tenido el detalle de traérmela a casa.', 'Happy'],
+      ['chatot', '¡Recluta! Aquí siempre es de noche y hay niebla: se ve menos. Él empieza con ventaja, pero los tuyos vienen de camino. ¡Aguanta hasta que lleguen y a por la torre!', 'Determined'],
     ],
     outro: [
       ['gengar', 'Keke… ke. Vale. Vale. Era broma. ¿No? ¿Nadie se ríe?', 'Pain'],
       ['lucario', 'Las banderas, Gengar.', 'Determined'],
-      ['gengar', 'Toda vuestras. Total, lo divertido era veros pelear… y reconozco que juntos peleáis mejor. Qué fastidio.', 'Normal'],
-      ['', 'Las ocho banderas vuelven a sus mástiles. Charizard jura que nunca dudó de Pikachu. Nadie le cree.'],
-      ['pikachu', '¡Pika! Ocho banderas, ocho gimnasios… y ahora, ocho amigos. Bueno, siete y medio.', 'Happy'],
-      ['gengar', '¡Oye! …Keke. Me vale.', 'Happy'],
+      ['gengar', 'Todas vuestras. Total, lo divertido era veros pelear… y reconozco que juntos peleáis mejor. Qué fastidio.', 'Sad'],
+      ['slowking', 'Gengar. La solicitud que me hiciste… ¿sigue en pie?', 'Normal'],
+      ['gengar', '¿…Qué? ¿Después de esto? ¿Con trampas y todo?', 'Surprised'],
+      ['slowking', 'Con las justas. Un gimnasio para ti, y siete vecinos que ya saben cómo juegas. Te recluto, si quieres.', 'Happy'],
+      ['gengar', '…Keke. Me vale.', 'Happy'],
+      ['', 'Las ocho banderas vuelven a sus mástiles, y en la torre donde nunca amanecía alguien ha colgado un farolillo.'],
+      ['chatot', 'Comandante Pikachu: expediente impecable. Bueno, casi. Te pongo un notable alto, que no se diga.', 'Happy'],
+      ['pikachu', '¡Pika! Ocho banderas, ocho gimnasios… y ocho amigos. ¡Y era mi primer mes de trabajo!', 'Happy'],
       ['', 'FIN. Has completado la campaña. GENGAR ya puede ser tu comandante… si te fías.'],
     ],
-    lost: [['gengar', 'Keke… ocho de ocho. Buenas noches a todos.', 'Happy']],
+    lost: [
+      ['gengar', 'Keke… ocho de ocho. Buenas noches a todos.', 'Happy'],
+      ['chatot', '¡No te lances solo, recluta! Resiste cerca de casa hasta que lleguen los demás.', 'Worried'],
+    ],
   },
 ]

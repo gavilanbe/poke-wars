@@ -784,30 +784,104 @@ main { display: block; }
 .st-banner b span { display: inline-block; text-shadow: 0.6vh 0.6vh 0 #c8281c; animation: letter-slam 0.26s calc(0.2s + var(--i) * 0.03s) backwards; }
 .st-banner p { margin: 0.8vh 0 0; font-size: 3.4vh; color: #dfe6f4; animation: fade-in 0.4s 0.9s backwards; }
 
-/* --- Conversación --- */
-.st-talk { position: absolute; left: 0; right: 0; bottom: 0; height: 46vh; background: linear-gradient(transparent, #0c1018e0 45%); cursor: pointer; }
-.st-talk[hidden] { display: none; }
-.st-talk.in { animation: fade-in 0.2s; }
-.st-face { position: absolute; bottom: 3vh; left: 4vw; width: 34vh; height: 34vh; }
-.st-talk.right .st-face { left: auto; right: 4vw; transform: scaleX(-1); }
-.st-face img { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; background: var(--c); clip-path: polygon(12% 0, 100% 0, 88% 100%, 0 100%); animation: face-pop 0.25s cubic-bezier(0.2, 1.6, 0.4, 1); }
-.st-face:not(:empty)::before { content: ''; position: absolute; inset: -1.2vh -1.8vh; background: #fff; clip-path: polygon(12% 0, 100% 0, 88% 100%, 0 100%); }
-@keyframes face-pop { from { transform: translateY(4vh) scale(0.9); } }
-.st-box { position: absolute; left: calc(4vw + 39vh); right: 5vw; bottom: 6vh; min-height: 17vh; padding: 3vh 3vh 2.4vh; background: #10141cf6; border: 0.5vh solid #fff; border-top: 1.2vh solid var(--c); box-shadow: 0 0 0 0.5vh #10141c, 0 1.2vh 0 0.5vh #0c101880; }
-.st-talk.right .st-box { left: 5vw; right: calc(4vw + 39vh); }
-.st-talk.narr .st-box { left: 14vw; right: 14vw; text-align: center; border-top-color: #ffd84a; }
+/* --- Conversación: una escena de cine --- */
+/* Mientras alguien habla, el mapa de detrás se desenfoca y se apaga */
+#stage:has(#story.talking) #map, #stage:has(#story.talking) #mapfx { filter: blur(2px) brightness(0.55) saturate(0.8); transition: filter 0.4s; }
+#stage:has(#story.talking) #hud { opacity: 0.25; transition: opacity 0.3s; }
+.st-talk { position: absolute; inset: 0; cursor: pointer; }
+.st-talk[hidden], .st-chapter[hidden], .st-license[hidden] { display: none; }
+.st-bar { position: absolute; left: 0; right: 0; height: 9vh; background: #07090e; }
+.st-bar.top { top: 0; box-shadow: 0 0.5vh 0 var(--c); }
+.st-bar.bot { bottom: 0; box-shadow: 0 -0.5vh 0 var(--c); }
+.st-talk.in .st-bar.top { animation: bar-top 0.35s cubic-bezier(0.2, 1, 0.4, 1); }
+.st-talk.in .st-bar.bot { animation: bar-bot 0.35s cubic-bezier(0.2, 1, 0.4, 1); }
+@keyframes bar-top { from { transform: translateY(-100%); } }
+@keyframes bar-bot { from { transform: translateY(100%); } }
+/* Los dos personajes: el que habla, grande e iluminado; el otro, atrás y apagado */
+.st-actor { position: absolute; bottom: 20vh; width: 44vh; transition: transform 0.25s cubic-bezier(0.2, 1.4, 0.4, 1), filter 0.25s, opacity 0.25s; transform: scale(0.82); filter: brightness(0.45) saturate(0.6); transform-origin: bottom center; }
+.st-actor.left { left: 3vw; }
+.st-actor.right { right: 3vw; }
+.st-actor.out { opacity: 0; }
+.st-actor.on { transform: none; filter: none; z-index: 1; }
+.st-pic { position: relative; width: 100%; aspect-ratio: 1; }
+.st-actor.right .st-pic { transform: scaleX(-1); }
+.st-pic::before { content: ''; position: absolute; inset: -1.4vh -2vh; background: #fff; clip-path: polygon(12% 0, 100% 0, 88% 100%, 0 100%); box-shadow: 0 0 0 1vh #10141c; }
+.st-pic::after { content: ''; position: absolute; inset: -0.5vh -0.8vh; background: var(--c); clip-path: polygon(12% 0, 100% 0, 88% 100%, 0 100%); }
+.st-pic img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; image-rendering: pixelated; background: linear-gradient(160deg, #ffffff50, transparent 60%), var(--c); clip-path: polygon(12% 0, 100% 0, 88% 100%, 0 100%); }
+.st-pic img:not([src]) { visibility: hidden; }
+.st-actor > b { position: absolute; left: 50%; bottom: -3vh; translate: -50% 0; padding: 0.4vh 2.4vh 0.6vh; white-space: nowrap; font-family: var(--display); font-weight: 400; font-size: 4vh; letter-spacing: 0.1vh; color: #10141c; background: var(--c); border: 0.5vh solid #fff; box-shadow: 0 0 0 0.5vh #10141c; transform: skewX(-8deg); z-index: 2; }
+.st-actor:not(.on) > b { opacity: 0; }
+.st-actor.left.enter { animation: actor-l 0.4s cubic-bezier(0.2, 1.4, 0.4, 1); }
+.st-actor.right.enter { animation: actor-r 0.4s cubic-bezier(0.2, 1.4, 0.4, 1); }
+@keyframes actor-l { from { transform: translateX(-70vh); } }
+@keyframes actor-r { from { transform: translateX(70vh); } }
+/* Gestos según la cara */
+.st-actor.fx-Angry { animation: fx-angry 0.4s; }
+.st-actor.fx-Determined { animation: fx-punch 0.3s cubic-bezier(0.2, 1.6, 0.4, 1); }
+.st-actor.fx-Happy { animation: fx-hop 0.5s; }
+.st-actor.fx-Surprised { animation: fx-jump 0.35s cubic-bezier(0.2, 1.8, 0.4, 1); }
+.st-actor.fx-Pain, .st-actor.fx-Worried { animation: fx-shiver 0.45s; }
+.st-actor.fx-Sad { animation: fx-droop 0.6s forwards; }
+.st-actor.fx-Normal { animation: fx-nod 0.3s; }
+@keyframes fx-angry { 0%, 100% { transform: none; } 15% { transform: translate(-1.6vh, 0.6vh) rotate(-2deg); } 30% { transform: translate(1.6vh, -0.6vh) rotate(2deg) scale(1.06); } 45% { transform: translate(-1.2vh, 0.4vh); } 60% { transform: translate(1vh, 0); } 80% { transform: translate(-0.5vh, 0); } }
+@keyframes fx-punch { 40% { transform: scale(1.1); } }
+@keyframes fx-hop { 25% { transform: translateY(-3vh); } 50% { transform: none; } 75% { transform: translateY(-1.6vh); } }
+@keyframes fx-jump { 40% { transform: translateY(-4vh) scale(1.06); } }
+@keyframes fx-shiver { 20%, 60% { transform: translateX(-0.7vh); } 40%, 80% { transform: translateX(0.7vh); } }
+@keyframes fx-droop { to { transform: translateY(1.4vh) rotate(-1.5deg); filter: saturate(0.7); } }
+@keyframes fx-nod { 50% { transform: translateY(0.8vh); } }
+/* El bocadillo, abajo y entre los dos, con el pico hacia quien habla */
+.st-box { position: absolute; left: 22vw; right: 22vw; bottom: 12vh; min-height: 17vh; padding: 2.6vh 3vh 2.2vh; background: #10141cf6; border: 0.5vh solid #fff; border-top: 1.2vh solid var(--c); box-shadow: 0 0 0 0.5vh #10141c, 0 1.2vh 0 0.5vh #0c101880; z-index: 3; }
+.st-talk.from-left .st-box { left: calc(3vw + 34vh); right: 12vw; }
+.st-talk.from-right .st-box { left: 12vw; right: calc(3vw + 34vh); }
+.st-box::before { content: ''; position: absolute; top: 3vh; border: 2vh solid transparent; }
+.st-talk.from-left .st-box::before { left: -4.4vh; border-right-color: #fff; }
+.st-talk.from-right .st-box::before { right: -4.4vh; border-left-color: #fff; }
+.st-talk.narr .st-box { left: 16vw; right: 16vw; bottom: 38vh; text-align: center; border: 0; border-block: 0.5vh solid #ffd84a; background: #07090ee0; box-shadow: none; }
 .st-box.bump { animation: box-pop 0.22s cubic-bezier(0.2, 1.5, 0.4, 1); }
 @keyframes box-pop { from { transform: scale(0.96) translateY(1.4vh); opacity: 0.4; } }
-.st-name { position: absolute; left: 2vh; top: -3.6vh; padding: 0.4vh 2vh 0.6vh; font-family: var(--display); font-weight: 400; font-size: 3.8vh; letter-spacing: 0.1vh; color: #10141c; background: var(--c); border: 0.5vh solid #fff; box-shadow: 0 0 0 0.4vh #10141c; transform: skewX(-8deg); }
-.st-talk.right .st-name { left: auto; right: 2vh; }
-.st-name:empty { display: none; }
+.st-name { display: none; }
 .st-line { margin: 0; font-size: 4vh; line-height: 1.15; min-height: 9.2vh; }
-.st-talk.narr .st-line { font-size: 3.6vh; color: #ffe9a0; }
+.st-talk.narr .st-line { font-size: 4.2vh; color: #ffe9a0; min-height: 0; }
 .st-more { position: absolute; right: 2vh; bottom: 1vh; font-style: normal; font-size: 2.6vh; color: #ffd84a; animation: nudge-down 0.6s steps(2) infinite; }
 .st-more[hidden] { display: none; }
 @keyframes nudge-down { 50% { transform: translateY(0.6vh); } }
-.st-talk > small { position: absolute; right: 5vw; bottom: 1.2vh; font-size: 2vh; color: #a8b4cc; }
-.st-talk.right > small { right: auto; left: 5vw; }
+.st-talk > small { position: absolute; left: 0; right: 0; bottom: 2.8vh; text-align: center; font-size: 2.2vh; color: #8090a8; z-index: 3; }
+
+/* --- Tarjeta de capítulo --- */
+.st-chapter { position: absolute; inset: 0; z-index: 4; overflow: hidden; background: #0c1018; cursor: pointer; }
+.st-chapter.go { animation: chap-life 3.2s both; }
+@keyframes chap-life { 0% { opacity: 0; } 6%, 90% { opacity: 1; } 100% { opacity: 0; } }
+.st-stripes { position: absolute; inset: -20%; background: repeating-linear-gradient(115deg, color-mix(in srgb, var(--c) 34%, #0c1018) 0 9vh, #0c1018 9vh 18vh); animation: chap-slide 3.2s linear; }
+@keyframes chap-slide { to { transform: translateX(-18vh); } }
+.st-chap-text { position: absolute; left: 7vw; top: 50%; translate: 0 -50%; }
+.st-chap-text small { display: block; font-size: 4vh; letter-spacing: 1vh; color: #ffd84a; animation: fade-in 0.3s 0.2s backwards; }
+.st-chap-text > b { display: block; font-family: var(--display); font-weight: 400; font-size: 30vh; line-height: 0.8; color: var(--c); text-shadow: 1vh 1vh 0 #07090e; animation: chap-num 0.5s 0.15s cubic-bezier(0.2, 1.6, 0.4, 1) backwards; }
+@keyframes chap-num { from { transform: translateX(-30vw) rotate(-12deg); opacity: 0; } }
+.st-chap-text h2 { margin: 1vh 0 0; font-family: var(--display); font-weight: 400; font-size: 9.5vh; line-height: 1; letter-spacing: 0.2vh; max-width: 56vw; }
+.st-chap-text h2 span { display: inline-block; text-shadow: 0.6vh 0.6vh 0 #07090e; animation: letter-slam 0.26s calc(0.45s + var(--i) * 0.028s) backwards; }
+.st-chap-text p { margin: 1vh 0 0; font-size: 4vh; color: #dfe6f4; animation: fade-in 0.4s 1.1s backwards; }
+.st-chap-foe { position: absolute; right: 6vw; top: 50%; translate: 0 -50%; text-align: center; animation: chap-foe 0.5s 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) backwards; }
+@keyframes chap-foe { from { transform: translateX(50vw); } }
+.st-chap-foe img { display: block; width: 46vh; height: 46vh; image-rendering: pixelated; background: var(--c); border: 1vh solid #fff; box-shadow: 0 0 0 1vh #07090e; transform: rotate(3deg); }
+.st-chap-foe span { display: block; margin-top: 2.4vh; font-size: 3vh; letter-spacing: 0.6vh; color: #ffd84a; }
+.st-chap-foe b { display: block; font-family: var(--display); font-weight: 400; font-size: 7vh; text-shadow: 0.5vh 0.5vh 0 #07090e; }
+
+/* --- Credencial de comandante --- */
+.st-license { position: absolute; inset: 0; z-index: 4; display: grid; place-content: center; justify-items: center; gap: 3vh; background: #07090ee8; cursor: pointer; }
+.st-license.go { animation: fade-in 0.3s; }
+.st-id { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 0 3vh; width: min(96vh, 86vw); padding: 0 3vh 3vh; color: #10141c; background: linear-gradient(135deg, #fffdf0, #e8ecd8); border: 0.8vh solid #10141c; border-radius: 2vh; box-shadow: 0 2vh 0 #07090e80; animation: id-in 0.6s cubic-bezier(0.2, 1.4, 0.4, 1); }
+@keyframes id-in { from { transform: translateY(60vh) rotate(-8deg); } }
+.st-id header { grid-column: 1 / -1; margin: 0 -3vh 3vh; padding: 1.6vh 3vh; display: flex; justify-content: space-between; align-items: baseline; color: #fff; background: #d8362a; border-radius: 1vh 1vh 0 0; }
+.st-id header b { font-family: var(--display); font-weight: 400; font-size: 4.4vh; letter-spacing: 0.3vh; }
+.st-id header span { font-size: 2.6vh; }
+.st-id img { width: 26vh; height: 26vh; image-rendering: pixelated; background: #f8d030; border: 0.8vh solid #10141c; }
+.st-id dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 1vh 2vh; align-content: center; font-size: 3.2vh; }
+.st-id dt { color: #6c7890; font-size: 2.4vh; align-self: center; }
+.st-id dd { margin: 0; font-family: var(--display); font-size: 4vh; }
+.st-stamp { position: absolute; right: 3vh; top: 10.5vh; padding: 0.4vh 2vh; font-style: normal; font-family: var(--display); font-size: 7vh; letter-spacing: 0.4vh; color: #d8362a; border: 0.8vh solid #d8362a; border-radius: 1.4vh; transform: rotate(-12deg); opacity: 0; animation: stamp-in 0.3s 0.9s cubic-bezier(0.2, 1.6, 0.4, 1) forwards; }
+@keyframes stamp-in { from { transform: rotate(-12deg) scale(4); opacity: 0; } to { transform: rotate(-12deg); opacity: 0.9; } }
+.st-license p { margin: 0; font-size: 2.8vh; color: #dfe6f4; animation: fade-in 0.4s 1.4s backwards; }
 
 /* --- Resultado --- */
 .st-result { flex-direction: column; justify-content: center; align-items: center; gap: 1.8vh; background: radial-gradient(ellipse at 50% 40%, #24345ce8, #0c1018f4 75%); text-align: center; }
@@ -828,3 +902,14 @@ main { display: block; }
 .st-join i { font-style: normal; font-size: 2.3vh; color: #dfe6f4; }
 .st-result .st-flags { font-size: 2.8vh; }
 .st-result .st-buttons { margin-top: 1.4vh; }
+
+/* Historia: consejo de Chatot en el informe, su veredicto en el resultado y el aviso del cartel */
+.st-note { display: flex; align-items: center; gap: 2vh; }
+.st-note img { flex: none; width: 9vh; height: 9vh; image-rendering: pixelated; background: #5fb8e8; border: 0.4vh solid #fff; }
+.st-verdict { display: flex; align-items: center; gap: 2vh; max-width: 100vh; padding: 1vh 2.4vh 1vh 1vh; text-align: left; background: #10141cf2; border: 0.4vh solid #5fb8e8; animation: card-in 0.4s 1s cubic-bezier(0.2, 1.4, 0.4, 1) backwards; }
+.st-verdict img { flex: none; width: 9vh; height: 9vh; image-rendering: pixelated; background: #5fb8e8; }
+.st-verdict p { margin: 0; font-size: 3vh; }
+.st-banner i { display: block; margin-top: 1.2vh; font-style: normal; font-size: 2.4vh; color: #a8b4cc; animation: fade-in 0.4s 1.4s backwards; }
+.st-banner { pointer-events: auto; cursor: pointer; }
+.st-banner.go { animation: banner-life 4s both; }
+#story.talking .st-world header, #story.talking .st-nodes, #story.talking .st-token { display: none; }

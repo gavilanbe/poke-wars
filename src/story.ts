@@ -1,7 +1,7 @@
 // Modo historia: el mapa del mundo para elegir misión, las conversaciones con retratos, el informe previo, los
 // sucesos durante la batalla y la pantalla de resultado. Los datos (misiones, guion, reglas) están en campaign.ts;
 // lo que necesita del juego se lo da main.ts en `init`.
-import { Line, MISSIONS, Mission, WORLD, defeatReason, happenings, missionGame, rank } from './campaign'
+import { CAST, Line, MISSIONS, Mission, PROLOGUE, VERDICT, WORLD, defeatReason, happenings, missionGame, rank } from './campaign'
 import { COMMANDERS, TERRAIN } from './data'
 import { Game, Unit, createGame } from './game'
 import { music, sfx } from './sfx'
@@ -25,7 +25,7 @@ export interface StoryApi {
   hold(on: boolean): void
 }
 
-interface Save { done: Record<string, { days: number; rank: string }>; hero: string }
+interface Save { done: Record<string, { days: number; rank: string }>; hero: string; intro?: boolean } // `intro`: ya se ha visto el prólogo
 const KEY = 'pokewars-story'
 const load = (): Save => { try { return { done: {}, hero: 'pikachu', ...JSON.parse(localStorage.getItem(KEY) ?? '{}') } } catch { return { done: {}, hero: 'pikachu' } } }
 let save = load()
@@ -46,40 +46,100 @@ const restart = (el: Element, cls: string) => { el.classList.remove(cls); void (
 const RANK_TEXT: Record<string, string> = { S: 'Impecable', A: 'Muy bien', B: 'Bien', C: 'Por los pelos' }
 
 // ---------- Conversaciones ----------
+// Como una escena de cine: bandas negras arriba y abajo, un personaje a cada lado (los nuestros a la izquierda) y el
+// que habla iluminado y gesticulando según su cara. El narrador habla con la pantalla para él solo.
 
+/** Nombre y color de quien habla, sea comandante o personaje de la historia. */
+const cast = (who: string) => COMMANDERS[who] ?? CAST[who]
 let talkNext: (() => void) | null = null, talkSkip: (() => void) | null = null
-/** Una conversación: retrato grande, nombre y texto que se escribe solo. Enter pasa; Esc la salta entera. */
+let busy = false // hay una transición en marcha: las pulsaciones repetidas no la lanzan dos veces
+
+/** Espera a que se pulse Enter (o a que pasen `ms`, si se da). Esc cuenta igual. */
+const pause = (ms?: number) => new Promise<void>((resolve) => {
+  const done = () => { clearTimeout(timer); talkNext = talkSkip = null; resolve() }
+  const timer = ms ? window.setTimeout(done, ms) : 0
+  talkNext = talkSkip = done
+})
+
+/** Una conversación. Enter completa la frase y luego pasa a la siguiente; Esc la salta entera. */
 export async function talk(lines: Line[]): Promise<void> {
   if (!lines.length) return
-  const el = q('.st-talk')
+  const el = q('.st-talk'), ours = new Set(['pikachu', ...allies()])
+  // El Maestro y Chatot van con los nuestros cuando hay un rival delante; si no, se ponen enfrente para hablar contigo
+  if (lines.some(([who]) => who && !ours.has(who) && !CAST[who])) for (const id of Object.keys(CAST)) ours.add(id)
+  const actor = { left: q('.st-actor.left'), right: q('.st-actor.right') }, on: Record<string, string> = { left: '', right: '' }
   let skipped = false
+  for (const side of ['left', 'right'] as const) { actor[side].className = `st-actor ${side} out`; actor[side].querySelector('img')!.removeAttribute('src') }
   el.hidden = false
   restart(el, 'in')
   for (const [who, text, face = 'Normal'] of lines) {
     if (skipped) break
-    const c = COMMANDERS[who]
-    el.className = `st-talk in ${who ? (who === hero || who === 'pikachu' ? 'left' : 'right') : 'narr'}`
+    const c = cast(who), side = !who ? '' : ours.has(who) ? 'left' : 'right'
+    el.className = `st-talk in ${side ? 'from-' + side : 'narr'}`
     el.style.setProperty('--c', c?.color ?? '#ffd84a')
-    q('.st-talk .st-face').innerHTML = who ? `<img src="${facePath(who, face)}" alt="">` : ''
+    for (const s of ['left', 'right'] as const) actor[s].classList.toggle('on', s === side)
+    if (side) {
+      const a = actor[side], fresh = on[side] !== who
+      on[side] = who
+      a.style.setProperty('--c', c.color)
+      a.querySelector('img')!.src = facePath(who, face)
+      a.querySelector('b')!.textContent = c.name
+      a.className = `st-actor ${side} on`
+      void a.offsetWidth
+      a.classList.add(fresh ? 'enter' : 'fx-' + face) // entra en escena, o gesticula según su cara
+      sfx.cry(who, 1, 0.22)
+    }
     q('.st-talk .st-name').textContent = c?.name ?? ''
     const line = q('.st-talk .st-line')
     restart(q('.st-talk .st-box'), 'bump')
-    if (who) sfx.cry(who, 1, 0.25)
     let n = 0, done = false
     line.textContent = ''
     q('.st-talk .st-more').hidden = true
-    const typing = window.setInterval(() => {
-      line.textContent = text.slice(0, ++n)
-      if (n % 3 === 1) sfx.cursor()
-      if (n >= text.length) finish()
-    }, 22)
     const finish = () => { clearInterval(typing); line.textContent = text; done = true; q('.st-talk .st-more').hidden = false }
+    const typing = window.setInterval(() => {
+      line.textContent = text.slice(0, (n += 2))
+      if (n % 6 === 2) sfx.cursor()
+      if (n >= text.length) finish()
+    }, 26)
     await new Promise<void>((resolve) => {
       talkNext = () => { if (!done) return finish(); sfx.confirm(); resolve() } // la primera pulsación completa la frase
       talkSkip = () => { skipped = true; clearInterval(typing); resolve() }
     })
   }
   talkNext = talkSkip = null
+  el.hidden = true
+}
+
+/** Tarjeta de capítulo: el número, el título y el rival, a toda pantalla, antes de que nadie hable. */
+async function chapterCard(i: number) {
+  const m = MISSIONS[i], foe = COMMANDERS[m.foe], el = q('.st-chapter')
+  el.style.setProperty('--c', foe.color)
+  el.innerHTML = `<div class="st-stripes"></div>
+    <div class="st-chap-text"><small>CAPÍTULO</small><b>${i + 1}</b><h2>${[...m.title].map((ch, k) => `<span style="--i:${k}">${ch === ' ' ? '&nbsp;' : ch}</span>`).join('')}</h2><p>${m.place}</p></div>
+    <div class="st-chap-foe"><img src="${facePath(m.foe, 'Determined')}" alt=""><span>contra</span><b>${foe.name}</b></div>`
+  el.hidden = false
+  restart(el, 'go')
+  sfx.battle()
+  setTimeout(() => sfx.cry(m.foe, 1, 0.5), 500)
+  await pause(3200)
+  el.hidden = true
+}
+
+/** Tras el prólogo: la credencial de comandante, con el sello de «reclutado». */
+async function license() {
+  const el = q('.st-license')
+  el.innerHTML = `<div class="st-id"><header><b>LIGA DE LAS BANDERAS</b><span>Credencial de comandante</span></header>
+      <img src="${facePath('pikachu', 'Happy')}" alt="">
+      <dl><dt>Nombre</dt><dd>Pikachu</dd><dt>Destino</dt><dd>Villa Central</dd><dt>Le recluta</dt><dd>El Gran Maestro</dd><dt>Le examina</dt><dd>Chatot (muy exigente)</dd></dl>
+      <i class="st-stamp">RECLUTADO</i></div>
+    <p><kbd>Enter</kbd> para empezar</p>`
+  el.hidden = false
+  restart(el, 'go')
+  sfx.confirm()
+  setTimeout(() => { sfx.bigHit(); sfx.cry('pikachu', 1, 0.6) }, 900)
+  await sleep(1300)
+  await pause()
+  sfx.confirm()
   el.hidden = true
 }
 
@@ -199,14 +259,18 @@ export function frame(time: number, dt: number) {
 
 async function openBrief() {
   const m = MISSIONS[chosen]
-  if (token.path.length) return // aún va de camino
+  if (busy || screen !== 'world') return
+  busy = true
+  if (token.path.length) { Object.assign(token, below(m), { path: [], moving: false }); api.pan(token.x, token.y) } // si aún iba de camino, llega de un salto
   screen = 'brief'
   sfx.confirm()
   host.className = 'world talking'
   hero = m.hero ?? (allies().includes(save.hero) ? save.hero : 'pikachu')
+  await chapterCard(chosen)
   await talk(m.intro)
   host.className = 'world brief'
   paintBrief()
+  busy = false
 }
 function paintBrief() {
   const m = MISSIONS[chosen], team = m.hero ? [m.hero] : allies(), c = COMMANDERS[hero]
@@ -214,7 +278,7 @@ function paintBrief() {
   el.style.setProperty('--c', c.color)
   el.innerHTML = `<small>MISIÓN ${chosen + 1} · ${m.place.toUpperCase()}</small><h2>${m.title}</h2>
     <div class="st-goal"><b>OBJETIVO</b><p>${m.objective}</p></div>
-    <div class="st-note"><b>A TENER EN CUENTA</b><p>${m.also}</p></div>
+    <div class="st-note"><img src="${facePath('chatot', 'Determined')}" alt=""><div><b>CONSEJO DE CHATOT</b><p>${m.also}</p></div></div>
     <div class="st-pick"><b>${m.hero ? 'TU COMANDANTE' : 'ELIGE COMANDANTE'}</b>
       <div class="st-heroes">${team.map((id) => `<button data-id="${id}" class="${id === hero ? 'on' : ''}" style="--c:${COMMANDERS[id].color}"><img src="${facePath(id, id === hero ? 'Determined' : 'Normal')}" alt=""><span>${COMMANDERS[id].name}</span></button>`).join('')}</div>
       <p><em>${c.power}</em> · ${c.powerHelp}</p></div>
@@ -227,6 +291,8 @@ function backToWorld() { sfx.cancel(); screen = 'world'; host.className = 'world
 
 async function startMission() {
   const m = MISSIONS[chosen]
+  if (busy) return
+  busy = true
   sfx.confirm()
   save.hero = hero
   store()
@@ -235,14 +301,15 @@ async function startMission() {
   host.className = 'play'
   api.mission(missionGame(m, hero))
   const banner = q('.st-banner')
-  banner.innerHTML = `<small>MISIÓN ${chosen + 1}</small><b>${[...m.title].map((ch, i) => `<span style="--i:${i}">${ch === ' ' ? '&nbsp;' : ch}</span>`).join('')}</b><p>${m.objective}</p>`
+  banner.innerHTML = `<small>MISIÓN ${chosen + 1}</small><b>${[...m.title].map((ch, i) => `<span style="--i:${i}">${ch === ' ' ? '&nbsp;' : ch}</span>`).join('')}</b><p>${m.objective}</p><i><kbd>Enter</kbd> para empezar</i>`
   await uncover()
   banner.hidden = false
   restart(banner, 'go')
   api.hold(true)
-  await sleep(2600)
+  await pause(4000) // Enter lo quita antes
   banner.hidden = true
   api.hold(false)
+  busy = false
 }
 
 // ---------- Durante la misión ----------
@@ -282,6 +349,7 @@ export async function finished(g: Game) {
     ? `<h2>${[...'¡MISIÓN CUMPLIDA!'].map((ch, k) => `<span style="--i:${k}">${ch === ' ' ? '&nbsp;' : ch}</span>`).join('')}</h2>
       <div class="st-rank rank-${grade}"><b>${grade}</b><span>${RANK_TEXT[grade]}</span></div>
       <p class="st-days">En <b>${g.day}</b> días (la mejor nota, en ${m.par} o menos)</p>
+      <div class="st-verdict"><img src="${facePath('chatot', VERDICT[grade][2])}" alt=""><p>«${VERDICT[grade][1]}»</p></div>
       ${first && m.joins ? `<div class="st-join" style="--c:${COMMANDERS[m.joins].color}"><img src="${facePath(m.joins, 'Happy')}" alt=""><div><span>Se une a ti</span><b>${COMMANDERS[m.joins].name}</b><i>${COMMANDERS[m.joins].power}: ${COMMANDERS[m.joins].powerHelp}</i></div></div>` : ''}
       <div class="st-flags">${MISSIONS.map((_, k) => `<i class="${k < cleared() ? 'on' : ''}"></i>`).join('')}<span>${cleared()} de ${MISSIONS.length} banderas</span></div>
       <div class="st-buttons"><button class="st-retry">Repetir</button><button class="st-map main">${last ? 'Al mapa' : 'Continuar'} <kbd>Enter</kbd></button></div>`
@@ -292,7 +360,15 @@ export async function finished(g: Game) {
   restart(el, 'in')
   if (won) sfx.captured()
   q('.st-retry').onclick = () => void startMission()
-  q('.st-map').onclick = async () => { sfx.confirm(); await cover(); await showWorld(first); await uncover() }
+  q('.st-map').onclick = async () => {
+    if (busy) return
+    busy = true
+    sfx.confirm()
+    await cover()
+    await showWorld(first)
+    await uncover()
+    busy = false
+  }
   q<HTMLButtonElement>('.st-buttons .main').focus()
 }
 
@@ -300,7 +376,7 @@ export async function finished(g: Game) {
 
 export const story = {
   /** ¿Hay una pantalla de la historia delante (mapa, informe, resultado o alguien hablando)? */
-  get busy() { return screen === 'world' || screen === 'brief' || screen === 'result' || !!talkNext },
+  get busy() { return screen === 'world' || screen === 'brief' || screen === 'result' || !!talkNext || busy },
   get progress() { return cleared() },
   init(deps: StoryApi) {
     api = deps
@@ -314,16 +390,34 @@ export const story = {
       <div class="st-brief"></div>
       <div class="st-banner" hidden></div>
       <div class="st-result"></div>
-      <div class="st-talk" hidden><div class="st-face"></div><div class="st-box"><b class="st-name"></b><p class="st-line"></p><i class="st-more" hidden>▼</i></div><small><kbd>Enter</kbd> seguir · <kbd>Esc</kbd> saltar</small></div>`
+      <div class="st-chapter" hidden></div>
+      <div class="st-license" hidden></div>
+      <div class="st-talk" hidden><div class="st-bar top"></div><div class="st-bar bot"></div>
+        <div class="st-actor left"><div class="st-pic"><img alt=""></div><b></b></div><div class="st-actor right"><div class="st-pic"><img alt=""></div><b></b></div>
+        <div class="st-box"><b class="st-name"></b><p class="st-line"></p><i class="st-more" hidden>▼</i></div><small><kbd>Enter</kbd> seguir · <kbd>Esc</kbd> saltar la escena</small></div>`
     tokenCtx = q<HTMLCanvasElement>('.st-token').getContext('2d')!
-    q('.st-talk').onclick = () => talkNext?.()
+    for (const sel of ['.st-talk', '.st-chapter', '.st-license', '.st-banner']) q(sel).onclick = () => talkNext?.()
   },
   /** Desde el título: abre el mapa del mundo. */
   async open() {
+    if (busy) return
+    busy = true
     save = load()
     await cover()
     await showWorld()
+    if (!save.intro) host.className = 'world talking'
     await uncover()
+    if (!save.intro) { // la primera vez: de dónde viene todo esto y cómo te hacen comandante
+      screen = 'brief'
+      await sleep(400)
+      await talk(PROLOGUE)
+      await license()
+      save.intro = true
+      store()
+      screen = 'world'
+      host.className = 'world'
+    }
+    busy = false
   },
   /** Deja la historia (para volver al título o porque empieza otra cosa). */
   close() { screen = 'off'; host.hidden = true },
@@ -333,16 +427,18 @@ export const story = {
   key(k: string): boolean {
     const yes = k === 'Enter' || k === ' ' || k === 'z', no = k === 'Escape' || k === 'x'
     if (talkNext) { if (yes) talkNext(); else if (no) talkSkip?.(); return true }
+    if (busy) return true // en mitad de una transición no se atiende nada más
     if (screen === 'world') {
       if (k === 'ArrowLeft' || k === 'ArrowUp') select(chosen - 1)
       else if (k === 'ArrowRight' || k === 'ArrowDown') select(chosen + 1)
       else if (yes) void openBrief()
-      else if (no) { sfx.cancel(); void (async () => { await cover(); story.close(); api.title(); await uncover() })() }
+      else if (no && !busy) { busy = true; sfx.cancel(); void (async () => { await cover(); story.close(); api.title(); await uncover(); busy = false })() }
       return true
     }
     if (screen === 'brief') {
       const m = MISSIONS[chosen], team = m.hero ? [m.hero] : allies(), at = team.indexOf(hero)
       if (k === 'ArrowLeft' || k === 'ArrowRight') { hero = team[(at + (k === 'ArrowRight' ? 1 : -1) + team.length) % team.length]; sfx.cursor(); if (team.length > 1) sfx.cry(hero, 1, 0.4); paintBrief() }
+      else if (busy) return true
       else if (yes) void startMission()
       else if (no) backToWorld()
       return true

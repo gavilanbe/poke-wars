@@ -16,6 +16,10 @@ Ideas apuntadas el 4 de octubre de 2026, por orden de impacto.
 - «La Guerra de las Banderas»: ocho misiones en `src/campaign.ts` (mapa escrito como texto, piezas, objetivo, guion y
   sucesos por día); la interfaz está en `src/story.ts` (mapa del mundo con la ficha del comandante, conversaciones,
   informe previo, cartel de misión, resultado con nota) y las reglas de misión en `src/game.ts` (`Rules`, `judge`).
+- Lore: el Gran Maestro de la Liga (Slowking) te recluta como comandante de Villa Central en un prólogo con credencial;
+  Chatot, su ayudante, explica cada misión, da el consejo del informe y pone la nota. Tú reclutas a los demás
+  comandantes, y Gengar es el que nadie reclutó. Las escenas van con bandas de cine, dos personajes en pantalla que
+  gesticulan según su cara, y una tarjeta de capítulo antes de cada misión.
 - Objetivos: gimnasio, capturar un edificio, aguantar días, llevar al mensajero, derrotar al jefe, carrera por
   edificios, sin refuerzos, noche perpetua con aliados que llegan. Los comandantes vencidos se unen y se pueden elegir.
 - Dificultad medida con `pnpm missions` (IA contra IA, el jugador gana): 96%, 77%, 70%, 79%, 46%, 75%, 33% y 25%.
