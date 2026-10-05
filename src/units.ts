@@ -12,16 +12,16 @@ export const DIR = { down: 0, right: 2, up: 4, left: 6 }
 export const dirFrom = (dx: number, dy: number) =>
   Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? DIR.right : DIR.left) : dy > 0 ? DIR.down : DIR.up
 
-export const facePath = (name: string, face = 'Normal') => `/assets/pmd/face-${name}-${face}.png`
+export const facePath = (name: string, face = 'Normal') => `assets/pmd/face-${name}-${face}.png`
 
 export async function loadUnits() {
-  meta = await fetch('/assets/pmd/anims.json').then((r) => r.json())
+  meta = await fetch('assets/pmd/anims.json').then((r) => r.json())
   await Promise.all(Object.keys(meta).flatMap((species) =>
     (Object.keys(meta[species]) as Anim[]).map((anim) => new Promise<void>((resolve, reject) => {
       const img = new Image()
       img.onload = () => resolve()
       img.onerror = reject
-      img.src = `/assets/pmd/${species}-${anim}.png`
+      img.src = `assets/pmd/${species}-${anim}.png`
       images.set(`${species}-${anim}`, img)
     }))))
 }

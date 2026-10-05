@@ -22,7 +22,7 @@ const VOLUME: Record<string, number> = { select: 0.5, confirm: 0.5, cancel: 0.5,
 /** Carga el índice y va descodificando los archivos en segundo plano. */
 export async function loadAudio() {
   try {
-    const manifest = await fetch('/audio/manifest.json').then((r) => (r.ok ? r.json() : { files: [] }))
+    const manifest = await fetch('audio/manifest.json').then((r) => (r.ok ? r.json() : { files: [] }))
     available = new Set(manifest.files)
     loops = manifest.loops ?? {}
   } catch {
@@ -31,7 +31,7 @@ export async function loadAudio() {
   const a = new AudioContext()
   for (const name of available) {
     if (name.startsWith('music_')) continue // la música va en streaming
-    fetch(`/audio/${name}.mp3`).then((r) => r.arrayBuffer()).then((data) => a.decodeAudioData(data)).then((b) => buffers.set(name, b)).catch(() => {})
+    fetch(`audio/${name}.mp3`).then((r) => r.arrayBuffer()).then((data) => a.decodeAudioData(data)).then((b) => buffers.set(name, b)).catch(() => {})
   }
 }
 
@@ -80,7 +80,7 @@ function fade(el: HTMLAudioElement, to: number, ms = 700) {
  * funde con una segunda copia que empieza justo después de la entrada, así el bucle no se nota.
  */
 function startLoop(name: string, volume: number, from = 0): HTMLAudioElement {
-  const el = new Audio(`/audio/${name}.mp3`)
+  const el = new Audio(`audio/${name}.mp3`)
   const loopStart = loops[name]
   el.loop = loopStart === undefined
   el.muted = muted

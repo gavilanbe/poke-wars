@@ -11,11 +11,11 @@ export async function loadFx() {
     const img = new Image()
     img.onload = () => resolve()
     img.onerror = reject
-    img.src = `/assets/fx/${file}`
+    img.src = `assets/fx/${file}`
     fxImages.set(name, img)
   })
   // Efectos de Esmeralda (fotogramas apilados) y hojas de la comunidad (en rejilla)
-  const [emerald, sheets] = await Promise.all(['fx.json', 'sheets.json'].map((f) => fetch('/assets/fx/' + f).then((r) => r.json())))
+  const [emerald, sheets] = await Promise.all(['fx.json', 'sheets.json'].map((f) => fetch('assets/fx/' + f).then((r) => r.json())))
   fxMeta = { ...emerald, ...sheets }
   await Promise.all([...Object.keys(emerald).map((n) => load(n, n + '.png')), ...Object.keys(sheets).map((n) => load(n, sheets[n].file))])
 }

@@ -99,7 +99,7 @@ function recolor(img: HTMLImageElement, hue: number | null): string {
 /** Prepara las piezas del HUD en los colores de cada equipo y las deja como variables de CSS. */
 async function setupHud() {
   const [round, roundSel, rect, button] = await Promise.all(
-    ['panel_round', 'panel_round_sel', 'panel_rect', 'button'].map((n) => loadImage(`/assets/ui/${n}.png`)))
+    ['panel_round', 'panel_round_sel', 'panel_rect', 'button'].map((n) => loadImage(`assets/ui/${n}.png`)))
   const RED = 4, BLUE = 216
   const vars: Record<string, string> = {
     '--cop0': recolor(round, RED), '--cop0s': recolor(roundSel, RED), '--cop1': recolor(round, BLUE), '--cop1s': recolor(roundSel, BLUE),
@@ -950,8 +950,8 @@ const STATUS_COLOR: Record<Status, string> = { burn: '#f0803c', poison: '#a040a0
 
 const miniEl = $<HTMLCanvasElement>('#minimap')
 const ITEM_IMG = { berry: new Image(), coin: new Image() }
-ITEM_IMG.berry.src = '/assets/ui/item_berry.png'
-ITEM_IMG.coin.src = '/assets/ui/item_coin.png'
+ITEM_IMG.berry.src = 'assets/ui/item_berry.png'
+ITEM_IMG.coin.src = 'assets/ui/item_coin.png'
 const MINI_COLOR: Record<string, string> = { '.': '#8fd880', '"': '#4aa860', T: '#2c7c50', M: '#8a7060', '~': '#3878d8', s: '#9ab0c0', '=': '#e0d0a0', i: '#d6f0ff' }
 function drawMinimap() {
   const k = 6
@@ -2606,9 +2606,9 @@ $('#new').onclick = async () => {
 
 async function boot() {
   const [atlasImg, waterImg, atlasMeta, names] = await Promise.all([
-    loadImage('/assets/map/atlas.png'), loadImage('/assets/map/water.png'),
-    fetch('/assets/map/atlas.json').then((r) => r.json()),
-    fetch('/assets/species.json').then((r) => r.json()), loadUnits(), loadFx(),
+    loadImage('assets/map/atlas.png'), loadImage('assets/map/water.png'),
+    fetch('assets/map/atlas.json').then((r) => r.json()),
+    fetch('assets/species.json').then((r) => r.json()), loadUnits(), loadFx(),
   ])
   species = names
   atlas = atlasImg

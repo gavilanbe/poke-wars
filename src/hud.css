@@ -558,7 +558,7 @@ main { display: block; }
 
 /* ---------- Teclado ---------- */
 /* Barra con las teclas del momento: solo se ve mientras se juega con el teclado */
-#hints { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 6px 14px; white-space: nowrap; font-size: 17px; color: #dfe6f4; background: #10141ce0; border: 2px solid #48546c; border-radius: 14px;
+#hints { position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); padding: 6px 14px; white-space: nowrap; font-size: 17px; color: #dfe6f4; background: #10141ce0; border: 2px solid #48546c; border-radius: 14px;
   box-shadow: 0 3px 0 #0c1018; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
 #hints[hidden] { display: none; }
 #stage.kbd #hints { opacity: 1; }

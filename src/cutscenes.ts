@@ -782,7 +782,7 @@ export interface CatchData {
 }
 export interface CatchResult { caught: boolean; spent: number; fled: boolean } // `fled`: el salvaje se ha ido del mapa
 
-const BALL_IMG = BALLS.map((b) => { const img = new Image(); img.src = `/assets/ui/${b.id === 'poke' ? 'ball' : 'ball_' + b.id}.png`; return img })
+const BALL_IMG = BALLS.map((b) => { const img = new Image(); img.src = `assets/ui/${b.id === 'poke' ? 'ball' : 'ball_' + b.id}.png`; return img })
 let catchInput: ((key: string) => void) | null = null
 /** Teclas mientras se está lanzando (las reparte main.ts). Devuelve si la escena las quería. */
 export function sceneKey(key: string): boolean {

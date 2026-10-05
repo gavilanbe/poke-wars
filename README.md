@@ -1,6 +1,12 @@
 # Poké Wars
 
-Prototipo privado: táctica por turnos tipo Advance Wars con gráficos de Pokémon Esmeralda.
+Táctica por turnos tipo Advance Wars con Pokémon: ocho comandantes con su equipo y su poder, tres mapas, captura de
+edificios y de salvajes, evoluciones, clima, día y noche, y una IA contra la que jugar.
+
+**▶ Jugar: https://gavilanbe.github.io/poke-wars/**
+
+Todo se maneja con ratón o con teclado (flechas, Enter, Esc; `H` abre un tutorial que juega solo). Hecho con Claude
+Opus 5.5.
 
 ```sh
 pnpm install
@@ -74,3 +80,15 @@ falta algún archivo, usa un sonido sintetizado.
 - `src/ui.ts` + `src/ui.css`: carteles a pantalla completa (cortinilla, cambio de turno, súper poder, «VS», victoria).
 - `src/units.ts`, `src/fx.ts`, `src/sfx.ts`: sprites de las unidades, partículas del mapa y sonido.
 - Comandantes (frases, modificadores y poder) en `COMMANDERS` de `src/data.ts`; el efecto del poder, en `usePower` de `src/game.ts`.
+
+## Créditos y aviso
+
+Juego de fans sin ánimo de lucro. Pokémon y sus personajes son propiedad de Nintendo, Game Freak y The Pokémon
+Company; este proyecto no está afiliado ni respaldado por ellos.
+
+- Sprites y retratos animados de los Pokémon: [PMDCollab/SpriteCollab](https://github.com/PMDCollab/SpriteCollab)
+  (cada sprite acredita a su autor allí; licencia CC BY-NC 4.0).
+- Mapa, edificios, efectos e interfaz: extraídos de Pokémon Esmeralda a través de
+  [pret/pokeemerald](https://github.com/pret/pokeemerald).
+- Gritos e iconos de objetos: [PokeAPI](https://github.com/PokeAPI) (cries y sprites).
+- Música y efectos de sonido: generados con ElevenLabs.
