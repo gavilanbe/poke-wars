@@ -2764,19 +2764,73 @@ $('#new').onclick = async () => {
   await uncover()
 }
 
+// ---------- Pantalla de carga ----------
+// La Poké Ball gigante de index.html: el botón del centro marca cuánto se ha cargado y debajo van pasando consejos.
+
+const loadingEl = $('#loading')
+const TIPS = [
+  'R enseña la zona de peligro de los rivales',
+  'Debilita a un salvaje antes de lanzarle la Ball',
+  'Los que atacan a distancia no pueden mover y pegar',
+  'El Fuego quema el bosque donde se esconde el rival',
+  'Mantén Espacio para acelerar el turno rival',
+  'Cada estrella de terreno quita un 10% de daño',
+  'H abre el tutorial en cualquier momento',
+  'Quien más vida tiene, más pega',
+]
+let loadTotal = 0, loadDone = 0, loadShown = 0
+/** Cuenta una tarea de carga: el porcentaje es las que han acabado entre las apuntadas. */
+function track<V>(job: Promise<V>): Promise<V> {
+  loadTotal++
+  void job.then(() => loadDone++, () => loadDone++)
+  return job
+}
+/** Enseña el progreso (suavizado, y sin retroceder aunque se apunten tareas nuevas). Acaba cuando ya se puede abrir. */
+async function loadingScreen(all: Promise<unknown>) {
+  if (AUTO) return void (loadingEl.hidden = true)
+  let tip = Math.floor(Math.random() * TIPS.length), finished = false
+  const tipEl = loadingEl.querySelector<HTMLElement>('.ld-tip')!, num = loadingEl.querySelector('.ld-btn b')!, ring = loadingEl.querySelector<HTMLElement>('.ld-btn i')!
+  const nextTip = () => { tipEl.textContent = TIPS[tip++ % TIPS.length]; tipEl.style.animation = 'none'; void tipEl.offsetWidth; tipEl.style.animation = '' }
+  const tips = window.setInterval(nextTip, 2600)
+  const started = performance.now()
+  void all.then(() => (finished = true))
+  await new Promise<void>((resolve) => {
+    const paint = () => {
+      const target = finished ? 100 : Math.min(96, (loadDone / Math.max(1, loadTotal)) * 100)
+      loadShown = Math.max(loadShown, loadShown + (target - loadShown) * 0.18)
+      num.textContent = String(Math.round(loadShown))
+      ring.style.setProperty('--p', loadShown.toFixed(1))
+      if (finished && loadShown > 99.5 && performance.now() - started > 800) return resolve()
+      requestAnimationFrame(paint)
+    }
+    paint()
+  })
+  clearInterval(tips)
+  num.textContent = '100'
+  ring.style.setProperty('--p', '100')
+}
+/** La Ball se abre por la mitad y deja ver lo que haya detrás. */
+function openLoading() {
+  loadingEl.classList.add('done')
+  setTimeout(() => (loadingEl.hidden = true), 800)
+}
+
 async function boot() {
-  const [atlasImg, waterImg, atlasMeta, names] = await Promise.all([
-    loadImage('assets/map/atlas.png'), loadImage('assets/map/water.png'),
-    fetch('assets/map/atlas.json').then((r) => r.json()),
-    fetch('assets/species.json').then((r) => r.json()), loadUnits(), loadFx(),
+  const assets = Promise.all([
+    track(loadImage('assets/map/atlas.png')), track(loadImage('assets/map/water.png')),
+    track(fetch('assets/map/atlas.json').then((r) => r.json())),
+    track(fetch('assets/species.json').then((r) => r.json())), track(loadUnits()), loadFx(track),
   ])
+  const hud = track(setupHud())
+  const loaded = loadingScreen(Promise.all([assets, hud, document.fonts.ready]))
+  const [atlasImg, waterImg, atlasMeta, names] = await assets
   species = names
   atlas = atlasImg
   at = atlasMeta
   water = waterImg
   resize()
   void loadAudio()
-  await setupHud()
+  await hud
   grayAtlas = makeGray(atlas)
   windowGlow = makeWindows(atlas)
   mapFx = new Scene(mapFxCanvas, canvas.width, canvas.height)
@@ -2807,7 +2861,7 @@ async function boot() {
     },
   })
   if (AUTO) newGame()
-  else showTitle()
+  else { await loaded; showTitle(); openLoading() }
   // Caché local de imágenes y sonidos (public/sw.js); en desarrollo no, para ver siempre lo último
   if ('serviceWorker' in navigator && location.hostname !== 'localhost') void navigator.serviceWorker.register('sw.js')
 }

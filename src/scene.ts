@@ -6,14 +6,15 @@ interface FxMeta { w: number; h: number; n: number; cols?: number } // sin `cols
 let fxMeta: Record<string, FxMeta> = {}
 const fxImages = new Map<string, HTMLImageElement>()
 
-export async function loadFx() {
-  const load = (name: string, file: string) => new Promise<void>((resolve, reject) => {
+/** `track` deja contar cada hoja para la barra de carga. */
+export async function loadFx(track = <V>(job: Promise<V>) => job) {
+  const load = (name: string, file: string) => track(new Promise<void>((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve()
     img.onerror = reject
     img.src = `assets/fx/${file}`
     fxImages.set(name, img)
-  })
+  }))
   // Efectos de Esmeralda (fotogramas apilados) y hojas de la comunidad (en rejilla)
   const [emerald, sheets] = await Promise.all(['fx.json', 'sheets.json'].map((f) => fetch('assets/fx/' + f).then((r) => r.json())))
   fxMeta = { ...emerald, ...sheets }
