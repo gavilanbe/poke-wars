@@ -1,0 +1,27 @@
+{
+  "name": "Poké Wars",
+  "short_name": "Poké Wars",
+  "description": "Estrategia por turnos con Pokémon, al estilo Advance Wars: captura, evoluciona y conquista. Modo historia, partida libre y dos jugadores.",
+  "lang": "es",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#10141c",
+  "theme_color": "#10141c",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "icons/shot-title.jpg", "sizes": "1280x720", "type": "image/jpeg", "form_factor": "wide", "label": "Poké Wars" },
+    { "src": "icons/shot-battle.jpg", "sizes": "1280x720", "type": "image/jpeg", "form_factor": "wide", "label": "Tu turno: mueve, ataca y captura" },
+    { "src": "icons/shot-title.jpg", "sizes": "1280x720", "type": "image/jpeg", "label": "Poké Wars" },
+    { "src": "icons/shot-battle.jpg", "sizes": "1280x720", "type": "image/jpeg", "label": "Tu turno: mueve, ataca y captura" }
+  ]
+}

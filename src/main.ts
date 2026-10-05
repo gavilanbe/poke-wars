@@ -17,6 +17,8 @@ import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
 import { goalStatus } from './campaign'
 import { finished as storyFinished, frame as storyFrame, story, turnStart as storyTurnStart } from './story'
 import { Lesson, tutorial } from './tutorial'
+import { initPwa } from './pwa'
+import { buzz, initMobile, isTouch, onTouchChange, setTouch } from './mobile'
 import { cover, fitOverlays, hideOverlay, powerCutin, setPowerColor, turnCard, uncover, versus, victory } from './ui'
 import { Anim, DIR, animDuration, dirFrom, drawSprite, facePath, loadSpecies, loadSpeciesList, loadUnits } from './units'
 
@@ -33,6 +35,7 @@ const canvas = $<HTMLCanvasElement>('#map')
 const ctx = canvas.getContext('2d')!
 const mapFxCanvas = $<HTMLCanvasElement>('#mapfx')
 const stage = $('#stage')
+initMobile() // antes de medir nada: en un móvil cambia el tamaño al que se pinta la página
 const menuEl = $('#menu'), forecastEl = $('#forecast'), recruitEl = $('#recruit')
 const sceneEl = $('#scene'), bannerEl = $('#banner'), talkEl = $('#talk'), cutinEl = $('#cutin'), selectEl = $('#select')
 const dayEl = $('#clock'), cosEl = $('#cos'), infoEl = $('#info')
@@ -760,6 +763,12 @@ function draw(time: number) {
     const dx = (keysDown.has('a') || (mouse.inside && mouse.x < edge) ? -1 : 0) + (keysDown.has('d') || (mouse.inside && mouse.x > 1 - edge) ? 1 : 0)
     const dy = (keysDown.has('w') || (mouse.inside && mouse.y < edge) ? -1 : 0) + (keysDown.has('s') || (mouse.inside && mouse.y > 1 - edge) ? 1 : 0)
     if ((dx || dy) && mode !== 'menu') panTo(cam.tx + canvas.width / 2 + dx * speed, cam.ty + canvas.height / 2 + dy * speed)
+    if (fling.vx || fling.vy) { // el mapa sigue deslizándose un poco después de soltarlo
+      panTo(cam.tx + canvas.width / 2 + fling.vx * dt, cam.ty + canvas.height / 2 + fling.vy * dt, true)
+      const keep = Math.pow(0.994, dt)
+      fling.vx *= keep; fling.vy *= keep
+      if (Math.hypot(fling.vx, fling.vy) < 0.02) fling.vx = fling.vy = 0
+    }
   }
   storyFrame(time, dt)
   if (titleOn) {
@@ -1083,13 +1092,14 @@ function drawMinimap() {
   mx.lineWidth = 2
   mx.strokeRect((cam.x / T) * k + 1, (cam.y / T) * k + 1, (canvas.width / T) * k - 2, (canvas.height / T) * k - 2)
 }
-const miniPan = (e: MouseEvent) => {
+const miniPan = (e: PointerEvent) => {
   if (!g || !(e.buttons & 1)) return
+  fling.vx = fling.vy = 0
   const r = miniEl.getBoundingClientRect()
   panTo(((e.clientX - r.left) / r.width) * worldW(), ((e.clientY - r.top) / r.height) * worldH())
 }
-miniEl.addEventListener('mousedown', miniPan)
-miniEl.addEventListener('mousemove', miniPan)
+miniEl.addEventListener('pointerdown', (e) => { miniEl.setPointerCapture(e.pointerId); miniPan(e) })
+miniEl.addEventListener('pointermove', miniPan)
 
 // ---------- Efectos ----------
 
@@ -1570,10 +1580,13 @@ function chooseCommanders(): Promise<[string, string] | null> {
       </section>
       <div class="equipo"><canvas class="campo" width="528" height="52"></canvas><div class="roles"></div></div>
       <div class="plantel"></div>
-      <footer><kbd>←</kbd><kbd>→</kbd> mirar · <kbd>Enter</kbd> elegir · <kbd>Esc</kbd> volver</footer>`
+      <footer><kbd>←</kbd><kbd>→</kbd> mirar · <kbd>Enter</kbd> elegir · <kbd>Esc</kbd> volver</footer>
+      <nav class="dedo"><button data-a="back">↩ Volver</button><button data-a="go">¡Elegir!</button></nav>`
     const q = <E extends HTMLElement>(sel: string) => selectEl.querySelector(sel) as E
     const show = q('.show'), plantel = q('.plantel')
     let current = '', locked = false, team = 0, themeTimer = 0
+    q('[data-a=back]').onclick = () => selectBack?.()
+    q('[data-a=go]').onclick = () => { if (!locked && current) choose(current) }
     let squad: string[] = [], typing = 0
     const campo = q<HTMLCanvasElement>('.campo').getContext('2d')!
     const pips = (n: number) => `<span class="pips">${'<i class="on"></i>'.repeat(n)}${'<i></i>'.repeat(6 - n)}</span>`
@@ -1586,7 +1599,10 @@ function chooseCommanders(): Promise<[string, string] | null> {
       btn.style.setProperty('--i', String(i))
       btn.innerHTML = `<img src="${facePath(id)}" alt=""><b>${COMMANDERS[id].name}</b>`
       btn.onmouseenter = btn.onfocus = () => { if (!locked) display(id) }
-      btn.onclick = () => { if (!locked) choose(id) }
+      // Con el dedo no hay «pasar por encima»: el primer toque lo enseña y el botón de abajo (u otro toque) lo elige
+      let shown = false
+      btn.onpointerdown = () => (shown = current === id)
+      btn.onclick = () => { if (locked) return; if (isTouch() && !shown) { shown = true; return display(id) } choose(id) }
       plantel.append(btn)
       return btn
     })
@@ -2687,25 +2703,112 @@ function tileFromEvent(e: MouseEvent): Pos {
     y: Math.max(0, Math.min(g.h - 1, Math.floor((((e.clientY - r.top) / r.height) * canvas.height + cam.y) / T))),
   }
 }
-canvas.addEventListener('mousemove', (e) => {
-  if (!g) return
-  if (e.movementX || e.movementY) setKbd(false)
-  const p = tileFromEvent(e)
-  if (hover && hover.x === p.x && hover.y === p.y) return
+// Tras tocar con el dedo, el navegador inventa un clic y un movimiento de ratón: se ignoran un momento
+let touchedAt = -1e9
+const fromTouch = () => performance.now() - touchedAt < 800
+function pointAt(p: Pos) {
+  if (hover && hover.x === p.x && hover.y === p.y) return false
   if (!hover) (cursor.x = p.x * T), (cursor.y = p.y * T)
   hover = p
   greet()
   refreshInfo()
   showForecast()
+  return true
+}
+canvas.addEventListener('mousemove', (e) => {
+  if (!g || fromTouch()) return
+  if (e.movementX || e.movementY) setKbd(false)
+  pointAt(tileFromEvent(e))
 })
-canvas.addEventListener('click', (e) => g && click(tileFromEvent(e)))
+canvas.addEventListener('click', (e) => g && !fromTouch() && click(tileFromEvent(e)))
 stage.addEventListener('mousemove', (e) => {
+  if (fromTouch()) return
   const r = canvas.getBoundingClientRect()
   mouse.x = (e.clientX - r.left) / r.width
   mouse.y = (e.clientY - r.top) / r.height
   mouse.inside = !tutorial.isOpen
 })
 stage.addEventListener('mouseleave', () => (mouse.inside = false))
+
+// ---------- Dedos ----------
+// Un toque elige (como el clic); arrastrar mueve la cámara, con algo de inercia al soltar; dos dedos acercan o
+// alejan. Eligiendo a quién atacar, el primer toque sobre un rival enseña el pronóstico y el segundo confirma.
+// Durante el turno rival, dejar el dedo puesto lo acelera (como Espacio).
+
+const fingers = new Map<number, { x: number; y: number }>()
+let drag: { x: number; y: number; cx: number; cy: number; moved: boolean; vx: number; vy: number; at: number } | null = null
+let pinch = 0 // distancia entre los dos dedos la última vez que cambió el zoom
+const fling = { vx: 0, vy: 0 }
+const spread = () => { const [a, b] = [...fingers.values()]; return Math.hypot(a.x - b.x, a.y - b.y) }
+const canPan = () => g && !titleOn && !viewFit && sceneEl.hidden && mode !== 'select'
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' || !g) return
+  touchedAt = performance.now()
+  setTouch(true)
+  setKbd(false)
+  mouse.inside = false
+  canvas.setPointerCapture(e.pointerId)
+  fingers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  fling.vx = fling.vy = 0
+  if (fingers.size === 1) {
+    drag = { x: e.clientX, y: e.clientY, cx: cam.tx + canvas.width / 2, cy: cam.ty + canvas.height / 2, moved: false, vx: 0, vy: 0, at: performance.now() }
+    if (isAI[g.turn]) keysDown.add(' ')
+  } else if (fingers.size === 2) {
+    pinch = spread()
+    if (drag) drag.moved = true // con dos dedos ya no es un toque
+  }
+})
+canvas.addEventListener('pointermove', (e) => {
+  const finger = fingers.get(e.pointerId)
+  if (!finger) return
+  touchedAt = performance.now()
+  finger.x = e.clientX
+  finger.y = e.clientY
+  if (fingers.size === 2 && canPan()) {
+    const d = spread()
+    if (d > pinch * 1.4 || d < pinch / 1.4) { setZoom(d > pinch ? 1 : -1); pinch = d; drag = null }
+    return
+  }
+  if (!drag || fingers.size !== 1) return
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y
+  if (!drag.moved && Math.hypot(dx, dy) < 12) return // un dedo que tiembla sigue siendo un toque
+  drag.moved = true
+  if (!canPan()) return
+  const now = performance.now(), before = [cam.tx, cam.ty]
+  panTo(drag.cx - dx / scale, drag.cy - dy / scale, true)
+  const dt = Math.max(1, now - drag.at)
+  drag.vx = drag.vx * 0.5 + ((cam.tx - before[0]) / dt) * 0.5
+  drag.vy = drag.vy * 0.5 + ((cam.ty - before[1]) / dt) * 0.5
+  drag.at = now
+})
+const lift = (e: PointerEvent) => {
+  if (!fingers.delete(e.pointerId)) return
+  touchedAt = performance.now()
+  keysDown.delete(' ')
+  const was = drag
+  if (fingers.size === 0) drag = null
+  else if (fingers.size === 1) { // se levantó uno de los dos: el que queda sigue arrastrando desde donde está
+    const [rest] = [...fingers.values()]
+    drag = { x: rest.x, y: rest.y, cx: cam.tx + canvas.width / 2, cy: cam.ty + canvas.height / 2, moved: true, vx: 0, vy: 0, at: performance.now() }
+  }
+  if (!was || fingers.size || e.type !== 'pointerup') return
+  if (was.moved) { if (performance.now() - was.at < 60) (fling.vx = was.vx), (fling.vy = was.vy); return }
+  tap(tileFromEvent(e))
+}
+canvas.addEventListener('pointerup', lift)
+canvas.addEventListener('pointercancel', lift)
+
+function tap(p: Pos) {
+  if (!g || isAI[g.turn]) return
+  const fresh = pointAt(p)
+  if (mode === 'target' && fresh && targets.some((t) => t.x === p.x && t.y === p.y)) return sfx.cursor() // primer toque: solo el pronóstico
+  buzz(8)
+  void click(p)
+}
+// El pronóstico de daño es, con el dedo, el botón de atacar
+forecastEl.onclick = () => { if (hover && mode === 'target') { buzz(8); void click(hover) } }
+
 addEventListener('keyup', (e) => keysDown.delete(e.key.toLowerCase()))
 addEventListener('blur', () => keysDown.clear())
 stage.addEventListener('contextmenu', (e) => { e.preventDefault(); if (g) cancel() })
@@ -2728,9 +2831,21 @@ const HINTS: Partial<Record<Mode, string>> = {
   target: '<kbd>←→</kbd> objetivo · <kbd>Enter</kbd> atacar · <kbd>Esc</kbd> atrás',
   recruit: '<kbd>←↑↓→</kbd> elegir · <kbd>Enter</kbd> reclutar · <kbd>Esc</kbd> salir',
 }
+// Con el dedo no hay teclas que enseñar: la barra dice qué tocar
+const TOUCH_HINTS: Partial<Record<Mode, string>> = {
+  idle: 'Toca un Pokémon para moverlo · arrastra para recorrer el mapa',
+  inspect: 'Toca otro Pokémon, o el mapa para soltarlo',
+  move: 'Toca una casilla iluminada para ir allí',
+  target: 'Toca a un rival para ver el pronóstico · otra vez para atacar',
+}
+const touchbar = $('#touchbar')
 /** Barra de teclas del momento (la llama el bucle de pintado; solo toca el DOM cuando cambia). */
 function refreshHints() {
-  const html = titleOn ? '' : isAI[g.turn] ? (g.winner === null ? 'Turno rival · mantén <kbd>Espacio</kbd> para acelerar' : '') : HINTS[mode] ?? ''
+  const touch = isTouch()
+  const html = titleOn ? '' : isAI[g.turn] ? (g.winner === null ? (touch ? 'Turno rival · deja el dedo sobre el mapa para acelerar' : 'Turno rival · mantén <kbd>Espacio</kbd> para acelerar') : '') : (touch ? TOUCH_HINTS : HINTS)[mode] ?? ''
+  const state = titleOn || g.winner !== null ? 'off' : isAI[g.turn] ? 'ai' : mode
+  if (touchbar.dataset.mode !== state) touchbar.dataset.mode = state
+  touchbar.classList.toggle('danger', !!danger)
   if (html === hintsFor) return
   hintsFor = html
   hintsEl.innerHTML = html
@@ -2852,6 +2967,14 @@ function setZoom(step: number) {
 stage.addEventListener('wheel', (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(e.deltaY < 0 ? 1 : -1) } }, { passive: false })
 endBtn.onclick = finishTurn
 powerBtn.onclick = firePower
+// Botones para lo que con teclado son Esc, Tab y R
+touchbar.querySelector<HTMLElement>('[data-do=back]')!.onclick = () => { buzz(8); cancel() }
+touchbar.querySelector<HTMLElement>('[data-do=next]')!.onclick = () => { buzz(8); nextUnit(1) }
+touchbar.querySelector<HTMLElement>('[data-do=danger]')!.onclick = () => { danger = danger ? null : dangerZone(); sfx.select() }
+$('#more').onclick = () => $('#mini').classList.toggle('open')
+$('.sys').addEventListener('click', () => $('#mini').classList.remove('open'))
+canvas.addEventListener('pointerdown', () => $('#mini').classList.remove('open'))
+onTouchChange(() => { if (titleOn) refreshTitle() })
 aiBtn.onclick = () => {
   isAI[1] = !isAI[1]
   if (!g) return void (aiBtn.textContent = `Azul: ${isAI[1] ? 'IA' : 'humano'}`)
@@ -2970,7 +3093,7 @@ async function boot() {
   })
   if (AUTO) newGame()
   else { await loaded; showTitle(); openLoading() }
-  // Caché local de imágenes y sonidos (public/sw.js); en desarrollo no, para ver siempre lo último
-  if ('serviceWorker' in navigator && location.hostname !== 'localhost') void navigator.serviceWorker.register('sw.js')
+  // Instalar, jugar sin conexión y cambiar de versión (src/pwa.ts y public/sw.js); en desarrollo no hay service worker
+  initPwa(() => (titleOn && !titleEl.hidden && mode === 'select') || !loadingEl.hidden)
 }
 boot()

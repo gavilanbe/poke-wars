@@ -2,9 +2,17 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="description" content="Estrategia por turnos con Pokémon, al estilo Advance Wars: captura, evoluciona y conquista. Modo historia, partida libre y dos jugadores." />
+    <meta name="theme-color" content="#10141c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Poké Wars" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
     <title>Poké Wars · un juego de gavilanbe</title>
-    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/ui.css" />
     <link rel="stylesheet" href="/src/hud.css" />
@@ -66,11 +74,13 @@
           <div id="goal" hidden></div>
           <div id="mini">
             <canvas id="minimap" title="Minimapa: haz clic para mover la cámara"></canvas>
+            <button id="more" aria-label="Opciones">☰</button>
             <div class="sys">
-              <button id="ai"></button><button id="fog">Niebla: sí</button><button id="mute"></button><button id="helpbtn">Ayuda (H)</button><button id="new">Salir al título</button>
+              <button id="ai"></button><button id="fog">Niebla: sí</button><button id="mute"></button><button id="helpbtn">Ayuda</button><button id="new">Salir al título</button>
             </div>
           </div>
           <div id="hints" hidden></div>
+          <div id="touchbar"><button data-do="back"><i>↩&#xFE0E;</i>Atrás</button><button data-do="next"><i>⟳&#xFE0E;</i>Siguiente</button><button data-do="danger"><i>⚠&#xFE0E;</i>Peligro</button></div>
           <div id="dock">
             <div id="info"></div>
             <div class="cmd"><button id="power"></button><button id="end"></button></div>
@@ -99,7 +109,7 @@
           </div>
           <div class="logo2"><div class="by"><i class="hawk"></i>GAVILANBE <small>PRESENTA</small></div><div class="poke"></div><div class="wars"></div></div>
           <div class="tag">Estrategia por turnos · Captura, evoluciona y conquista</div>
-          <div class="press">Pulsa cualquier tecla</div>
+          <div class="press"><span class="tecla">Pulsa cualquier tecla</span><span class="dedo">Toca para empezar</span></div>
           <div class="menu">
             <button data-go="continue" hidden><b>CONTINUAR</b><small>Sigue la partida guardada</small></button>
             <button data-go="story"><b>MODO HISTORIA</b><small>La Guerra de las Banderas</small></button>
@@ -108,8 +118,9 @@
             <div class="maps"></div>
             <div class="blurb"></div>
           </div>
+          <div class="toggles app"><button data-app="full" hidden></button><button data-app="install" hidden></button><button data-app="offline" hidden></button></div>
           <div class="toggles"><button data-opt="help">? Cómo se juega</button><button data-opt="fog"></button><button data-opt="sound"></button></div>
-          <div class="foot"><span><kbd>←↑↓→</kbd> moverse · <kbd>Enter</kbd> aceptar · <kbd>1</kbd>–<kbd>3</kbd> mapa · <kbd>N</kbd> niebla · <kbd>M</kbd> sonido · <kbd>H</kbd> ayuda</span><span>Un juego de <a href="https://github.com/gavilanbe" target="_blank" rel="noopener">gavilanbe</a> · de fans, sin ánimo de lucro · hecho con Claude Opus 5.5</span></div>
+          <div class="foot"><span><kbd>←↑↓→</kbd> moverse · <kbd>Enter</kbd> aceptar · <kbd>1</kbd>–<kbd>3</kbd> mapa · <kbd>N</kbd> niebla · <kbd>M</kbd> sonido · <kbd>H</kbd> ayuda</span><span>Un juego de <a href="https://github.com/gavilanbe" target="_blank" rel="noopener">gavilanbe</a> · de fans, sin ánimo de lucro · hecho con Claude Opus 5.5 · <i class="ver"></i></span></div>
         </div>
         <div id="select" hidden></div>
         <div id="story" hidden></div>
@@ -117,6 +128,8 @@
         <div id="wipe" hidden></div>
       </div>
       <div id="help" hidden></div>
+      <div id="toast" hidden></div>
+      <div id="rotate"><div class="phone"><i></i></div><b>Gira el móvil</b><span>Poké Wars se juega en horizontal</span><small>Toca aquí para girarlo</small></div>
       
     </main>
     <script type="module" src="/src/main.ts"></script>

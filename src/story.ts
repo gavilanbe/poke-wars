@@ -191,7 +191,7 @@ function buildWorld() {
 /** Coloca el mapa: la región entera a la izquierda de la ficha de misión, con su marco, y el fondo recortado alrededor. */
 function layout() {
   if (screen !== 'world' && screen !== 'brief') return
-  const vh = innerHeight / 100, card = Math.min(50 * vh, innerWidth * 0.36)
+  const vh = innerHeight / 100, card = Math.min(50 * vh, innerWidth * 0.36) * (document.documentElement.classList.contains('touch') ? 1.2 : 1) // con el dedo la ficha va ampliada (hud.css)
   api.fit({ x: 4 * vh, y: 13 * vh, w: innerWidth - card - 12 * vh, h: innerHeight - 21 * vh })
   const [x0, y0] = api.screen(-0.5, -0.5), u = api.tile(), w = WORLD.rows[0].length * u, h = WORLD.rows.length * u
   const map = q('.st-frame')
@@ -484,7 +484,7 @@ export const story = {
     host = document.querySelector('#story')!
     host.innerHTML = `<div class="st-world">
         <div class="st-backdrop"></div>
-        <header><b>LA GUERRA DE LAS BANDERAS</b><div class="st-flags"></div></header>
+        <header><button class="st-exit">↩ Título</button><b>LA GUERRA DE LAS BANDERAS</b><div class="st-flags"></div></header>
         <div class="st-frame"><div class="st-nodes"></div><i class="st-ring"></i><div class="st-fx"></div><canvas class="st-token" width="48" height="48"></canvas><div class="st-sky"><i></i><i></i><i></i></div></div>
         <aside class="st-card"></aside>
         <footer><kbd>←</kbd><kbd>→</kbd> misión · <kbd>Enter</kbd> elegir · <kbd>Esc</kbd> salir al título</footer>
@@ -496,9 +496,12 @@ export const story = {
       <div class="st-license" hidden></div>
       <div class="st-talk" hidden><div class="st-bar top"></div><div class="st-bar bot"></div>
         <div class="st-actor left"><div class="st-pic"><img alt=""></div><b></b></div><div class="st-actor right"><div class="st-pic"><img alt=""></div><b></b></div>
-        <div class="st-box"><b class="st-name"></b><p class="st-line"></p><i class="st-more" hidden>▼</i></div><small><kbd>Enter</kbd> seguir · <kbd>Esc</kbd> saltar la escena</small></div>`
+        <div class="st-box"><b class="st-name"></b><p class="st-line"></p><i class="st-more" hidden>▼</i></div><small><kbd>Enter</kbd> seguir · <kbd>Esc</kbd> saltar la escena</small><button class="st-skip">Saltar ⏭&#xFE0E;</button></div>`
     tokenCtx = q<HTMLCanvasElement>('.st-token').getContext('2d')!
     for (const sel of ['.st-talk', '.st-chapter', '.st-license', '.st-banner']) q(sel).onclick = () => talkNext?.()
+    // Lo que con teclado es Esc, con botón: saltar la escena y salir al título
+    q('.st-skip').onclick = (e) => { e.stopPropagation(); story.key('Escape') }
+    q('.st-exit').onclick = () => story.key('Escape')
   },
   /** Desde el título: abre el mapa del mundo. */
   async open() {

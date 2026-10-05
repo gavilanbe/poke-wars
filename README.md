@@ -35,6 +35,19 @@ node tools/shots.mjs                       # capturas de menús y pantallas
 Desde la consola del navegador se pueden lanzar escenas sueltas con `lab.battle(...)`, `lab.capture(...)` y
 `lab.power('gengar')` (ejemplos en `tools/film.mjs`).
 
+## En el móvil (PWA)
+
+El juego se instala como aplicación y se juega con el dedo, en horizontal:
+
+- **Pantalla**: en un móvil la página se pinta a 560 px de alto y el navegador la encoge entera (`src/mobile.ts`), así
+  el HUD es el mismo que en un monitor. De pie sale un aviso de girar el móvil; en Android, tocarlo lo gira solo.
+- **Dedos** (`src/main.ts`, «Dedos»): tocar elige, arrastrar mueve la cámara (con inercia), dos dedos hacen zoom. Para
+  atacar, el primer toque enseña el pronóstico y el segundo confirma. Lo que con teclado son Esc, Tab y R tiene botón.
+- **Sin conexión y versiones** (`public/sw.js`, `src/pwa.ts`): lo necesario para arrancar se guarda al instalar; las
+  imágenes y sonidos, según se usan, o todos de golpe con «Jugar sin conexión». Una versión nueva entra sola en el
+  título y, en mitad de una partida, avisa con un botón. La compilación (`vite.config.ts`) escribe `precache.json`.
+- **Icono**: `node tools/make_icons.mjs` lo vuelve a dibujar en todos los tamaños (`public/icons`).
+
 ## Gráficos
 
 Salen de la decompilación [pret/pokeemerald](https://github.com/pret/pokeemerald), que no se guarda en el repo:

@@ -1,6 +1,8 @@
 // Sonido del juego. Los efectos y la música salen de public/audio (generados con ElevenLabs: tools/make_audio.mjs);
 // si un archivo falta, el efecto cae a una versión sintetizada con WebAudio, así el juego nunca se queda mudo.
 
+import { buzz } from './mobile'
+
 let ac: AudioContext | null = null
 export let muted = localStorage.getItem('pokewars-muted') === '1'
 export function toggleMute() {
@@ -146,6 +148,19 @@ addEventListener('pointerdown', () => {
   else if (!el && currentMusic && available.has(currentMusic)) startLoop(currentMusic, MUSIC_VOLUME)
 })
 
+// En un móvil, al cambiar de aplicación o apagar la pantalla el juego se calla; al volver, sigue donde estaba
+const resumeOnReturn = new Set<HTMLAudioElement>()
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    for (const el of tracks.values()) if (!el.paused) { resumeOnReturn.add(el); el.pause() }
+    void ac?.suspend()
+  } else {
+    for (const el of resumeOnReturn) if ([...tracks.values()].includes(el)) void el.play().catch(() => {})
+    resumeOnReturn.clear()
+    if (!muted) void ac?.resume()
+  }
+})
+
 function ctx(): AudioContext | null {
   if (muted) return null
   ac ??= new AudioContext()
@@ -203,19 +218,19 @@ export const sfx = {
   cancel: () => void (sample('cancel') || tone(320, 0.1, { to: 170 })),
   error: () => void (sample('error') || tone(140, 0.12, { type: 'sawtooth', vol: 0.05 })),
   lunge: () => void (sample('lunge') || tone(300, 0.12, { to: 900, type: 'triangle', vol: 0.08 })),
-  hit: () => void (sample('hit') || (()=>{ noise(0.16, 0.3); tone(170, 0.16, { to: 55, type: 'sawtooth', vol: 0.12 }) })()),
-  bigHit: () => void (sample('bigHit') || (()=>{ noise(0.3, 0.4, 0, 3200); tone(240, 0.3, { to: 40, type: 'sawtooth', vol: 0.16 }); tone(1400, 0.08, { vol: 0.05 }) })()),
-  weakHit: () => void (sample('weakHit') || (()=>{ noise(0.08, 0.15, 0, 900); tone(140, 0.1, { to: 90, type: 'triangle', vol: 0.1 }) })()),
-  ko: () => void (sample('ko') || (()=>{ tone(520, 0.45, { to: 50, type: 'sawtooth', vol: 0.1 }); noise(0.35, 0.18, 0.08, 1200) })()),
+  hit: () => { buzz(18); void (sample('hit') || (()=>{ noise(0.16, 0.3); tone(170, 0.16, { to: 55, type: 'sawtooth', vol: 0.12 }) })()) },
+  bigHit: () => { buzz([30, 40, 60]); void (sample('bigHit') || (()=>{ noise(0.3, 0.4, 0, 3200); tone(240, 0.3, { to: 40, type: 'sawtooth', vol: 0.16 }); tone(1400, 0.08, { vol: 0.05 }) })()) },
+  weakHit: () => { buzz(10); void (sample('weakHit') || (()=>{ noise(0.08, 0.15, 0, 900); tone(140, 0.1, { to: 90, type: 'triangle', vol: 0.1 }) })()) },
+  ko: () => { buzz([20, 30, 20, 30, 90]); void (sample('ko') || (()=>{ tone(520, 0.45, { to: 50, type: 'sawtooth', vol: 0.1 }); noise(0.35, 0.18, 0.08, 1200) })()) },
   // Pisotón de la captura: la muestra a todo volumen más un golpe grave sintetizado debajo, para que se note sobre la música
-  capture: () => { tone(120, 0.14, { to: 50, type: 'triangle', vol: 0.22 }); if (!sample('capture', { vol: 1 })) noise(0.08, 0.2, 0, 700) },
+  capture: () => { buzz(25); tone(120, 0.14, { to: 50, type: 'triangle', vol: 0.22 }); if (!sample('capture', { vol: 1 })) noise(0.08, 0.2, 0, 700) },
   captured: () => void (sample('jingle_capture', { vol: 0.8 }) || sample('captured') || notes([523, 659, 784, 1047, 1319], 0.08, 0.14)),
   evolve: () => void (sample('evolve') || notes([392, 494, 587, 784, 988, 1175, 1568, 1976], 0.09, 0.16, { type: 'triangle', vol: 0.12 })),
   turn: () => void (sample('jingle_turn', { vol: 0.6 }) || sample('turn') || notes([392, 587, 784], 0.09, 0.16, { vol: 0.06 })),
   coin: (delay = 0) => void (sample('coin', { delay }) || notes([988, 1319], 0.05, 0.1, { vol: 0.04, delay })),
   heal: () => void (sample('jingle_heal', { vol: 0.6 }) || sample('heal') || notes([660, 880, 1100], 0.06, 0.1, { type: 'triangle', vol: 0.09 })),
   recruit: () => void (sample('recruit') || tone(180, 0.3, { to: 900, type: 'triangle', vol: 0.1 })),
-  land: () => void (sample('land') || (()=>{ noise(0.1, 0.25, 0, 600); tone(110, 0.1, { to: 60, type: 'triangle', vol: 0.15 }) })()),
+  land: () => { buzz(14); void (sample('land') || (()=>{ noise(0.1, 0.25, 0, 600); tone(110, 0.1, { to: 60, type: 'triangle', vol: 0.15 }) })()) },
   /** Fanfarria de ataque propia de cada comandante: suena al empezar un combate cuando ataca su equipo. */
   fanfare: (commander?: string) => void ((commander && sample('jingle_atk_' + commander, { vol: 0.85 })) || sfx.battle()),
   battle: () => void (sample('battle') || (()=>{ noise(0.25, 0.12, 0, 5000); notes([196, 262, 330, 392], 0.05, 0.08, { vol: 0.05 }) })()),
