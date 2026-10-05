@@ -229,19 +229,18 @@ const PAGES: Page[] = [
   },
   {
     title: 'EXPERIENCIA Y EVOLUCIÓN',
-    text: 'Hacer daño da <b>experiencia</b>, y debilitar a un rival da un extra. Al subir de nivel, evolucionan.',
-    lesson: () => ({ cursor: [5, 14], units: [{ kind: RED('luchador'), team: 0, x: 5, y: 14, xp: 9 }, { kind: BLUE('capturador'), team: 1, x: 9, y: 14, hp: 3 }, far] }),
+    text: 'Hacer daño da <b>experiencia</b>. Con la barra llena, <b>Evolucionar</b> es una orden: gasta el turno, pero cura y hace más fuerte.',
+    lesson: () => ({ cursor: [5, 14], units: [{ kind: RED('luchador'), team: 0, x: 5, y: 14, xp: 10, hp: 6 }, far] }),
     async play(d) {
-      await d.say('A este Pokémon le falta muy poco para el nivel 2, y hay un rival tocado cerca.')
+      await d.say('La barra azul del panel es la experiencia: sube con cada PS que quita, y debilitar o capturar da un extra.')
+      await d.say('Este la tiene llena: lleva una flecha dorada encima. Pero evolucionar no pasa solo: es una orden suya.')
       await d.press('Enter', 800)
-      await d.to(8, 14)
       await d.press('Enter')
       await menu(d)
-      await d.press('Enter', 900)
-      await d.say('La previsión avisa: «¡K.O.!». Rematarlo dará la experiencia que falta.')
-      await d.press('Enter')
+      await d.say('Ahí está, en dorado. Gasta su turno, pero le cura 3 PS y le sube ataque, defensa y movimiento.')
+      await d.press('Enter') // Evolucionar
       await d.idle()
-      await d.say('¡Nivel 2! Ha evolucionado: más ataque, más defensa y una casilla más de movimiento. Al nivel 3, otra vez.')
+      await d.say('Tú eliges el momento: pegar ahora o crecer. Si tiene una tercera forma, al volver a llenar la barra, otra vez.')
     },
   },
   {

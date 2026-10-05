@@ -81,12 +81,15 @@ function stamp(text: string, x: number, y: number, cls = '') {
   setTimeout(() => el.remove(), 1500)
 }
 
-function setPlate(el: HTMLElement, kind: string, team: number, hp: number) {
+function setPlate(el: HTMLElement, kind: string, team: number, hp: number, xp: number | null = null) {
   const k = KINDS[kind]
   el.className = `plate ${el.classList.contains('left') ? 'left' : 'right'} t${team}`
   el.querySelector<HTMLImageElement>('img')!.src = facePath(k.species)
   el.querySelector('.name')!.textContent = k.name
   el.querySelector('.type')!.innerHTML = `<span class="pill" style="background:${TYPE_COLOR[k.type]}">${TYPE_NAME[k.type]}</span>`
+  if (!el.querySelector('.xp')) el.querySelector('.hp')!.insertAdjacentHTML('afterend', '<div class="xp"><i></i></div>')
+  el.querySelector<HTMLElement>('.xp')!.hidden = xp === null
+  el.querySelector<HTMLElement>('.xp i')!.style.width = Math.min(1, xp ?? 0) * 100 + '%'
   setHp(el, hp)
 }
 
@@ -545,43 +548,6 @@ async function strike(a: Side, d: Side, dmg: number, crit = false) {
   d.actor.visible = false
 }
 
-async function evolve(s: Side, kind: string) {
-  const act = s.actor, [x, y] = body(s), k = size(s)
-  say(`¡Anda! ¡${KINDS[s.kind].name} está evolucionando!`)
-  sfx.evolve()
-  scene.play(act, 'Idle', true)
-  let last = 0
-  await scene.tween(1000, (t) => {
-    act.tint = ['#fff', Math.min(1, t * 1.4 + 0.3 * Math.sin(t * 40))]
-    act.sx = act.sy = 1 + 0.18 * Math.sin(t * Math.PI * 9) * t
-    if (scene.time - last > 45) {
-      last = scene.time
-      const ang = rnd(0, Math.PI * 2), r = 60 * k
-      scene.add({ img: 'blue_star', frame: 1, x: x + Math.cos(ang) * r, y: y + Math.sin(ang) * r, vx: (-Math.cos(ang) * r) / 18, vy: (-Math.sin(ang) * r) / 18, max: 300, scale: 1.5 * k })
-    }
-  })
-  scene.flashScreen('#fff', 1, 2.2)
-  scene.addShake(6)
-  s.kind = kind
-  act.species = KINDS[kind].species
-  act.scale = scaleFor(kind, s.depth)
-  act.sx = act.sy = 1
-  setPlate(s.plate, kind, s.team, s.hp)
-  scene.add({ ring: 90 * k, size: 8, color: '#fff', x, y, max: 500 })
-  for (let i = 0; i < 20; i++) {
-    const ang = (i / 20) * Math.PI * 2
-    scene.add({ img: 'gold_stars', x, y, vx: Math.cos(ang) * 3.5, vy: Math.sin(ang) * 3.5, drag: 0.95, max: 800, scale: 2 * k })
-  }
-  scene.play(act, 'Rotate')
-  void scene.tween(500, (t) => { act.tint[1] = 1 - t; act.oy = -Math.sin(t * Math.PI) * 18 })
-  sfx.evolved()
-  sfx.cry(KINDS[kind].species, 1, 0.7)
-  stamp('¡EVOLUCIÓN!', W / 2, 60, 'super')
-  say(`¡Ha evolucionado a ${KINDS[kind].name}!`)
-  await scene.wait(1300)
-  scene.play(act, 'Idle', true)
-}
-
 const restartClass = (el: Element, cls: string) => {
   el.classList.remove(cls)
   void (el as HTMLElement).offsetWidth
@@ -687,14 +653,16 @@ function small(ctx: CanvasRenderingContext2D, name: string, cx: number, baseY: n
   ctx.drawImage(pieces, p.x, 0, p.w, p.h, Math.round(cx - p.w / 2), baseY - p.h, p.w, p.h)
 }
 
+/** Barra de experiencia de 0 a 1, antes y después del combate; `ready`, si con eso queda listo para evolucionar. */
+export interface XpGain { from: number; to: number; ready: boolean }
+
 export interface BattleData {
   a: { kind: string; hp: number; team: number; place: Place }
   d: { kind: string; hp: number; team: number; place: Place }
   dmg: number
   counter: number | null
   crit?: boolean // golpe crítico del atacante
-  evolved: 'a' | 'd' | null
-  evolvedKind: string
+  xp?: { a: XpGain | null; d: XpGain | null } // lo que sube la barra de experiencia de cada uno al acabar
   co?: string // comandante de quien ataca: su fanfarria abre el combate
   dist?: number // casillas entre los dos: de lejos, el ataque se dispara en vez de cruzar el campo
   front?: 'a' | 'd' // a quién se ve de espaldas, en primer plano (quien mira la pantalla); por defecto, quien ataca
@@ -725,8 +693,9 @@ export async function playBattle(b: BattleData) {
   const farSide = side(aNear ? b.d : b.a, false), nearSide = side(aNear ? b.a : b.d, true)
   const att = aNear ? nearSide : farSide, def = aNear ? farSide : nearSide
   farSide.actor.shadow = nearSide.actor.shadow = false // la sombra va pintada en la plataforma
-  setPlate(nearSide.plate, nearSide.kind, nearSide.team, nearSide.hp)
-  setPlate(farSide.plate, farSide.kind, farSide.team, farSide.hp)
+  const xpOf = (s: Side) => (s === att ? b.xp?.a : b.xp?.d)?.from ?? null
+  setPlate(nearSide.plate, nearSide.kind, nearSide.team, nearSide.hp, xpOf(nearSide))
+  setPlate(farSide.plate, farSide.kind, farSide.team, farSide.hp, xpOf(farSide))
   say('')
 
   // Entrada: se abren dos barras negras como párpados, el paisaje entra deslizándose y cada plataforma llega por su lado
@@ -810,9 +779,141 @@ export async function playBattle(b: BattleData) {
     await scene.wait(200)
     await strike(def, att, b.counter)
   }
-  if (b.evolved) await evolve(b.evolved === 'a' ? att : def, b.evolvedKind)
-  else await scene.wait(380)
+  // Al acabar, la experiencia: la barra de cada ficha se llena y, si llega al tope, avisa de que ya puede evolucionar
+  let waitXp = 380
+  for (const [s, gain] of [[att, b.xp?.a], [def, b.xp?.d]] as const) {
+    if (!gain || s.hp <= 0 || gain.to <= gain.from) continue
+    const bar = s.plate.querySelector<HTMLElement>('.xp i')!
+    bar.style.width = Math.min(1, gain.to) * 100 + '%'
+    restartClass(s.plate, 'gain')
+    sfx.coin()
+    waitXp = 900
+    if (!gain.ready) continue
+    waitXp = 1700
+    const [x, y] = body(s), k = size(s)
+    setTimeout(() => {
+      s.plate.classList.add('evo')
+      sfx.ready()
+      stamp('¡PUEDE EVOLUCIONAR!', x, y - 34 * k, 'super')
+      scene.add({ ring: 50 * k, size: 5, color: '#ffd84a', x, y, max: 500 })
+      for (let i = 0; i < 14; i++) { const ang = (i / 14) * Math.PI * 2; scene.add({ img: 'gold_stars', x, y, vx: Math.cos(ang) * 2.6, vy: Math.sin(ang) * 2.6, drag: 0.95, max: 700, scale: 2 * k }) }
+      say(`¡${KINDS[s.kind].name} ya puede evolucionar!`)
+    }, 450)
+  }
+  await scene.wait(waitXp)
   await close()
+  scene.camera.x = pad = 0
+  scene.resize(W, H)
+}
+
+// ---------- Evolución ----------
+
+export interface EvolveData { from: string; to: string; team: number; heal: number }
+
+/**
+ * La evolución, con su escena propia: a oscuras, bajo un foco, la silueta blanca va y viene entre las dos formas cada
+ * vez más deprisa hasta que estalla en la nueva. Al final, una ficha con lo que ha ganado.
+ */
+export async function playEvolve(e: EvolveData) {
+  pad = Math.max(0, Math.round((H * Math.min(2.4, innerWidth / innerHeight) - W) / 4) * 2)
+  scene.resize(W + pad * 2, H)
+  scene.camera.x = -pad
+  await open('evolve')
+  const old = KINDS[e.from], next = KINDS[e.to], cx = W / 2, feet = 128
+  const act = scene.actor(old.species, cx, feet + (scaleOf(e.from) + 1) * 4, DIR.down, scaleOf(e.from) + 1) // el dibujo lleva aire bajo los pies
+  act.shadow = false
+  let glow = 0, done = 0
+  scene.background = (ctx, time) => {
+    const x0 = -pad - 20, w = W + pad * 2 + 40
+    const sky = ctx.createLinearGradient(0, 0, 0, H)
+    sky.addColorStop(0, '#0c1020'); sky.addColorStop(0.6, '#1c2858'); sky.addColorStop(1, '#3c2870')
+    ctx.fillStyle = sky
+    ctx.fillRect(x0, -20, w, H + 40)
+    // Rayos que giran detrás y columnas de luz que suben
+    ctx.save()
+    ctx.translate(cx, feet - 30)
+    ctx.rotate(time / 2400)
+    for (let i = 0; i < 12; i++) {
+      ctx.rotate(Math.PI / 6)
+      ctx.fillStyle = `rgba(255, 232, 140, ${0.05 + 0.12 * glow + 0.2 * done})`
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-16, -260); ctx.lineTo(16, -260); ctx.fill()
+    }
+    ctx.restore()
+    for (let i = 0; i < 18; i++) {
+      const x = x0 + ((i * 53) % w), h = 20 + ((i * 37) % 50), y = H + 20 - ((time * (0.03 + (i % 5) * 0.012) + i * 40) % (H + 80))
+      ctx.fillStyle = `rgba(160, 200, 255, ${0.1 + 0.25 * glow})`
+      ctx.fillRect(x, y, 2, h)
+    }
+    // Foco en el suelo, del color del equipo
+    for (const [r, alpha] of [[84, 0.16], [62, 0.22], [40, 0.3]] as const) {
+      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+      ctx.beginPath(); ctx.ellipse(cx, feet + 4, r, r * 0.26, 0, 0, Math.PI * 2); ctx.fill()
+    }
+    ctx.strokeStyle = TEAM_HEX[e.team]
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.ellipse(cx, feet + 4, 84, 22, 0, 0, Math.PI * 2); ctx.stroke()
+  }
+  scene.foreground = null
+  music.duck(4200)
+  say(`¡Anda! ¡${old.name} está evolucionando!`)
+  sfx.cry(old.species, 1, 0.6)
+  await scene.wait(650)
+  sfx.evolve()
+  // Se vuelve silueta blanca y las dos formas se alternan, cada vez más rápido
+  const [x, y] = [cx, feet - 12 * act.scale]
+  let last = 0, swapAt = 0, showNew = false
+  await scene.tween(2300, (t) => {
+    glow = t
+    act.tint = ['#fff', Math.min(1, t * 5)]
+    const every = 340 - 300 * easeOut(t)
+    if (t > 0.18 && scene.time - swapAt > every) {
+      swapAt = scene.time
+      showNew = !showNew
+      act.species = (showNew ? next : old).species
+      act.scale = scaleOf(showNew ? e.to : e.from) + 1
+      act.sx = act.sy = 1.12
+    }
+    act.sx = act.sy = Math.max(1, act.sx - 0.01)
+    if (scene.time - last > 40) {
+      last = scene.time
+      const ang = rnd(0, Math.PI * 2), r = 80
+      scene.add({ img: 'blue_star', frame: 1, x: x + Math.cos(ang) * r, y: y + Math.sin(ang) * r * 0.7, vx: (-Math.cos(ang) * r) / 20, vy: (-Math.sin(ang) * r * 0.7) / 20, max: 330, scale: 2 })
+    }
+  })
+  // Estalla en la forma nueva
+  act.species = next.species
+  act.scale = scaleOf(e.to) + 1
+  act.sx = act.sy = 1
+  done = 1
+  scene.flashScreen('#fff', 1, 1.6)
+  scene.addShake(8)
+  scene.hitStop(120)
+  scene.add({ ring: 120, size: 8, color: '#fff', x, y, max: 600 })
+  scene.add({ ring: 80, size: 6, color: '#ffd84a', x, y, max: 500, delay: 120 })
+  for (let i = 0; i < 28; i++) {
+    const ang = (i / 28) * Math.PI * 2
+    scene.add({ img: 'gold_stars', x, y, vx: Math.cos(ang) * rnd(2.5, 5), vy: Math.sin(ang) * rnd(2.5, 5), drag: 0.95, max: 900, scale: 2 })
+  }
+  for (let i = 0; i < 24; i++) scene.add({ img: 'confetti', frame: i % 4, x: cx + rnd(-140, 140), y: -10, vx: rnd(-0.6, 0.6), vy: rnd(1, 2.6), vr: rnd(-0.2, 0.2), max: 2600, delay: i * 40, scale: 2 })
+  scene.play(act, 'Rotate')
+  void scene.tween(520, (t) => { act.tint[1] = 1 - t; act.oy = -Math.sin(t * Math.PI) * 22 })
+  sfx.evolved()
+  sfx.cry(next.species, 1, 0.8)
+  stamp('¡EVOLUCIÓN!', cx, 34, 'super')
+  say(`¡Enhorabuena! ¡${old.name} ha evolucionado a ${next.name}!`)
+  // La ficha: de quién a quién y lo que gana
+  const up = (label: string, a: number, c: number, unit = '') => `<div><span>${label}</span><b>${a}${unit}</b><i>▶</i><b class="new">${c}${unit}</b><em>${c > a ? '▲' : ''}</em></div>`
+  const card = document.createElement('div')
+  card.className = `evocard t${e.team}`
+  card.innerHTML = `<header><img src="${facePath(old.species)}" alt=""><i>▶</i><img src="${facePath(next.species, 'Happy')}" alt=""><div><small>${ROLES[next.role].name}</small><b>${next.name}</b></div></header>
+    ${up('Ataque', Math.round(old.atk * 100), Math.round(next.atk * 100))}${up('Defensa', Math.round(old.def * 100), Math.round(next.def * 100))}${up('Movimiento', old.mv, next.mv)}
+    <p>✚ Recupera ${e.heal} PS y se le pasa cualquier estado</p>`
+  root.append(card)
+  await scene.wait(600)
+  scene.play(act, 'Idle', true)
+  await scene.wait(2100)
+  await close()
+  card.remove()
   scene.camera.x = pad = 0
   scene.resize(W, H)
 }

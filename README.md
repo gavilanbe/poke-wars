@@ -48,6 +48,16 @@ El juego se instala como aplicación y se juega con el dedo, en horizontal:
   título y, en mitad de una partida, avisa con un botón. La compilación (`vite.config.ts`) escribe `precache.json`.
 - **Icono**: `node tools/make_icons.mjs` lo vuelve a dibujar en todos los tamaños (`public/icons`).
 
+## Experiencia y evolución
+
+- Cada PS de daño da un punto de experiencia; debilitar da 5 más y rendir un edificio, 4 (`src/game.ts`).
+- Con la barra llena (10 para la primera evolución, 26 para la segunda), quien tiene evolución queda **listo**: lleva
+  una flecha dorada en el mapa y el panel lo avisa. No evoluciona solo.
+- **Evolucionar es una orden** del menú: gasta su turno, le cura 3 PS, le quita cualquier estado y le sube ataque,
+  defensa y una casilla de movimiento. Tiene su escena (`playEvolve` en `src/cutscenes.ts`).
+- Quien no tiene evolución sube de nivel solo y gana veteranía. La IA evoluciona cuando no tiene a mano una captura,
+  un remate o un buen golpe (`src/ai.ts`).
+
 ## Gráficos
 
 Salen de la decompilación [pret/pokeemerald](https://github.com/pret/pokeemerald), que no se guarda en el repo:

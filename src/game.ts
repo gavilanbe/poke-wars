@@ -10,7 +10,7 @@ export type Status = 'burn' | 'poison' | 'para' | 'sleep' | 'freeze'
 export const STATUS_NAME: Record<Status, string> = { burn: 'Quemado', poison: 'Envenenado', para: 'Paralizado', sleep: 'Dormido', freeze: 'Congelado' }
 export interface Unit {
   id: number; kind: string; team: Team; x: number; y: number; hp: number; moved: boolean
-  xp: number; level: number // nivel 1 a 3: al 2 evoluciona, al 3 es veterano
+  xp: number; level: number // nivel 1 a 3: sube al evolucionar (con la orden) o, si no tiene evolución, al llenar la barra
   status: Status | null; statusTurns: number
   tag?: 'vip' | 'boss' // en campaña: el Pokémon que no puede caer (y que a veces hay que llevar a un sitio) y el jefe a derrotar
 }
@@ -287,7 +287,8 @@ export const canCounter = (att: Unit, def: Unit) =>
   !isRanged(att) && !isRanged(def) && dist(att, def) === 1 && !KINDS[def.kind].heals && !KINDS[att.kind].heals && def.status !== 'sleep' && def.status !== 'freeze'
 
 export interface AttackResult {
-  dmg: number; counter: number | null; evolved: Unit | null; crit: boolean
+  dmg: number; counter: number | null; crit: boolean
+  ready: Unit | null // quien acaba de llenar la barra y ya puede evolucionar
   move: PType // el ataque que ha usado
   status: Status | null // estado que le deja al defensor
   burned: boolean // el fuego ha quemado el bosque o la hierba donde estaba el defensor
@@ -301,7 +302,7 @@ const INFLICT: Partial<Record<PType, [Status, number, number]>> = {
 export function attack(g: Game, att: Unit, def: Unit): AttackResult {
   const crit = Math.random() < CRIT_CHANCE // golpe crítico: daño x1,5
   const move = bestMove(att.kind, def.kind)
-  const res: AttackResult = { dmg: damage(g, att, def, att.hp, crit), counter: null, evolved: null, crit, move, status: null, burned: false }
+  const res: AttackResult = { dmg: damage(g, att, def, att.hp, crit), counter: null, ready: null, crit, move, status: null, burned: false }
   def.hp -= res.dmg
   charge(g, att.team, res.dmg * 0.5)
   charge(g, def.team, res.dmg)
@@ -314,7 +315,7 @@ export function attack(g: Game, att: Unit, def: Unit): AttackResult {
   }
   if (def.hp <= 0) {
     kill(g, def)
-    res.evolved = gainXp(att, res.dmg + 5)
+    res.ready = gainXp(att, res.dmg + KO_XP)
   } else {
     // Estados: el de apoyo duerme siempre; los ataques de fuego, veneno, eléctricos y de hielo, a veces
     const inflict: [Status, number, number] | undefined = KINDS[att.kind].heals ? ['sleep', 1, 1] : INFLICT[move]
@@ -322,14 +323,14 @@ export function attack(g: Game, att: Unit, def: Unit): AttackResult {
       def.status = res.status = inflict[0]
       def.statusTurns = inflict[2]
     }
-    res.evolved = gainXp(att, res.dmg)
+    res.ready = gainXp(att, res.dmg)
     if (canCounter(att, def)) {
       res.counter = damage(g, def, att)
       att.hp -= res.counter
       charge(g, def.team, res.counter * 0.5)
       charge(g, att.team, res.counter)
       if (att.hp <= 0) kill(g, att)
-      res.evolved = gainXp(def, res.counter + (att.hp <= 0 ? 5 : 0)) ?? (att.hp > 0 ? res.evolved : null)
+      res.ready = gainXp(def, res.counter + (att.hp <= 0 ? KO_XP : 0)) ?? (att.hp > 0 ? res.ready : null)
     }
   }
   att.moved = true
@@ -337,18 +338,36 @@ export function attack(g: Game, att: Unit, def: Unit): AttackResult {
   return res
 }
 
-export const XP_LEVEL = [0, 10, 26] // experiencia para nivel 2 y nivel 3
+// Experiencia y evolución. Hacer daño da experiencia (un punto por PS quitado, más un extra por debilitar o por
+// rendir un edificio). Con la barra llena, quien tiene evolución queda LISTO: evolucionar es una orden suya, que gasta
+// su turno y le cura. Así no ocurre de sopetón en mitad de un combate y hay algo que decidir: pegar ahora o crecer.
+// Quien no tiene evolución sube de nivel solo y gana veteranía (ver levelBonus).
+export const XP_LEVEL = [0, 10, 26] // experiencia para pasar del nivel 1 al 2 y del 2 al 3
+export const KO_XP = 5, CAPTURE_XP = 4, EVOLVE_HEAL = 3
+/** Experiencia que pide su próximo nivel (null si ya no sube más). */
+export const xpGoal = (u: Unit): number | null => (u.level < 3 && (KINDS[u.kind].evolves || !KINDS[u.kind].final) ? XP_LEVEL[u.level] : null)
+/** ¿Tiene la barra llena y una forma a la que evolucionar? */
+export const canEvolve = (u: Unit) => !!KINDS[u.kind].evolves && u.level < 3 && u.xp >= XP_LEVEL[u.level]
 
-/** Suma experiencia (PS de daño hechos, +5 por debilitar). Devuelve la unidad si evoluciona. */
-function gainXp(u: Unit, amount: number): Unit | null {
+/** Suma experiencia. Devuelve la unidad si con eso acaba de quedar lista para evolucionar. */
+export function gainXp(u: Unit, amount: number): Unit | null {
+  const was = canEvolve(u)
   u.xp += amount
-  let evolved: Unit | null = null
-  while (u.level < 3 && u.xp >= XP_LEVEL[u.level]) {
-    u.level++
-    const next = KINDS[u.kind].evolves
-    if (next) { u.kind = next; evolved = u } // al 2 evoluciona y, si tiene tercera fase, al 3 otra vez
-  }
-  return evolved
+  if (KINDS[u.kind].evolves) return !was && canEvolve(u) ? u : null
+  while (u.level < 3 && u.xp >= XP_LEVEL[u.level]) u.level++ // sin evolución: veteranía
+  return null
+}
+
+/** La orden de evolucionar: cambia de forma, sube de nivel, se cura un poco y se le pasa cualquier estado. Gasta su turno. */
+export function evolve(g: Game, u: Unit): string {
+  const next = KINDS[u.kind].evolves!
+  u.kind = next
+  u.level++
+  u.hp = Math.min(10, u.hp + EVOLVE_HEAL)
+  u.status = null
+  u.statusTurns = 0
+  u.moved = true
+  return next
 }
 
 function kill(g: Game, u: Unit) {
@@ -471,6 +490,7 @@ export function capture(g: Game, u: Unit): boolean {
   u.moved = true
   b.cap -= u.hp
   if (b.cap > 0) return false
+  gainXp(u, CAPTURE_XP) // rendir un edificio también curte
   b.owner = u.team
   b.cap = CAPTURE_POINTS
   if (b.type === 'gym') g.winner = u.team

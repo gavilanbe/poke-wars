@@ -1,6 +1,6 @@
 // Liga de IA contra IA sin gráficos: la usan tools/sim.ts (informe) y tools/tune.ts (afinador).
 import { planRecruit, planUnit } from '../src/ai'
-import { attack, canUsePower, capture, createGame, endTurn, freeze, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
+import { attack, canUsePower, capture, createGame, endTurn, evolve, freeze, moveUnit, pathTo, reachable, recruit, resolvePath, usePower } from '../src/game'
 
 import { COMMANDERS, KINDS, MAPS, ROLES } from '../src/data'
 
@@ -46,6 +46,7 @@ export function league(ROUNDS: number, only?: [string, string], mapId?: number):
           if (!g.units.includes(u)) { role(defKind).kills++; role(attKind).deaths++ }
         } else if (plan.action === 'capture') capture(g, u)
       else if (plan.action === 'freeze') freeze(g, u)
+      else if (plan.action === 'evolve') evolve(g, u)
         else u.moved = true
       }
       for (const b of g.buildings) {

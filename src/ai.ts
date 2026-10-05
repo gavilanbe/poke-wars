@@ -2,10 +2,10 @@
 import { KINDS, RoleId, bestMove, rosterOf } from './data'
 import {
   Building, Game, Pos, Unit, buildingAt, canCapture, canCounter, canRecruit, damage, dist, key,
-  freezable, reachable, stoppable, targetsFrom, unitAt, wildAt,
+  canEvolve, freezable, reachable, stoppable, targetsFrom, unitAt, wildAt,
 } from './game'
 
-export interface Plan { to: Pos; action: 'attack' | 'capture' | 'freeze' | 'wait'; target?: Unit }
+export interface Plan { to: Pos; action: 'attack' | 'capture' | 'freeze' | 'evolve' | 'wait'; target?: Unit }
 
 export function planUnit(g: Game, u: Unit): Plan {
   const reach = reachable(g, u)
@@ -49,6 +49,8 @@ export function planUnit(g: Game, u: Unit): Plan {
     const item = g.items.some((i) => i.x === spot.x && i.y === spot.y)
     // Salvajes: quien captura va a atraparlos y quien no, a debilitarlos; y nadie deja un objeto en el suelo
     consider(base + (wild ? (k.capture ? 30 : wild.weak ? 0 : 6) : 0) + (item ? 10 : 0), { to: spot, action: 'wait' })
+    // Evolucionar gasta el turno: lo hace si no tiene a mano una captura, un remate o un buen golpe; antes, si está herido
+    if (canEvolve(u)) consider(base + 20 + (10 - u.hp) * 1.5, { to: spot, action: 'evolve' })
     // Congelar el río cuando su objetivo está al otro lado y no hay nada mejor que hacer
     if (freezable(g, u, spot).length && goalDist(spot) > 6) consider(base + 5, { to: spot, action: 'freeze' })
     if (canCapture(g, u, spot)) {

@@ -8,7 +8,7 @@ const URL = process.env.URL ?? 'http://localhost:5199/'
 const place = (terrain, building) => ({ terrain, building })
 const fight = (a, d, extra = {}, terrain = '.') => ({
   a: { kind: a, hp: 10, team: 0, place: place('.') }, d: { kind: d, hp: 10, team: 1, place: place(terrain) },
-  dmg: 4, counter: 2, evolved: null, evolvedKind: '', ...extra,
+  dmg: 4, counter: 2, ...extra,
 })
 // nombre -> [código que arranca la escena, milisegundos a grabar]
 const SCENES = {
@@ -27,7 +27,8 @@ const SCENES = {
   hielo: [`lab.battle(${JSON.stringify(fight('snorunt', 'deino', { dmg: 8, counter: 1 }))})`, 4200],
   fantasma: [`lab.battle(${JSON.stringify(fight('gastly', 'drowzee', { dmg: 7, counter: null }))})`, 3200],
   veneno: [`lab.battle(${JSON.stringify(fight('koffing', 'clefairy', { dmg: 7, counter: null }))})`, 3200],
-  evolucion: [`lab.battle(${JSON.stringify(fight('chikorita', 'mudkip', { dmg: 10, counter: null, evolved: 'a', evolvedKind: 'bayleef' }))})`, 6500],
+  evolucion: [`lab.evolve({ from: 'mareep', to: 'flaaffy', team: 0, heal: 3 })`, 6400],
+  experiencia: [`lab.battle(${JSON.stringify(fight('mareep', 'poochyena', { dmg: 6, counter: 2, xp: { a: { from: 0.4, to: 1, ready: true }, d: { from: 0.1, to: 0.3, ready: false } } }))})`, 6200],
   tirador: [`lab.battle(${JSON.stringify(fight('gastly', 'mudkip', { dmg: 5, counter: null, dist: 3 }, '~'))})`, 3600],
   artillero: [`lab.battle(${JSON.stringify(fight('houndour', 'aron', { dmg: 7, counter: null, dist: 4 }, 'M'))})`, 4200],
   defensa: [`lab.battle(${JSON.stringify(fight('poochyena', 'mareep', { dmg: 4, counter: 3, front: 'd' }, '"'))})`, 5200],

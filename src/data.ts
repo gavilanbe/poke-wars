@@ -315,7 +315,7 @@ export const COMMANDERS: Record<string, Commander> = {
 // Ajuste fino de equilibrio: multiplica el ataque y la defensa de todo el equipo de cada comandante. Lo calcula
 // `pnpm tune` jugando la liga entera muchas veces hasta que todos rondan el 50% de victorias.
 export const TUNE: Record<string, number> = {
-  pikachu: 0.971, charizard: 1.031, blastoise: 1.013, gengar: 1.022, venusaur: 0.999, tyranitar: 0.942, gardevoir: 0.991, lucario: 1.021,
+  pikachu: 0.971, charizard: 1.031, blastoise: 0.992, gengar: 1.022, venusaur: 0.999, tyranitar: 0.942, gardevoir: 0.991, lucario: 1.021,
 }
 /** Estilo del comandante en una frase, sacado de sus números (sin contar el ajuste fino). */
 export function passiveText(id: string): string {

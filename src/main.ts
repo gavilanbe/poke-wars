@@ -10,8 +10,9 @@ import {
   capture, createGame, damage, endTurn, income, isRanged, key, moveRange, moveUnit, pathTo, reachable, recruit,
   PHASES, STATUS_NAME, Status, WEATHER_NAME, canSee, flankers, footprint, freezable, freeze, isRecovery, phaseOf, recruitCost, resolvePath,
   BERRY_HEAL, COIN_VALUE, catchable, weatherBonus, wildAt, stoppable, targetsFrom, terrainAt, unitAt, usePower, visibleCells,
+  EVOLVE_HEAL, KO_XP, XP_LEVEL, canEvolve, evolve, xpGoal,
 } from './game'
-import { Place, initCutscenes, playBattle, playCapture, playCatch, sceneKey, setSceneLight } from './cutscenes'
+import { Place, XpGain, initCutscenes, playBattle, playCapture, playCatch, playEvolve, sceneKey, setSceneLight } from './cutscenes'
 import { Scene, loadFx, rnd } from './scene'
 import { loadAudio, music, muted, sfx, toggleMute } from './sfx'
 import { goalStatus } from './campaign'
@@ -496,6 +497,13 @@ function drawUnit(u: Unit, time: number) {
     ctx.fillStyle = u.tag === 'boss' ? '#ff5a48' : '#ffd84a'
     if (u.tag === 'boss') { ctx.fillRect(mx - 5, my + 5, 10, 3); for (const px of [-5, -1, 3]) ctx.fillRect(mx + px, my + 1, 2, 4) }
     else { ctx.fillRect(mx - 1, my + 1, 2, 7); ctx.fillRect(mx - 5, my + 3, 10, 2); ctx.fillRect(mx - 3, my + 5, 6, 2) }
+  }
+  if (!moving && canEvolve(u) && u.team === g.turn) { // listo para evolucionar: flecha dorada que bota y destellos
+    const bob = Math.round(Math.sin(time / 180 + u.id) * 2), ax = x + T / 2, ay = y - 9 + bob
+    ctx.fillStyle = '#10141c'
+    ctx.fillRect(ax - 6, ay + 3, 12, 5); ctx.fillRect(ax - 4, ay + 1, 8, 3); ctx.fillRect(ax - 2, ay - 1, 4, 3); ctx.fillRect(ax - 3, ay + 7, 6, 5)
+    ctx.fillStyle = Math.floor(time / 220) % 2 ? '#ffd84a' : '#fff'
+    ctx.fillRect(ax - 5, ay + 4, 10, 3); ctx.fillRect(ax - 3, ay + 2, 6, 2); ctx.fillRect(ax - 1, ay, 2, 2); ctx.fillRect(ax - 2, ay + 7, 4, 4)
   }
   for (let i = 1; i < u.level && !moving; i++) { // galones de nivel
     ctx.fillStyle = '#10141c'
@@ -1488,6 +1496,13 @@ const miniBar = (value: number, max: number) => {
 }
 
 /** Tarjeta de lo que hay bajo el cursor: Pokémon (con su barra de PS), edificio o terreno. */
+/** Barra de experiencia del panel: cuánto lleva, a qué evoluciona y, si está llena, que ya puede hacerlo. */
+function xpLine(u: Unit): string {
+  const k = KINDS[u.kind], goal = xpGoal(u), bar = xpBar(u)
+  if (goal === null || bar === null) return '<div class="xpline max"><i>EXP</i><span>Nivel máximo</span></div>'
+  if (canEvolve(u)) return `<div class="xpline ready"><i>EXP</i><div class="xpbar"><u style="width:100%"></u></div><span>▲ ¡Puede evolucionar a ${KINDS[k.evolves!].name}!</span></div>`
+  return `<div class="xpline"><i>EXP</i><div class="xpbar"><u style="width:${bar * 100}%"></u></div><span>${u.xp}/${goal}${k.evolves ? ` ▶ ${KINDS[k.evolves].name}` : ' ▶ veterano'}</span></div>`
+}
 function refreshInfo() {
   if (!hover || !g) {
     infoEl.className = 'empty'
@@ -1502,9 +1517,10 @@ function refreshInfo() {
     infoEl.innerHTML = `<img class="mug" src="${facePath(k.species)}">
       <div class="who" title="${ROLES[k.role].name}: ${ROLES[k.role].help}"><b>${k.name}</b>${k.types.map((t) => `<i class="ty" style="background-position:0 -${TYPE_ICON[t] * 19}px" title="${TYPE_NAME[t]}"></i>`).join('')}<small>Nv.${u.level}${u.status ? ` · <em style="color:${STATUS_COLOR[u.status]}">${STATUS_NAME[u.status]}</em>` : ''}</small></div>
       <div class="hpline"><div class="hpbar"><i style="width:${u.hp * 9.6}px;background-position:0 -${u.hp > 5 ? 0 : u.hp > 2 ? 8 : 16}px"></i></div>${u.hp}/10</div>
+      ${xpLine(u)}
       <div class="line"><span>ATQ ${miniBar(k.atk, 2)}</span><span>DEF ${miniBar(k.def, 2)}</span><span>MOV ${moveRange(g, u)}</span></div>
       <div class="reach ${k.heals ? 'aid' : isRanged(u) ? 'far' : 'melee'}"><b>${ROLES[k.role].name}</b>${k.heals ? `✚ Cura y duerme a ${k.range[0]}–${k.range[1]}` : isRanged(u) ? `◎ A distancia: ${k.range[0]}–${k.range[1]} casillas, sin moverse` : '⚔ Cuerpo a cuerpo: mueve y pega'}</div>`
-    infoEl.title = [`Ataques: ${k.moves.map((m) => ATTACK_NAME[m]).join(' y ')}`, MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.evolves ? `evoluciona a ${KINDS[k.evolves].name}` : '',
+    infoEl.title = [`Ataques: ${k.moves.map((m) => ATTACK_NAME[m]).join(' y ')}`, MOVE_LABEL[k.move], k.capture ? 'captura edificios' : '', k.evolves ? `con la barra de experiencia llena puede evolucionar a ${KINDS[k.evolves].name}` : '',
       isRanged(u) ? 'no puede moverse y atacar en el mismo turno' : ''].filter(Boolean).join(' · ')
   } else if (b) {
     const info = BUILDING_INFO[b.type]
@@ -2153,12 +2169,44 @@ const placeOf = (p: Pos): Place => {
   return { terrain: g.tiles[p.y][p.x], building: b && { type: b.type, owner: b.owner } }
 }
 
+/** Cuánto lleva de la barra de experiencia de su nivel, de 0 a 1 (null si ya no sube más). */
+function xpBar(u: Unit): number | null {
+  const goal = xpGoal(u)
+  if (goal === null) return null
+  const floor = XP_LEVEL[u.level - 1]
+  return Math.max(0, Math.min(1, (u.xp - floor) / (goal - floor)))
+}
+const xpGain = (u: Unit, from: number | null, ready: boolean): XpGain | null => (from === null || !g.units.includes(u) ? null : { from, to: ready ? 1 : xpBar(u) ?? 1, ready })
+
+/** La orden de evolucionar, con su escena: al volver, el mapa enseña la forma nueva entre estrellas. */
+async function doEvolve(u: Unit) {
+  const from = u.kind
+  const to = evolve(g, u)
+  if (AUTO) return
+  await loadSpeciesList(line(to))
+  if (shown(u)) {
+    talkEl.hidden = true
+    await playEvolve({ from, to, team: u.team, heal: EVOLVE_HEAL })
+    themeNow()
+    setFx(u, { pop: performance.now() })
+    const [x, y] = center(u)
+    mapFx.add({ ring: 30, size: 4, color: '#ffd84a', x, y, max: 500 })
+    for (let i = 0; i < 14; i++) mapFx.add({ img: 'gold_stars', x, y, vx: Math.cos(i) * 2.2, vy: Math.sin(i) * 2.2, drag: 0.94, max: 800, scale: 1 })
+    label(u, `¡${KINDS[to].name}!`, 'gold')
+    label(u, `+${EVOLVE_HEAL} PS`, 'heal', 350)
+    sfx.levelup()
+    await sleep(500)
+  }
+  refreshStatus()
+}
+
 /** Resuelve el ataque y lo enseña como escena de combate; al volver, el mapa refleja el resultado. */
 async function battle(att: Unit, def: Unit) {
   const a = { kind: att.kind, hp: att.hp, team: att.team, x: att.x, y: att.y, place: placeOf(att) }
   const d = { kind: def.kind, hp: def.hp, team: def.team, x: def.x, y: def.y, place: placeOf(def) }
   await engage(att, def)
   const levels = [att.level, def.level]
+  const xpBefore = [xpBar(att), xpBar(def)]
   const res = attack(g, att, def)
   if (AUTO) return
   if (KINDS[a.kind].heals) { // el de apoyo no pelea: duerme al rival, sin escena de combate
@@ -2178,7 +2226,7 @@ async function battle(att: Unit, def: Unit) {
     a, d, dmg: res.dmg, counter: res.counter, crit: res.crit, co: g.co[a.team],
     dist: Math.abs(a.x - d.x) + Math.abs(a.y - d.y),
     front: isAI[a.team] && !isAI[d.team] ? 'd' : 'a', // a tu Pokémon lo ves de espaldas, también cuando te atacan
-    evolved: res.evolved ? (res.evolved === att ? 'a' : 'd') : null, evolvedKind: res.evolved?.kind ?? '',
+    xp: { a: xpGain(att, xpBefore[0], res.ready === att), d: xpGain(def, xpBefore[1], res.ready === def) },
   })
   stage.classList.remove('encounter')
   themeNow()
@@ -2209,11 +2257,12 @@ async function battle(att: Unit, def: Unit) {
     if (g.units.includes(att)) hurt(att)
     else koFx(a, a.team)
   }
-  if (res.evolved) {
-    setFx(res.evolved, { pop: performance.now() })
-    const [x, y] = center(res.evolved)
+  if (res.ready && g.units.includes(res.ready)) { // ha llenado la barra: ya puede evolucionar cuando quiera su dueño
+    setFx(res.ready, { pop: performance.now() })
+    const [x, y] = center(res.ready)
     for (let i = 0; i < 12; i++) mapFx.add({ img: 'gold_stars', x, y, vx: Math.cos(i) * 2, vy: Math.sin(i) * 2, drag: 0.94, max: 700, scale: 1 })
-    label(res.evolved, '¡Evolución!', 'gold', 250)
+    label(res.ready, '¡Puede evolucionar!', 'gold', 250)
+    setTimeout(sfx.ready, 250)
   }
   fx.addShake(4)
   await sleep(350)
@@ -2302,7 +2351,7 @@ async function arrive(u: Unit, x: number, y: number) {
   themeNow()
 }
 
-const ICON: Record<string, [string, string]> = { Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Congelar: ['❄', 'ice'], Atrapar: ['◓', 'ball'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
+const ICON: Record<string, [string, string]> = { Evolucionar: ['▲', 'evo'], Atacar: ['⚔', 'atk'], Capturar: ['⚑', 'cap'], Congelar: ['❄', 'ice'], Atrapar: ['◓', 'ball'], Esperar: ['✔', 'ok'], Cancelar: ['✖', 'no'] }
 
 /** Pasa a elegir objetivo con el cursor ya puesto en el rival al que más daño se le hace: Enter ataca sin más. */
 function aim() {
@@ -2337,6 +2386,18 @@ function openMenu() {
       pending = null
       moveCatch(g, u, at.x, at.y)
       await doCapture(u, b)
+      finish()
+    }])
+  }
+  if (canEvolve(u)) { // la barra de experiencia está llena: crecer ahora cuesta el turno
+    const next = KINDS[k.evolves!]
+    items.push(['Evolucionar', `A ${next.name}: más ataque, defensa y movimiento · +${EVOLVE_HEAL} PS · gasta el turno`, async () => {
+      mode = 'busy'
+      menuEl.hidden = true
+      await arrive(u, at.x, at.y)
+      mode = 'busy'
+      pending = null
+      if (g.units.includes(u) && canEvolve(u)) await doEvolve(u)
       finish()
     }])
   }
@@ -2531,6 +2592,13 @@ async function click(p: Pos) {
   }
 }
 
+/** Lo que suma de experiencia un golpe y si con eso llena la barra. */
+function xpNote(u: Unit, gain: number): string {
+  const goal = xpGoal(u)
+  if (goal === null || canEvolve(u)) return ''
+  const fills = u.xp + gain >= goal
+  return `<div class="eff xp ${fills ? 'good' : ''}">+${gain} EXP${fills ? (KINDS[u.kind].evolves ? ' · ¡podrá evolucionar!' : ' · ¡sube de nivel!') : ` (${Math.min(goal, u.xp + gain)}/${goal})`}</div>`
+}
 function showForecast() {
   const t = hover && mode === 'target' ? targets.find((u) => u.x === hover!.x && u.y === hover!.y) : undefined
   if (!t) return void (forecastEl.hidden = true)
@@ -2543,7 +2611,8 @@ function showForecast() {
     ${back !== null ? `<div class="row"><b class="in">−${back}</b><span>contraataque</span></div>` : ''}
     <div class="eff ${eff > 1.05 ? 'good' : eff < 0.9 ? 'bad' : ''}">${ATTACK_NAME[move]} · ${eff > 1.05 ? '▲ súper eficaz' : eff < 0.4 ? '▼ casi no le afecta' : eff < 0.9 ? '▼ poco eficaz' : 'normal'}</div>
     ${flankers(g, here, t) ? `<div class="eff good">▲ Flanqueo +${flankers(g, here, t) * 10}%</div>` : ''}
-    ${weatherBonus(g, move) !== 1 ? `<div class="eff ${weatherBonus(g, move) > 1 ? 'good' : 'bad'}">${WEATHER_NAME[g.weather]}</div>` : ''}`
+    ${weatherBonus(g, move) !== 1 ? `<div class="eff ${weatherBonus(g, move) > 1 ? 'good' : 'bad'}">${WEATHER_NAME[g.weather]}</div>` : ''}
+    ${xpNote(sel!, dmg + (dmg >= t.hp ? KO_XP : 0))}`
   placeNear(forecastEl, t)
 }
 
@@ -2670,6 +2739,10 @@ async function runAI() {
       }
       await battle(u, t)
     } else {
+      if (plan.action === 'evolve' && canEvolve(u)) {
+        if (visible) { follow(u); await beat(300) }
+        await doEvolve(u)
+      }
       if (plan.action === 'freeze') {
         const cells = freeze(g, u)
         if (visible && cells.length) { label(end, '¡Río congelado!', 'heal'); sfx.status('freeze') }
@@ -3087,6 +3160,7 @@ async function boot() {
       battle: playBattle,
       capture: playCapture,
       catch: playCatch,
+      evolve: playEvolve,
       power: (id: string) => { g.co[g.turn] = id; g.meter[g.turn] = 99; firePower() },
       win: (team: Team) => { g.winner = team; finish() },
       state: () => ({ mode, sel: sel?.kind, cam: [cam.x, cam.y], stops: stops.size }),
